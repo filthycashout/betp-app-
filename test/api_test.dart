@@ -81,4 +81,25 @@ void main() {
     expect(() => BackendConfig.validate('http://example.com'),throwsFormatException);
     expect(() => BackendConfig.validate('https://user:password@example.com'),throwsFormatException);
   });
+
+  test('today feed preserves verified next scheduled games by sport', () async {
+    final api = PhilthyApi(
+      baseUrl: 'https://example.com',
+      delay: (_) async {},
+      client: MockClient((request) async {
+        expect(request.url.path, '/v1/today');
+        return http.Response(
+          '{"games":[],"next_games_by_sport":{"NFL":[{"event_id":"next-nfl","sport":"NFL","home":"Home","away":"Away","event_time":"2026-10-04T20:00:00Z","event_time_pacific":"2026-10-04T13:00:00-07:00","date":"2026-10-04","market":{},"projected_score":{},"predictions":{},"live":{},"props_to_watch":[]}]}}',
+          200,
+        );
+      }),
+    );
+
+    final feed = await api.todayFeed();
+    expect(feed.games, isEmpty);
+    expect(feed.nextGamesBySport['NFL'], hasLength(1));
+    expect(feed.nextGamesBySport['NFL']!.first.eventId, 'next-nfl');
+    expect(feed.nextGamesBySport['NFL']!.first.date, '2026-10-04');
+  });
+
 }
