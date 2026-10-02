@@ -181,6 +181,7 @@ PROP_DEFAULT_LIVE_MARKETS = {
 
 MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
 DRIVE_RECONSTRUCTION_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_manifest.json"
+CANDIDATE_REGISTRY_PATH = Path(__file__).resolve().parent / "models" / "candidate_registry.json"
 
 def _load_model_registry() -> dict[str, dict[str, Any]]:
     manifest = json.loads(MODEL_BUNDLE_PATH.read_text())
@@ -213,6 +214,15 @@ def _load_drive_reconstruction() -> dict[str, Any]:
     return json.loads(DRIVE_RECONSTRUCTION_PATH.read_text())
 
 DRIVE_RECONSTRUCTION = _load_drive_reconstruction()
+
+
+def _load_candidate_registry() -> dict[str, Any]:
+    if not CANDIDATE_REGISTRY_PATH.exists():
+        return {"registry_version": 1, "sports": {}}
+    return json.loads(CANDIDATE_REGISTRY_PATH.read_text())
+
+
+CANDIDATE_REGISTRY = _load_candidate_registry()
 
 PROMOTION_ECE_MAX = 0.01
 
@@ -365,7 +375,11 @@ def _all_model_gates() -> dict[str, dict[str, Any]]:
     return {sport: _promotion_gate_for(sport) for sport in SPORTS}
 
 def _runtime_mode_for(sport: str) -> str:
-    return "PROMOTED_TRAINED_MODEL" if _promotion_gate_for(sport)["passed"] else "EVIDENCE_GATED_ENSEMBLE_BASELINE_FALLBACK"
+    return (
+        "PROMOTED_TRAINED_MODEL"
+        if _promotion_gate_for(sport)["passed"]
+        else "EVIDENCE_GATED_HYBRID_MARKET_FORM_FALLBACK"
+    )
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": f"PhilthySports/{APP_VERSION}", "Accept": "application/json"})
@@ -1773,6 +1787,7 @@ def ready():
         "sports": list(SPORTS),
         "model_policy": "EVIDENCE_GATED_ENSEMBLE",
         "promoted_sports": [sport for sport, gate in gates.items() if gate["passed"]],
+        "hybrid_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
         "baseline_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
     }
 
@@ -1810,7 +1825,7 @@ def system_status():
         "api_version": APP_VERSION,
         "execution_mode": "MANUAL_REVIEW_ONLY",
         "model_policy": "EVIDENCE_GATED_ENSEMBLE",
-        "runtime_behavior": "promoted trained model when its evidence gate passes; governed baseline fallback otherwise",
+        "runtime_behavior": "promoted trained model when its evidence gate passes; otherwise a governed hybrid fallback uses fresh de-vigged market evidence when available and chronological completed-game form when market probability is unavailable",
         "gates": {
             "chronology": "PASS" if chronology_pass else "BLOCKED_EVIDENCE",
             "calibration": "PASS" if calibration_pass else "BLOCKED_EVIDENCE",
@@ -1855,6 +1870,32 @@ def model_status():
         }
         for sport in SPORTS
     }
+
+@app.get("/api/models/registry", include_in_schema=False)
+@app.get("/api/v1/models/registry", include_in_schema=False)
+@app.get("/v1/models/registry")
+def model_registry():
+    gates = _all_model_gates()
+    return {
+        "registry_version": CANDIDATE_REGISTRY.get("registry_version", 1),
+        "policy": CANDIDATE_REGISTRY.get("policy"),
+        "promoted_sports": [sport for sport, gate in gates.items() if gate["passed"]],
+        "sports": {
+            sport: {
+                **((CANDIDATE_REGISTRY.get("sports") or {}).get(sport) or {}),
+                "promoted_artifact_loaded": PROMOTED_MODELS.get(sport) is not None,
+                "promotion_gate_passed": gates[sport]["passed"],
+                "runtime_mode": _runtime_mode_for(sport),
+                "active_model_id": (
+                    PROMOTED_MODELS[sport].get("model_id")
+                    if PROMOTED_MODELS.get(sport) is not None and gates[sport]["passed"]
+                    else MODEL_REGISTRY[sport].get("model_id")
+                ),
+            }
+            for sport in SPORTS
+        },
+    }
+
 
 @app.get("/api/training/reconstruction", include_in_schema=False)
 @app.get("/api/v1/training/reconstruction", include_in_schema=False)
@@ -2144,10 +2185,49 @@ def search(q: str = "", sport: str | None = None, date: str | None = None, inclu
 @app.get("/api/v1/games/{sport}/{event_id}", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}")
 def game_detail(sport: str, event_id: str, date: str | None = None):
-    result = _search(sport=sport, date=date)
-    game = next((g for g in result["games"] if str(g["event_id"]) == str(event_id)), None)
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+
+    search_dates: list[str] = []
+    if date:
+        try:
+            search_dates = [date_cls.fromisoformat(date).isoformat()]
+        except ValueError:
+            raise HTTPException(400, "date must be YYYY-MM-DD") from None
+    else:
+        start = _pacific_today()
+        search_dates = [
+            (start + timedelta(days=offset)).isoformat()
+            for offset in (0, 1, 2, 3, 4, 5, 6, 7, -1)
+        ]
+
+    game = None
+    resolved_date = None
+    for candidate_date in search_dates:
+        try:
+            result = _search(sport=s, date=candidate_date)
+        except Exception:
+            continue
+        game = next(
+            (
+                g
+                for g in result["games"]
+                if str(g["event_id"]) == str(event_id)
+            ),
+            None,
+        )
+        if game is not None:
+            resolved_date = candidate_date
+            break
+
     if not game:
-        raise HTTPException(404, "game not found in fresh schedule")
+        raise HTTPException(
+            404,
+            "game not found in the requested or nearby fresh schedule dates",
+        )
+    if resolved_date and not game.get("date"):
+        game["date"] = resolved_date
     score, market = game["projected_score"], game["market"]
     predictions = game.get("predictions") or {}
     moneyline_prediction = predictions.get("moneyline") or {}
@@ -2452,9 +2532,19 @@ def _multisport_candidates(
                                     f"{p['player']} {p['recommended_side']} "
                                     f"{p['line']} {p['market']}"
                                 ),
+                                "player": p.get("player"),
+                                "market": p.get("market"),
+                                "side": p.get("recommended_side"),
+                                "line": p.get("line"),
                                 "probability": round(
                                     float(p["market_probability"]), 6
                                 ),
+                                "probability_method": p.get("probability_method"),
+                                "book_count": p.get("book_count"),
+                                "contributing_books": p.get("contributing_books") or [],
+                                "best_available_book": p.get("best_available_book"),
+                                "best_available_price": p.get("best_available_price"),
+                                "as_of": p.get("best_price_last_update") or p.get("last_update"),
                                 "reason": p.get("reason"),
                                 "model_state": p.get("model_state"),
                             })
@@ -2584,7 +2674,7 @@ def _build_multisport_parlay(
         "requested_legs": leg_count,
         "actual_legs": len(selected),
         "selection_profile": profile,
-        "selection_basis": "BEST_AVAILABLE_BY_FRESH_DEVIGGED_PROBABILITY_WITH_DIVERSIFICATION",
+        "selection_basis": "FRESH_VALIDATED_MARKETS_AND_PROPS_WITH_DIVERSIFICATION_AND_NO_SYNTHETIC_LEGS",
         "multisport": len(sports_used) > 1,
         "sports_included": sports_used,
         "target_player_prop_legs": desired_props,
