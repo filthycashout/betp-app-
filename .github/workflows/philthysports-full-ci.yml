@@ -186,7 +186,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk | tee apk-signature.txt
-          ACTUAL="$(grep -m1 'certificate SHA-256 digest:' apk-signature.txt | awk -F': ' '{print $2}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          ACTUAL="$(grep -m1 'certificate SHA-256 digest:' apk-signature.txt | awk -F': ' '{print $NF}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           EXPECTED="97BE4C2028288638C8BE55CE7540164A1995A1F18675964E3D8E733744D89700"
           test "$ACTUAL" = "$EXPECTED"
 
