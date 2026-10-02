@@ -59,6 +59,80 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openMultisportParlay(int legs) async {
+    setState(() {
+      busy = true;
+      err = null;
+    });
+    try {
+      final payload = await api.multisportParlay(legs);
+      if (!mounted) return;
+      final selected = List<dynamic>.from(payload['legs'] ?? []);
+      final reasons = List<dynamic>.from(payload['reasoning'] ?? []);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.88,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  '$legs-leg multisport parlay',
+                  style: Theme.of(sheetContext).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Status: ${payload['status'] ?? 'UNKNOWN'} • '
+                  'Sports: ${List<dynamic>.from(payload['sports_included'] ?? []).join(', ')}',
+                ),
+                const SizedBox(height: 12),
+                for (final leg in selected)
+                  Card(
+                    child: ListTile(
+                      title: Text('${leg['sport']} • ${leg['label']}'),
+                      subtitle: Text(
+                        '${leg['matchup'] ?? ''}\n${leg['reason'] ?? ''}',
+                      ),
+                    ),
+                  ),
+                if (selected.length < legs)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        'The backend did not fabricate missing legs. A fresh eligible '
+                        'probability or mapped player-prop market is required for every leg.',
+                      ),
+                    ),
+                  ),
+                const Divider(),
+                Text(
+                  'Why these legs',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                for (final reason in reasons)
+                  ListTile(
+                    leading: const Icon(Icons.insights_outlined),
+                    title: Text('$reason'),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'Dependency: ${payload['dependency_method'] ?? 'unscored'}',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => err = '$e');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext c) {
     final groups = <String, List<GameSummary>>{};
@@ -108,6 +182,38 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Multisport parlays',
+                      style: Theme.of(c).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Build fresh 7, 10, or 14-leg cards across NFL, NBA, MLB, and NHL. '
+                      'Player props are included when mapped live prop markets are available.',
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final legs in const [7, 10, 14])
+                          FilledButton.tonal(
+                            onPressed: busy ? null : () => _openMultisportParlay(legs),
+                            child: Text('$legs legs'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             if (busy) const LinearProgressIndicator(),
             if (err != null)
               Card(
@@ -129,7 +235,10 @@ class _HomeScreenState extends State<HomeScreen> {
             for (final sport in const ['NFL', 'NBA', 'MLB', 'NHL']) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 6),
-                child: Text(sport, style: Theme.of(c).textTheme.headlineSmall),
+                child: Text(
+                  "$sport today's games",
+                  style: Theme.of(c).textTheme.headlineSmall,
+                ),
               ),
               if ((groups[sport] ?? []).isEmpty)
                 const Text('No matching scheduled games.'),
