@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import app as backend
+from keyless_sportsbook import draftkings_game_events, draftkings_prop_events
 
 
 def main() -> None:
