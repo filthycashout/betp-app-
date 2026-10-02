@@ -427,7 +427,7 @@ def _fetch_prop_subcategory(sport: str, row: dict[str, str]) -> list[dict[str, A
     return results
 
 
-def draftkings_prop_events(
+def _draftkings_prop_events_uncached(
     sport: str,
     requested_markets: list[str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -478,6 +478,20 @@ def draftkings_prop_events(
             "outcomes": row["outcomes"],
         })
     return list(grouped.values())
+
+
+def draftkings_prop_events(
+    sport: str,
+    requested_markets: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    s = sport.upper()
+    wanted = sorted(set(requested_markets or []))
+    key = f"props:{s}:{','.join(wanted)}"
+    return _cached(
+        key,
+        30,
+        lambda: _draftkings_prop_events_uncached(s, wanted),
+    )
 
 
 def keyless_sportsbook_status() -> dict[str, Any]:
