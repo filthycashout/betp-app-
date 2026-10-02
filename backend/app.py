@@ -2938,7 +2938,11 @@ def _multisport_candidates(
                 except Exception:
                     pass
 
-        if len(candidates) >= target_count:
+        candidate_sports = {str(x.get("sport") or "") for x in candidates}
+        if (
+            len(candidates) >= target_count
+            and set(SPORTS).issubset(candidate_sports)
+        ):
             break
 
     candidates.sort(
