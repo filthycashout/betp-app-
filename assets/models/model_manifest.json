@@ -1,0 +1,11 @@
+{
+  "bundle_version": "8.0.0",
+  "production_on_device_ready": false,
+  "reason": "No promoted portable four-sport production weights are present in the verified source evidence. Legacy joblibs remain quarantined in the unified source package and are not executed by Flutter.",
+  "required_for_activation": [
+    "portable model artifacts for NFL/NBA/MLB/NHL",
+    "feature schema per model",
+    "conversion/runtime contract for logistic/XGBoost/LightGBM",
+    "hash-signed update manifest"
+  ]
+}
