@@ -189,5 +189,5 @@ jobs:
         with:
           name: PhilthySports-1.4.1-android
           path: |
-            PhilthySports-1.4.0.apk
-            PhilthySports-1.4.0.apk.sha256
+            PhilthySports-1.4.1.apk
+            PhilthySports-1.4.1.apk.sha256
