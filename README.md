@@ -13,6 +13,22 @@ Version **1.5.0+17** preserves package ID `com.philthysports.philthysports` and 
 
 Backend: https://philthysports-powerhouse-v8.onrender.com
 
+
+## Keyless live-data gateway
+
+PhilthyParleys proxies league live data through its own backend so the Android APK does not need league API keys for schedules, scores, box scores or play-by-play.
+
+| Sport | Keyless upstream | Local PhilthyParleys routes |
+| --- | --- | --- |
+| NFL | ESPN Site API | `GET /v1/live/NFL/scoreboard`, `GET /v1/live/NFL/game/{event_id}` |
+| NBA | NBA CDN LiveData, ESPN fallback | `GET /v1/live/NBA/scoreboard`, `GET /v1/live/NBA/game/{event_id}` |
+| MLB | MLB StatsAPI | `GET /v1/live/MLB/scoreboard`, `GET /v1/live/MLB/game/{game_pk}` |
+| NHL | NHL Web API | `GET /v1/live/NHL/scoreboard`, `GET /v1/live/NHL/game/{game_id}` |
+
+`GET /v1/live/sources` exposes the active source contract and reports that these live league feeds do not require credentials. GitHub-backed reference implementations used during integration include `sportsdataverse/sportsdataverse-js`, `swar/nba_api`, `toddrob99/MLB-StatsAPI`, `coreyjs/nhl-api-py`, and `Zmalski/NHL-API-Reference`.
+
+These routes replace credentials for league live data only. Sportsbook moneylines, spreads, totals and player-prop quotes remain a separate provider contract and are not presented as keyless unless a verifiable keyless source exists.
+
 ## Validation
 
 ```sh
