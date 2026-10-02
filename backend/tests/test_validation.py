@@ -32,7 +32,11 @@ def test_props_require_same_book_pair():
     assert all(p['recommended_side'] is None for p in result['props'])
     paired=parse_props(prop_response([book([('Over',-120),('Under',100)])]),'MLB',['batter_hits'],NOW)['props'][0]
     assert paired['recommended_side']=='OVER'
-    assert paired['market_probability']==pytest.approx((120/220)/((120/220)+.5))\n    assert paired['contributing_books']==['book_a']\n    assert paired['best_available_book']=='book_a'\n    assert paired['best_available_price']==-120\n    assert paired['best_price_last_update']==NOW.isoformat()
+    assert paired['market_probability']==pytest.approx((120/220)/((120/220)+.5))
+    assert paired['contributing_books']==['book_a']
+    assert paired['best_available_book']=='book_a'
+    assert paired['best_available_price']==-120
+    assert paired['best_price_last_update']==NOW.isoformat()
 
 
 @pytest.mark.parametrize('updated', [None, NOW-timedelta(minutes=6), NOW+timedelta(minutes=1)])
