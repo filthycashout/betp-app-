@@ -1520,6 +1520,30 @@ def _matches_search_query(q: str, game: dict[str, Any], sport: str, d: date_cls)
     return bool((whole and whole in haystack) or (tokens and all(token in haystack for token in tokens)))
 
 
+def _match_live_game(game: dict[str, Any], live_payload: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = live_payload.get("games") or []
+    event_id = str(game.get("event_id") or "")
+    exact = next(
+        (
+            row
+            for row in candidates
+            if str(row.get("event_id") or "") == event_id and event_id
+        ),
+        None,
+    )
+    if exact is not None:
+        return exact
+    return next(
+        (
+            row
+            for row in candidates
+            if _same_team(game.get("home"), row.get("home"))
+            and _same_team(game.get("away"), row.get("away"))
+        ),
+        None,
+    )
+
+
 def _search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3) -> dict:
     d = date_cls.fromisoformat(date) if date else _pacific_today()
     selected = [sport.upper()] if sport else list(SPORTS)
@@ -1532,6 +1556,10 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
         schedules = {s: pool.submit(_schedule, s, d) for s in selected}
         odds = {s: pool.submit(_odds, s, d) for s in selected}
         injuries = {s: pool.submit(_espn_injury_feed, s) for s in selected}
+        live_boards = {
+            s: pool.submit(_keyless_live_scoreboard, s, d)
+            for s in selected
+        }
         forms = {
             s: pool.submit(
                 _timed,
@@ -1561,9 +1589,19 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 form_snapshot = forms[s].result()
             except Exception:
                 form_snapshot = {"teams": {}}
+            try:
+                live_payload = live_boards[s].result()
+            except Exception:
+                live_payload = {
+                    "sport": s,
+                    "provider": None,
+                    "credential_required": False,
+                    "games": [],
+                }
             for game in sched:
                 if not _matches_search_query(q, game, s, d):
                     continue
+                live_row = _match_live_game(game, live_payload)
                 oe = _match_odds(game, odd_events)
                 market = _market(oe)
                 market_score = _score(market)
@@ -1639,6 +1677,29 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     "timezone": "America/Los_Angeles",
                     "matchup": f"{game.get('away')} @ {game.get('home')}",
                     "odds_event_id": oe.get("id") if oe else None,
+                    "live": (
+                        {
+                            "provider": live_payload.get("provider"),
+                            "status": live_row.get("status"),
+                            "state": live_row.get("state"),
+                            "completed": live_row.get("completed"),
+                            "period": live_row.get("period"),
+                            "clock": live_row.get("clock"),
+                            "home_score": live_row.get("home_score"),
+                            "away_score": live_row.get("away_score"),
+                        }
+                        if live_row is not None
+                        else {
+                            "provider": live_payload.get("provider"),
+                            "status": game.get("status"),
+                            "state": None,
+                            "completed": None,
+                            "period": None,
+                            "clock": None,
+                            "home_score": None,
+                            "away_score": None,
+                        }
+                    ),
                     "market": market,
                     "projected_score": score,
                     "predictions": predictions,
