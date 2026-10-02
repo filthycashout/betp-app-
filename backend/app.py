@@ -766,14 +766,20 @@ def _form_team(snapshot: dict[str, Any], team_name: str | None) -> dict[str, Any
     return None
 
 
-def _recent_form_prediction(sport: str, game: dict[str, Any], d: date_cls) -> dict[str, Any] | None:
-    try:
-        snapshot = _timed(
-            f"{sport}.recent_form",
-            lambda: _espn_recent_form_snapshot(sport, d),
-        )
-    except Exception:
-        snapshot = {"teams": {}}
+def _recent_form_prediction(
+    sport: str,
+    game: dict[str, Any],
+    d: date_cls,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if snapshot is None:
+        try:
+            snapshot = _timed(
+                f"{sport}.recent_form",
+                lambda: _espn_recent_form_snapshot(sport, d),
+            )
+        except Exception:
+            snapshot = {"teams": {}}
 
     home = _form_team(snapshot, game.get("home"))
     away = _form_team(snapshot, game.get("away"))
@@ -1318,6 +1324,14 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
         schedules = {s: pool.submit(_schedule, s, d) for s in selected}
         odds = {s: pool.submit(_odds, s, d) for s in selected}
         injuries = {s: pool.submit(_espn_injury_feed, s) for s in selected}
+        forms = {
+            s: pool.submit(
+                _timed,
+                f"{s}.recent_form",
+                lambda sport=s: _espn_recent_form_snapshot(sport, d),
+            )
+            for s in selected
+        }
         for s in selected:
             try:
                 sched = schedules[s].result()
@@ -1335,19 +1349,33 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     "source": "ESPN league injury feed",
                     "error": f"{type(exc).__name__}: {exc}",
                 }
+            try:
+                form_snapshot = forms[s].result()
+            except Exception:
+                form_snapshot = {"teams": {}}
             for game in sched:
                 if qn and qn not in _norm(game.get("home")) and qn not in _norm(game.get("away")) and qn not in _norm(s):
                     continue
                 oe = _match_odds(game, odd_events)
                 market = _market(oe)
-                score = _score(market)
+                market_score = _score(market)
                 market_hp = market.get("home_probability")
+                form = _recent_form_prediction(s, game, d, form_snapshot)
+
                 hp = market_hp
-                probability_source = "fresh_de_vigged_consensus_moneyline"
+                score = market_score
+                probability_source = (
+                    "fresh_de_vigged_consensus_moneyline"
+                    if market_hp is not None
+                    else "unavailable"
+                )
                 prediction_reasoning = (
                     "Fresh pregame market baseline is active because no signed trained "
                     "artifact has passed every v8 promotion and runtime-security gate."
+                    if market_hp is not None
+                    else "Fresh pregame moneyline probability is unavailable."
                 )
+
                 promoted = PROMOTED_MODELS.get(s)
                 gate = _promotion_gate_for(s)
                 if promoted is not None and gate["passed"] and market_hp is not None:
@@ -1374,6 +1402,28 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                             "Promoted model inference failed safely, so this event uses "
                             f"the fresh governed market baseline ({type(exc).__name__})."
                         )
+
+                if form is not None:
+                    form_score = form.get("projected_score") or {}
+                    if score.get("home") is None and form_score.get("home") is not None:
+                        score = form_score
+                    if hp is None and form.get("home_win_probability") is not None:
+                        hp = float(form["home_win_probability"])
+                        probability_source = str(form.get("source") or "keyless_recent_form_heuristic")
+                        prediction_reasoning = str(
+                            form.get("note")
+                            or "A keyless chronological recent-form fallback generated this projection."
+                        )
+
+                predictions = _prediction_bundle(
+                    game,
+                    market,
+                    score,
+                    hp,
+                    probability_source,
+                    prediction_reasoning,
+                    form,
+                )
                 item = {
                     **game,
                     "date": d.isoformat(),
@@ -1383,10 +1433,11 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     "odds_event_id": oe.get("id") if oe else None,
                     "market": market,
                     "projected_score": score,
+                    "predictions": predictions,
                     "home_win_probability": hp,
                     "probability_source": probability_source,
                     "prediction_reasoning": prediction_reasoning,
-                    "pick": (game.get("home") if hp >= .5 else game.get("away")) if hp is not None else None,
+                    "pick": predictions["moneyline"]["pick"],
                     "model_status": _runtime_mode_for(s),
                     "model_metadata": {
                         **MODEL_REGISTRY[s],
