@@ -196,3 +196,52 @@ def test_training_export_retains_oof_and_rejects_insufficient_samples(tmp_path):
     assert not report['strict_checks']['minimum_total_rows']
     assert Path(report['oof_file']).exists() and report['oof_rows']>=100
     assert report['mobile_parity_max_abs_error']<=1e-10
+
+
+def test_game_market_accepts_fresh_fetch_observed_at_without_claiming_provider_timestamp():
+    from market_validation import parse_game_market
+    raw = {
+        'commence_time': (NOW + timedelta(hours=2)).isoformat(),
+        'home_team': 'Home',
+        'away_team': 'Away',
+        'bookmakers': [{
+            'key': 'draftkings',
+            'observed_at': NOW.isoformat(),
+            'markets': [{
+                'key': 'h2h',
+                'outcomes': [
+                    {'name': 'Home', 'price': -120},
+                    {'name': 'Away', 'price': 100},
+                ],
+            }],
+        }],
+    }
+    market = parse_game_market(raw, NOW)
+    assert market['home_probability'] is not None
+    assert market['freshness_verified'] is True
+    assert market['provider_timestamp_verified'] is False
+    assert market['observed_at_verified'] is True
+    assert market['freshness_basis'] == ['fresh_fetch_observed_at']
+
+
+def test_game_market_rejects_stale_observed_at():
+    from market_validation import parse_game_market
+    raw = {
+        'commence_time': (NOW + timedelta(hours=2)).isoformat(),
+        'home_team': 'Home',
+        'away_team': 'Away',
+        'bookmakers': [{
+            'key': 'draftkings',
+            'observed_at': (NOW - timedelta(minutes=6)).isoformat(),
+            'markets': [{
+                'key': 'h2h',
+                'outcomes': [
+                    {'name': 'Home', 'price': -120},
+                    {'name': 'Away', 'price': 100},
+                ],
+            }],
+        }],
+    }
+    market = parse_game_market(raw, NOW)
+    assert market['home_probability'] is None
+    assert market['freshness_verified'] is False
