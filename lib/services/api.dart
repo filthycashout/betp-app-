@@ -212,6 +212,7 @@ class PhilthyApi {
   }) {
     final params = {
       'odds_event_id': g.oddsEventId ?? '',
+      'date': g.date,
       if (markets != null && markets.isNotEmpty) 'markets': markets.join(','),
     };
     final uri = Uri(
