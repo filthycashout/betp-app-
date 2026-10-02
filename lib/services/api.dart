@@ -146,7 +146,7 @@ class PhilthyApi {
   }
 
   Future<List<GameSummary>> today() async {
-    final j = await _get('/v1/today?include_props=true&props_limit=3&days=2');
+    final j = await _get('/v1/today?include_props=true&props_limit=3&days=1');
     return (j['games'] as List? ?? [])
         .map((x) => GameSummary.fromJson(Map<String, dynamic>.from(x)))
         .toList();
