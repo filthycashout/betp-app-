@@ -18,6 +18,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
   Map<String, dynamic> health = const {};
   Map<String, dynamic> system = const {};
   Map<String, dynamic> models = const {};
+  Map<String, dynamic> props = const {};
 
   @override
   void initState() {
@@ -35,12 +36,14 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
         api.health(),
         api.systemStatus(),
         api.modelStatus(),
+        api.propCapabilities(),
       ]);
       if (!mounted) return;
       setState(() {
         health = results[0];
         system = results[1];
         models = results[2];
+        props = results[3];
       });
     } catch (e) {
       if (mounted) setState(() => error = '$e');
@@ -101,9 +104,10 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(12),
                   child: Text(
-                    'A launchable client is not the same as a production-cleared system. '
-                    'This screen reads backend health, production-gate status, and model '
-                    'governance so open gates remain visible.',
+                    'PhilthySports keeps an always-available four-sport market baseline. '
+                    'A trained model may replace that baseline only after chronological '
+                    'calibration and promotion checks pass. Player-prop contracts are '
+                    'listed separately for NFL, NBA, MLB, and NHL.',
                   ),
                 ),
               ),
@@ -119,6 +123,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                 _card('Backend health', health),
                 _card('Production gates', system),
                 _card('Model governance', models),
+                _card('Player prop capabilities', props),
               ],
             ],
           ),
