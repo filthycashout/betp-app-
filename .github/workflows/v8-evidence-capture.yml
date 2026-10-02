@@ -1,6 +1,11 @@
 name: PhilthySports v8 Evidence Capture
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/training/evidence_pipeline.py"
+      - ".github/workflows/v8-evidence-capture.yml"
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
