@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-MIN_PAIR_SAMPLES = 100
+MIN_PAIR_SAMPLES = 200
 
 
 def phi(a: int, b: int, c: int, d: int) -> float | None:
