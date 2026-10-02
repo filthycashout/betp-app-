@@ -17,6 +17,11 @@ void main() {
     expect(find.text('7-leg best picks + props'), findsOneWidget);
     expect(find.text('10-leg best picks + props'), findsOneWidget);
     expect(find.text('14-leg best picks + props'), findsOneWidget);
+    expect(find.text("NFL today's games"), findsOneWidget);
+    expect(find.text("NBA today's games"), findsOneWidget);
+    expect(find.text("MLB today's games"), findsOneWidget);
+    expect(find.text("NHL today's games"), findsOneWidget);
+
 
     final healthResult = await tester.runAsync(() => PhilthyApi().health());
     expect(healthResult, isNotNull);
@@ -28,6 +33,16 @@ void main() {
     expect(modelResult, isNotNull);
     final models = modelResult!;
     expect(models.keys.toSet(), {'NFL', 'NBA', 'MLB', 'NHL'});
+
+    final liveSourcesResult =
+        await tester.runAsync(() => PhilthyApi().liveSources());
+    expect(liveSourcesResult, isNotNull);
+    final liveSources = liveSourcesResult!;
+    expect(liveSources['credential_required'], isFalse);
+    expect(
+      Map<String, dynamic>.from(liveSources['sports'] as Map).keys.toSet(),
+      {'NFL', 'NBA', 'MLB', 'NHL'},
+    );
 
     final propsResult =
         await tester.runAsync(() => PhilthyApi().propCapabilities());
