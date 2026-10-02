@@ -38,7 +38,7 @@ jobs:
       - name: Test
         run: flutter test
       - name: Build installable release APK
-        run: flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=https://philthysports-api-v9.onrender.com
+        run: flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=https://philthysports-powerhouse-v8.onrender.com
       - name: Verify APK exists
         run: test -s build/app/outputs/flutter-apk/app-release.apk
       - name: Verify Android APK signature
@@ -50,7 +50,7 @@ jobs:
         run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee build/app/outputs/flutter-apk/app-release.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-v9-live-backend-android
+          name: PhilthySports-1.4.0-live-powerhouse-android
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/flutter-apk/app-release.apk.sha256
