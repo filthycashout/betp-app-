@@ -1,12 +1,12 @@
 # PhilthyParleys
 
 PhilthyParleys is the renamed PhilthySports Android client for NFL, NBA, MLB and NHL.
-Version **1.5.1+18** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
+Version **1.5.2+19** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
 
-- Search matchups, review available moneyline/spread/total markets and player props, and build 7/10/14-leg manual-review parlay cards when sufficient eligible markets exist.
+- Search team, matchup, date or sport; view today's NFL/NBA/MLB/NHL games plus verified next scheduled games for idle leagues; review available moneyline/spread/total markets and player props; and build 7/10/14-leg manual-review multisport parlay cards when sufficient eligible markets exist.
 - The client validates a candidate HTTPS backend before saving it, checks service identity, and retries temporary gateway/network failures with a finite budget.
-- Provider credentials are server-side only. Live props require legitimately reissued credentials and provider-side revocation evidence. Setting a flag or receiving HTTP 200 from `/health` does not establish live provider validation.
-- Prop quotes must be timestamped and recent. Recommendations require complementary prices from the same bookmaker and line. Unpaired outcomes show raw implied prices without a recommendation.
+- The primary multi-book odds provider remains server-side and requires legitimately reissued credentials for that provider. The backend also has a no-key, read-only public sportsbook fallback that is live-canary tested for NFL, NBA, MLB and NHL game markets and player props; it fails closed when an event, timestamp or market cannot be validated.
+- Prop quotes must be timestamped and recent. Provider timestamps and local fresh-fetch observation timestamps are kept distinct. Recommendations require complementary prices from the same bookmaker and line. Unpaired outcomes show raw implied prices without a recommendation.
 - Game markets retain actual offered lines. Unknown provider quote age is not re-stamped as current, and ambiguous doubleheader mappings are rejected.
 - Training retains prior settled labels, records result availability, verifies capture hashes and excludes unavailable results from chronological folds and holdout training.
 - No trained model replaces the market baseline until strict per-sport evaluation and signature checks pass. A baseline needs usable current market data; it does not guarantee prices exist for every game.
@@ -51,3 +51,10 @@ flutter test integration_test/app_test.dart -d YOUR_ADB_SERIAL
 The first command preserves app data, verifies installation/process survival and collects a screenshot/log/report. The integration test additionally exercises UI presence and public health/model/prop contracts. Manual acceptance must still cover Settings save/failure recovery, all sports, selected-game props, 7/10/14-leg cards, offline recovery, and an update from the previous installed release. Never uninstall to bypass a signing mismatch.
 
 Production readiness remains unproven: exposed legacy credential revocation, broad Drive permission removal, fresh live provider canaries, sufficient governed sport datasets, promoted models, physical-device acceptance, operational alerting/retention and rollback evidence are still required.
+
+
+## Keyless sportsbook fallback
+
+When the primary odds credential is unavailable or not rotation-confirmed, the backend attempts read-only public sportsbook feeds and validates them by team identity, start time, pregame state and freshness. The release live canary verifies current/upcoming NFL, NBA, MLB and NHL game markets plus mapped player-prop coverage. Empty, blocked, stale, ambiguous or unmatched responses are rejected rather than converted into synthetic lines.
+
+The 7/10/14-leg multisport builder scans its full horizon before stopping for candidate count, represents every sport that has an eligible candidate in that horizon, deliberately reserves room for player props, preserves the actual sportsbook evidence on prop legs, and never invents a joint hit probability without a validated dependence model.
