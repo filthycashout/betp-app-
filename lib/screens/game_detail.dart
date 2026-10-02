@@ -228,7 +228,19 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                   '${p['player']} ${p['recommended_side'] ?? ''} '
                   '${p['line'] ?? ''} ${_friendlyMarket(p['market'])}',
                 ),
-                subtitle: Text('${p['reason'] ?? ''}'),
+                subtitle: Text(
+                  [
+                    if (p['market_probability'] is num)
+                      'Probability: ${((p['market_probability'] as num) * 100).toStringAsFixed(1)}%',
+                    if (p['best_available_book'] != null)
+                      'Book: ${p['best_available_book']}',
+                    if (p['best_available_price'] != null)
+                      'Price: ${p['best_available_price']}',
+                    if ((p['best_price_last_update'] ?? p['last_update']) != null)
+                      'As-of: ${p['best_price_last_update'] ?? p['last_update']}',
+                    '${p['reason'] ?? ''}',
+                  ].where((x) => x.trim().isNotEmpty).join('\n'),
+                ),
               ),
             ),
             const Divider(),
