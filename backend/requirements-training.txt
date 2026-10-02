@@ -1,0 +1,6 @@
+pandas>=2.2
+numpy>=2.0
+scikit-learn>=1.5
+joblib>=1.4
+pyarrow>=17.0
+cryptography>=43.0
