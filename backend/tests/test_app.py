@@ -6,7 +6,7 @@ client = TestClient(runtime.app)
 def test_health_and_compatibility_aliases():
     for path in ['/', '/health', '/v1/health', '/api/health']:
         assert client.get(path).status_code == 200
-    assert client.get('/health').json()['version'] == '1.4.5'
+    assert client.get('/health').json()['version'] == '1.4.6'
 
 def test_four_sport_model_baseline():
     data = client.get('/v1/models/status').json()
@@ -75,3 +75,38 @@ def test_unrotated_key_never_falls_through_to_live_props(monkeypatch):
     payload = response.json()
     assert payload['status'] == 'CONTRACT_READY_LIVE_KEY_REQUIRED'
     assert payload['props'] == []
+
+
+def test_generated_prediction_bundle_without_moneyline():
+    game = {'home': 'Test Home', 'away': 'Test Away'}
+    market = {
+        'home_probability': None,
+        'away_probability': None,
+        'home_spread': -2.5,
+        'away_spread': 2.5,
+        'spread_pick': None,
+        'spread_pick_probability': None,
+        'total': 44.5,
+        'total_pick': None,
+        'total_pick_probability': None,
+    }
+    score = {'home': 24.0, 'away': 20.0, 'method': 'recent_completed_games_scoring_blend'}
+    form = {
+        'source': 'keyless_recent_form_heuristic',
+        'calibrated': False,
+        'home_win_probability': 0.62,
+        'projected_score': score,
+    }
+    generated = runtime._prediction_bundle(
+        game,
+        market,
+        score,
+        0.62,
+        'keyless_recent_form_heuristic',
+        'chronological recent-form fallback',
+        form,
+    )
+    assert generated['generated'] is True
+    assert generated['moneyline']['pick'] == 'Test Home'
+    assert generated['spread']['pick'] == 'Test Home'
+    assert generated['total']['pick'] == 'UNDER'
