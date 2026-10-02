@@ -501,17 +501,312 @@ def draftkings_prop_events(
     )
 
 
+
+_BOVADA_PATHS = {
+    "MLB": "baseball/mlb",
+    "NBA": "basketball/nba",
+    "NFL": "football/nfl",
+    "NHL": "hockey/nhl",
+}
+_BOVADA_BASE = (
+    "https://www.bovada.lv/services/sports/event/coupon/events/A/description/"
+    "{path}?lang=en"
+)
+
+
+def _bovada_raw(sport: str) -> list[dict[str, Any]]:
+    s = sport.upper()
+    path = _BOVADA_PATHS.get(s)
+    if not path:
+        return []
+
+    def fetch():
+        response = cffi_requests.get(
+            _BOVADA_BASE.format(path=path),
+            impersonate="chrome120",
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, list) or not data:
+            return []
+        events = data[0].get("events") or []
+        return [row for row in events if isinstance(row, dict)]
+
+    return _cached(f"bovada:{s}", 20, fetch)
+
+
+def _bovada_time(value: Any) -> str | None:
+    try:
+        return datetime.fromtimestamp(
+            float(value) / 1000.0,
+            tz=timezone.utc,
+        ).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _bovada_teams(event: dict[str, Any]) -> tuple[str, str] | None:
+    home = away = None
+    for competitor in event.get("competitors") or []:
+        if not isinstance(competitor, dict):
+            continue
+        name = str(competitor.get("name") or "").strip()
+        if not name:
+            continue
+        if competitor.get("home") is True:
+            home = name
+        else:
+            away = name
+    return (away, home) if away and home else None
+
+
+def _bovada_markets(
+    event: dict[str, Any],
+    description: str,
+) -> list[dict[str, Any]]:
+    rows = []
+    for group in event.get("displayGroups") or []:
+        if not isinstance(group, dict):
+            continue
+        for market in group.get("markets") or []:
+            if (
+                isinstance(market, dict)
+                and market.get("status") == "O"
+                and str(market.get("description") or "") == description
+            ):
+                rows.append(market)
+    return rows
+
+
+def _bovada_price(outcome: dict[str, Any]) -> tuple[int | None, float | None]:
+    price = outcome.get("price") if isinstance(outcome.get("price"), dict) else {}
+    american = _parse_price(price.get("american"))
+    try:
+        line = (
+            float(price.get("handicap"))
+            if price.get("handicap") is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        line = None
+    return american, line
+
+
+def bovada_game_events(sport: str) -> list[dict[str, Any]]:
+    s = sport.upper()
+    if s not in _BOVADA_PATHS:
+        return []
+    observed = datetime.now(timezone.utc).isoformat()
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for event in _bovada_raw(s):
+        if event.get("live") is True:
+            continue
+        teams = _bovada_teams(event)
+        if not teams:
+            continue
+        away, home = teams
+        event_id = str(event.get("id") or "")
+        commence = _bovada_time(event.get("startTime"))
+        if not event_id or not commence:
+            continue
+
+        market_specs = [
+            ("Moneyline", "h2h"),
+            ("Runline" if s == "MLB" else "Point Spread", "spreads"),
+            ("Total", "totals"),
+        ]
+        normalized_markets: list[dict[str, Any]] = []
+        for description, key in market_specs:
+            for market in _bovada_markets(event, description):
+                outcomes = []
+                for outcome in market.get("outcomes") or []:
+                    if not isinstance(outcome, dict) or outcome.get("status") != "O":
+                        continue
+                    price, line = _bovada_price(outcome)
+                    if price is None:
+                        continue
+                    label = str(outcome.get("description") or "").strip()
+                    if key == "h2h":
+                        if label not in {home, away}:
+                            continue
+                        outcomes.append({"name": label, "price": price})
+                    elif key == "spreads":
+                        if label not in {home, away} or line is None:
+                            continue
+                        outcomes.append({"name": label, "price": price, "point": line})
+                    else:
+                        lower = label.lower()
+                        if " - " in label:
+                            continue
+                        if lower == "over":
+                            side = "Over"
+                        elif lower == "under":
+                            side = "Under"
+                        else:
+                            continue
+                        if line is None:
+                            continue
+                        outcomes.append({"name": side, "price": price, "point": line})
+                if len(outcomes) >= 2:
+                    normalized_markets.append({
+                        "key": key,
+                        "observed_at": observed,
+                        "outcomes": outcomes,
+                    })
+
+        if normalized_markets:
+            grouped[event_id] = {
+                "id": event_id,
+                "home_team": home,
+                "away_team": away,
+                "commence_time": commence,
+                "bookmakers": [{
+                    "key": "bovada",
+                    "title": "Bovada",
+                    "observed_at": observed,
+                    "markets": normalized_markets,
+                }],
+                "market_source": "BOVADA_KEYLESS_PUBLIC",
+                "data_quality": "PREGAME_FETCH_OBSERVED",
+            }
+    return list(grouped.values())
+
+
+def bovada_prop_events(
+    sport: str,
+    requested_markets: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    s = sport.upper()
+    wanted = set(requested_markets or [])
+    observed = datetime.now(timezone.utc).isoformat()
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for event in _bovada_raw(s):
+        if event.get("live") is True:
+            continue
+        teams = _bovada_teams(event)
+        if not teams:
+            continue
+        away, home = teams
+        event_id = str(event.get("id") or "")
+        commence = _bovada_time(event.get("startTime"))
+        if not event_id or not commence:
+            continue
+
+        normalized_markets: list[dict[str, Any]] = []
+        for group in event.get("displayGroups") or []:
+            if not isinstance(group, dict):
+                continue
+            group_name = str(group.get("description") or "")
+            if group_name == "Game Lines":
+                continue
+            for market in group.get("markets") or []:
+                if not isinstance(market, dict) or market.get("status") != "O":
+                    continue
+                description = str(market.get("description") or "").strip()
+                base_name, player = description, description
+                if " - " in description:
+                    base_name, player = description.split(" - ", 1)
+                    base_name = base_name.strip()
+                    player = player.strip()
+                market_key = _prop_key(s, group_name, base_name)
+                if not market_key or (wanted and market_key not in wanted):
+                    continue
+
+                outcomes = []
+                for outcome in market.get("outcomes") or []:
+                    if not isinstance(outcome, dict) or outcome.get("status") != "O":
+                        continue
+                    price, line = _bovada_price(outcome)
+                    if price is None:
+                        continue
+                    label = str(outcome.get("description") or "").lower()
+                    if "over" in label:
+                        side = "Over"
+                    elif "under" in label:
+                        side = "Under"
+                    else:
+                        continue
+                    if line is None:
+                        continue
+                    outcomes.append({
+                        "name": side,
+                        "description": player,
+                        "point": line,
+                        "price": price,
+                    })
+
+                if outcomes:
+                    normalized_markets.append({
+                        "key": market_key,
+                        "observed_at": observed,
+                        "outcomes": outcomes,
+                    })
+
+        if normalized_markets:
+            grouped[event_id] = {
+                "id": event_id,
+                "home_team": home,
+                "away_team": away,
+                "commence_time": commence,
+                "bookmakers": [{
+                    "key": "bovada",
+                    "title": "Bovada",
+                    "observed_at": observed,
+                    "markets": normalized_markets,
+                }],
+                "market_source": "BOVADA_KEYLESS_PUBLIC",
+                "data_quality": "PREGAME_FETCH_OBSERVED",
+            }
+    return list(grouped.values())
+
+
+def keyless_game_events(sport: str) -> list[dict[str, Any]]:
+    rows = []
+    try:
+        rows.extend(bovada_game_events(sport))
+    except Exception:
+        pass
+    try:
+        rows.extend(draftkings_game_events(sport))
+    except Exception:
+        pass
+    return rows
+
+
+def keyless_prop_events(
+    sport: str,
+    requested_markets: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    rows = []
+    try:
+        rows.extend(bovada_prop_events(sport, requested_markets))
+    except Exception:
+        pass
+    try:
+        rows.extend(draftkings_prop_events(sport, requested_markets))
+    except Exception:
+        pass
+    return rows
+
+
 def keyless_sportsbook_status() -> dict[str, Any]:
     return {
-        "provider": "DraftKings direct public web API",
+        "providers": [
+            "Bovada public coupon API",
+            "DraftKings public sportscontent API",
+        ],
         "credential_required": False,
         "sports": sorted(_LEAGUE_IDS),
         "game_markets": ["h2h", "spreads", "totals"],
         "props": True,
         "freshness_basis": "fresh_fetch_observed_at",
         "note": (
-            "This fallback uses read-only public sportsbook responses and never embeds "
-            "a user credential. Provider timestamps remain distinguished from local "
-            "fetch-observation timestamps."
+            "Read-only public sportsbook responses are attempted without user "
+            "credentials. Runtime matching fails closed if a provider is empty, "
+            "blocked, ambiguous, stale, live, or does not match the schedule event."
         ),
     }
