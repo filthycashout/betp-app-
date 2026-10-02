@@ -19,6 +19,7 @@ TRUSTED_REF = "refs/heads/main"
 TRUSTED_WORKFLOWS = {
     "filthycashout/betp-app-/.github/workflows/build-apk.yml@refs/heads/main",
     "filthycashout/betp-app-/.github/workflows/philthysports-full-ci.yml@refs/heads/main",
+    "filthycashout/betp-app-/.github/workflows/v8-train-promote.yml@refs/heads/main",
 }
 P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16
