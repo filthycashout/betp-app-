@@ -18,6 +18,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
   Map<String, dynamic> health = const {};
   Map<String, dynamic> system = const {};
   Map<String, dynamic> models = const {};
+  Map<String, dynamic> registry = const {};
   Map<String, dynamic> props = const {};
 
   @override
@@ -36,6 +37,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
         api.health(),
         api.systemStatus(),
         api.modelStatus(),
+        api.modelRegistry(),
         api.propCapabilities(),
       ]);
       if (!mounted) return;
@@ -43,7 +45,8 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
         health = results[0];
         system = results[1];
         models = results[2];
-        props = results[3];
+        registry = results[3];
+        props = results[4];
       });
     } catch (e) {
       if (mounted) setState(() => error = '$e');
@@ -104,10 +107,12 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(12),
                   child: Text(
-                    'PhilthyParleys uses a market baseline for NFL, NBA, MLB and NHL when current prices are available. '
-                    'A trained model may replace that baseline only after chronological '
-                    'calibration and promotion checks pass. Player-prop contracts are '
-                    'listed separately for NFL, NBA, MLB, and NHL.',
+                    'PhilthyParleys is not limited to a market-only baseline. When no signed '
+                    'trained model has passed every v8 gate, the governed hybrid runtime uses '
+                    'fresh de-vigged market evidence when available and chronological completed-game '
+                    'form when a usable market probability is absent. A trained model becomes active '
+                    'only after chronology, OOF calibration, leakage, metric, schema, checksum, signature, '
+                    'sample-sufficiency and mobile-parity checks pass.',
                   ),
                 ),
               ),
@@ -123,6 +128,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                 _card('Backend health', health),
                 _card('Production gates', system),
                 _card('Model governance', models),
+                _card('Candidate & promoted model registry', registry),
                 _card('Player prop capabilities', props),
               ],
             ],
