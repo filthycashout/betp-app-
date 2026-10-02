@@ -1,7 +1,7 @@
 class GameSummary {
   final String eventId, sport, home, away, eventTime, date;
   final String? oddsEventId, pick, probabilitySource;
-  final Map<String, dynamic> market, projectedScore, predictions;
+  final Map<String, dynamic> market, projectedScore, predictions, live;
   final List<dynamic> propsToWatch;
 
   GameSummary({
@@ -14,6 +14,7 @@ class GameSummary {
     required this.market,
     required this.projectedScore,
     required this.predictions,
+    required this.live,
     required this.propsToWatch,
     this.oddsEventId,
     this.pick,
@@ -30,6 +31,7 @@ class GameSummary {
         market: Map<String, dynamic>.from(j['market'] ?? {}),
         projectedScore: Map<String, dynamic>.from(j['projected_score'] ?? {}),
         predictions: Map<String, dynamic>.from(j['predictions'] ?? {}),
+        live: Map<String, dynamic>.from(j['live'] ?? {}),
         propsToWatch: List<dynamic>.from(j['props_to_watch'] ?? []),
         oddsEventId: j['odds_event_id']?.toString(),
         pick: j['pick']?.toString(),
