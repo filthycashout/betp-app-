@@ -203,3 +203,18 @@ def test_game_detail_without_date_resolves_nearby_schedule(monkeypatch):
     assert game['event_id'] == 'target-event'
     assert game['prediction_status'] == 'GENERATED'
     assert target_date in calls
+
+
+def test_search_query_matches_team_matchup_sport_and_date():
+    d = runtime.date_cls(2026, 10, 4)
+    game = {
+        'home': 'Las Vegas Raiders',
+        'away': 'Kansas City Chiefs',
+        'matchup': 'Kansas City Chiefs @ Las Vegas Raiders',
+    }
+    assert runtime._matches_search_query('chiefs', game, 'NFL', d)
+    assert runtime._matches_search_query('chiefs raiders', game, 'NFL', d)
+    assert runtime._matches_search_query('NFL', game, 'NFL', d)
+    assert runtime._matches_search_query('2026-10-04', game, 'NFL', d)
+    assert runtime._matches_search_query('10/04/2026', game, 'NFL', d)
+    assert not runtime._matches_search_query('Dodgers', game, 'NFL', d)
