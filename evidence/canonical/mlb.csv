@@ -1,1 +1,1 @@
-sport,event_id,event_time,as_of,home_team,away_team,target_home_win,market_home_probability,consensus_de_vig_home_probability,home_spread,consensus_total
+sport,event_id,event_time,as_of,home_team,away_team,target_home_win,label_available_at,market_home_probability,consensus_de_vig_home_probability,home_spread,consensus_total
