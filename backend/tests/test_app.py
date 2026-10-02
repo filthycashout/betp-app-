@@ -6,12 +6,13 @@ client=TestClient(runtime.app)
 def test_health():
     r=client.get('/health')
     assert r.status_code==200
-    assert r.json()['version']=='1.3.0'
+    assert r.json()['version']=='1.3.1'
 
 def test_four_sport_model_baseline():
     data=client.get('/v1/models/status').json()
     assert set(data)=={'NFL','NBA','MLB','NHL'}
-    assert all(v['status']=='MARKET_BASELINE_ACTIVE' and v['trained_weights'] is False for v in data.values())
+    assert all(v['status']=='PRODUCTION_BASELINE' and v['trained_weights'] is False for v in data.values())
+    assert all(len(v['sha256']) == 64 and v['artifact_path'].endswith('production.json') for v in data.values())
 
 def test_all_four_sports_have_prop_contracts():
     data=client.get('/v1/system/props').json()['sports']
