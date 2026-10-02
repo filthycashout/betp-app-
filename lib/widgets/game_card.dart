@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/game.dart';
 
 class GameCard extends StatelessWidget {
@@ -18,6 +19,66 @@ class GameCard extends StatelessWidget {
     final digits = n % 1 == 0 ? 0 : 1;
     final body = n.toStringAsFixed(digits);
     return n > 0 ? '+$body' : body;
+  }
+
+  String _score(dynamic value) {
+    if (value is! num) return '—';
+    final n = value.toDouble();
+    return n % 1 == 0 ? n.toInt().toString() : n.toStringAsFixed(1);
+  }
+
+  String _eventTime(String raw) {
+    final cleaned = raw.replaceAll(' PT', '').trim();
+    final match = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})',
+    ).firstMatch(cleaned);
+    if (match == null) return raw;
+    final wallClock = DateTime(
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+      int.parse(match.group(3)!),
+      int.parse(match.group(4)!),
+      int.parse(match.group(5)!),
+    );
+    return '${DateFormat('EEE MMM d • h:mm a').format(wallClock)} PT';
+  }
+
+  String? _liveSummary(Map<String, dynamic> live) {
+    if (live.isEmpty) return null;
+    final rawState = (live['state'] ?? live['status'] ?? '').toString();
+    final state = rawState.toUpperCase();
+    final completed = live['completed'] == true ||
+        state == 'FINAL' ||
+        state == 'OFF' ||
+        state == 'POST';
+
+    if (completed) {
+      final hasScore =
+          live['away_score'] is num || live['home_score'] is num;
+      return hasScore
+          ? 'FINAL • ${_score(live['away_score'])} - ${_score(live['home_score'])}'
+          : 'FINAL';
+    }
+
+    final isLive = state == 'LIVE' ||
+        state == 'IN' ||
+        state == 'IN_PROGRESS' ||
+        state == 'INPROGRESS';
+    if (!isLive) {
+      if (state == 'PRE' || state == 'SCHEDULED') return 'Pregame';
+      return rawState.isEmpty ? null : rawState;
+    }
+
+    final parts = <String>['LIVE'];
+    if (live['away_score'] is num || live['home_score'] is num) {
+      parts.add(
+        '${_score(live['away_score'])} - ${_score(live['home_score'])}',
+      );
+    }
+    if (live['period'] != null) parts.add('Period ${live['period']}');
+    final clock = live['clock']?.toString().trim();
+    if (clock != null && clock.isNotEmpty) parts.add(clock);
+    return parts.join(' • ');
   }
 
   @override
@@ -73,23 +134,12 @@ class GameCard extends StatelessWidget {
                 style: Theme.of(c).textTheme.titleMedium,
               ),
               const SizedBox(height: 4),
-              Text('${game.eventTime} PT'),
-              if (live.isNotEmpty &&
-                  (live['home_score'] != null ||
-                      live['away_score'] != null ||
-                      live['status'] != null))
+              Text(_eventTime(game.eventTime)),
+              if (_liveSummary(live) != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    [
-                      if (live['away_score'] != null ||
-                          live['home_score'] != null)
-                        'Live score: ${live['away_score'] ?? '—'} - ${live['home_score'] ?? '—'}',
-                      if (live['status'] != null) '${live['status']}',
-                      if (live['period'] != null) 'Period ${live['period']}',
-                      if (live['clock'] != null && '${live['clock']}'.isNotEmpty)
-                        '${live['clock']}',
-                    ].join(' • '),
+                    _liveSummary(live)!,
                     style: Theme.of(c).textTheme.bodyMedium,
                   ),
                 ),
@@ -100,7 +150,9 @@ class GameCard extends StatelessWidget {
               ),
               if ((ml['source'] ?? game.probabilitySource) != null)
                 Text(
-                  'Source: ${(ml['source'] ?? game.probabilitySource).toString().replaceAll('_', ' ')}',
+                  (ml['source'] ?? game.probabilitySource) == 'unavailable'
+                      ? 'Source: no verified pregame probability yet'
+                      : 'Source: ${(ml['source'] ?? game.probabilitySource).toString().replaceAll('_', ' ')}',
                   style: Theme.of(c).textTheme.bodySmall,
                 ),
               Text('Spread lean: $spreadText'),
