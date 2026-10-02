@@ -85,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Status: ${payload['status'] ?? 'UNKNOWN'} • '
+                  'Legs: ${payload['actual_legs'] ?? selected.length}/${payload['requested_legs'] ?? legs} • '
                   'Sports: ${List<dynamic>.from(payload['sports_included'] ?? []).join(', ')}',
                 ),
                 const SizedBox(height: 6),
@@ -101,10 +102,28 @@ class _HomeScreenState extends State<HomeScreen> {
                         '${leg['sport']} • ${leg['type'] ?? 'pick'} • ${leg['label']}',
                       ),
                       subtitle: Text(
-                        '${leg['matchup'] ?? ''}'
-                        '${leg['event_time_pacific'] != null ? ' • ${leg['event_time_pacific']} PT' : ''}\n'
-                        'Probability: ${leg['probability'] != null ? ((leg['probability'] as num) * 100).toStringAsFixed(1) : '—'}%\n'
-                        '${leg['reason'] ?? ''}',
+                        [
+                          '${leg['matchup'] ?? ''}'
+                              '${leg['event_time_pacific'] != null ? ' • ${leg['event_time_pacific']} PT' : ''}',
+                          if (leg['type'] == 'player_prop')
+                            [
+                              if (leg['player'] != null) 'Player: ${leg['player']}',
+                              if (leg['market'] != null) 'Market: ${leg['market']}',
+                              if (leg['side'] != null) 'Side: ${leg['side']}',
+                              if (leg['line'] != null) 'Line: ${leg['line']}',
+                            ].join(' • '),
+                          'Probability: ${leg['probability'] != null ? ((leg['probability'] as num) * 100).toStringAsFixed(1) : '—'}%',
+                          if (leg['best_available_book'] != null ||
+                              leg['best_available_price'] != null)
+                            'Best fresh quote: ${leg['best_available_book'] ?? 'book unavailable'} '
+                            '${leg['best_available_price'] ?? ''}',
+                          if (leg['as_of'] != null) 'Quote as-of: ${leg['as_of']}',
+                          if (List<dynamic>.from(
+                            leg['contributing_books'] ?? const [],
+                          ).isNotEmpty)
+                            'Contributing books: ${List<dynamic>.from(leg['contributing_books']).join(', ')}',
+                          '${leg['reason'] ?? ''}',
+                        ].where((x) => x.trim().isNotEmpty).join('\n'),
                       ),
                     ),
                   ),
@@ -247,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 6),
                 child: Text(
-                  "$sport today & upcoming",
+                  "$sport today's games",
                   style: Theme.of(c).textTheme.headlineSmall,
                 ),
               ),
