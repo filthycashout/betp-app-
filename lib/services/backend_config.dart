@@ -9,6 +9,7 @@ class BackendConfig {
 
   static const _obsoleteHosts = {
     'philthysports-powerhouse.onrender.com',
+    'philthysports-api-v9.onrender.com',
   };
 
   static Future<String> baseUrl() async {
