@@ -66,4 +66,13 @@ class PhilthyApi {
   Future<Map<String, dynamic>> parlays(GameSummary g) => _get(
         '/v1/games/${g.sport}/${g.eventId}/parlays?date=${Uri.encodeQueryComponent(g.date)}',
       );
+
+  Future<Map<String, dynamic>> multisportParlay(int legs, {String? date}) {
+    final params = {
+      'legs': '$legs',
+      if (date != null && date.isNotEmpty) 'date': date,
+    };
+    final uri = Uri(path: '/v1/parlays/multisport', queryParameters: params);
+    return _get(uri.toString());
+  }
 }
