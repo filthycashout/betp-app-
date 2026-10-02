@@ -1375,13 +1375,70 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
     if not game:
         raise HTTPException(404, "game not found in fresh schedule")
     score, market = game["projected_score"], game["market"]
+    spread_pick = market.get("spread_pick")
+    spread_probability = market.get("spread_pick_probability")
+    if spread_pick == game.get("home"):
+        spread_line = market.get("home_spread")
+    elif spread_pick == game.get("away"):
+        spread_line = market.get("away_spread")
+    else:
+        spread_line = None
+
+    total_pick = market.get("total_pick")
+    total_probability = market.get("total_pick_probability")
+    total_line = market.get("total")
+
     reasons = [
-        f"Fresh de-vigged consensus moneyline implies home win probability {market['home_probability']:.1%}." if market.get("home_probability") is not None else "Fresh sportsbook win probability is unavailable; no replacement probability is invented.",
-        f"Consensus spread {market['home_spread']:+.1f} and total {market['total']:.1f} define the score projection." if market.get("home_spread") is not None and market.get("total") is not None else "Spread/total evidence is incomplete, so no synthetic score inputs are inserted.",
+        f"Fresh de-vigged consensus moneyline implies home win probability {market['home_probability']:.1%}."
+        if market.get("home_probability") is not None
+        else "Fresh sportsbook win probability is unavailable; no replacement probability is invented.",
+        (
+            f"Fresh two-sided spread prices lean {spread_pick} {float(spread_line):+g} "
+            f"at {float(spread_probability):.1%} after de-vigging."
+            if spread_pick and spread_line is not None and spread_probability is not None
+            else "A two-sided priced spread lean is unavailable; no spread side is invented."
+        ),
+        (
+            f"Fresh two-sided total prices lean {total_pick} {float(total_line):g} "
+            f"at {float(total_probability):.1%} after de-vigging."
+            if total_pick and total_line is not None and total_probability is not None
+            else "A two-sided priced total lean is unavailable; no over/under side is invented."
+        ),
+        f"Consensus spread {market['home_spread']:+.1f} and total {market['total']:.1f} define the score projection."
+        if market.get("home_spread") is not None and market.get("total") is not None
+        else "Spread/total evidence is incomplete, so no synthetic score inputs are inserted.",
         game.get("prediction_reasoning") or "No governed probability explanation is available.",
     ]
-    game["score_prediction"] = {"home": score.get("home"), "away": score.get("away"), "pick": game.get("pick"), "reasons": reasons}
-    game["team_totals"] = {"home": score.get("home"), "away": score.get("away"), "method": score.get("method")}
+    game["score_prediction"] = {
+        "home": score.get("home"),
+        "away": score.get("away"),
+        "pick": game.get("pick"),
+        "reasons": reasons,
+    }
+    game["market_predictions"] = {
+        "moneyline": {
+            "pick": game.get("pick"),
+            "home_win_probability": game.get("home_win_probability"),
+            "probability_source": game.get("probability_source"),
+        },
+        "spread": {
+            "pick": spread_pick,
+            "line": spread_line,
+            "probability": spread_probability,
+            "source": "fresh_two_sided_devigged_spread_market",
+        },
+        "total": {
+            "pick": total_pick,
+            "line": total_line,
+            "probability": total_probability,
+            "source": "fresh_two_sided_devigged_total_market",
+        },
+    }
+    game["team_totals"] = {
+        "home": score.get("home"),
+        "away": score.get("away"),
+        "method": score.get("method"),
+    }
     return game
 
 @app.get("/api/games/{sport}/{event_id}/props", include_in_schema=False)
