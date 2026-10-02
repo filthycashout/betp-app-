@@ -924,8 +924,33 @@ def legacy_runs_latest():
 @app.get("/api/today", include_in_schema=False)
 @app.get("/api/v1/today", include_in_schema=False)
 @app.get("/v1/today")
-def today(include_props: bool = True, props_limit: int = 3):
-    return _search(include_props=include_props, props_limit=props_limit)
+def today(
+    include_props: bool = True,
+    props_limit: int = 3,
+    days: int = Query(2, ge=1, le=7),
+):
+    start = _pacific_today()
+    games: list[dict[str, Any]] = []
+    dates: list[str] = []
+    for offset in range(days):
+        d = start + timedelta(days=offset)
+        dates.append(d.isoformat())
+        payload = _search(
+            date=d.isoformat(),
+            include_props=include_props,
+            props_limit=props_limit,
+        )
+        games.extend(payload["games"])
+    return {
+        "query": "",
+        "date": start.isoformat(),
+        "dates": dates,
+        "timezone": "America/Los_Angeles",
+        "sports": list(SPORTS),
+        "fresh_fetch": True,
+        "games": games,
+        "source_telemetry": _SOURCE,
+    }
 
 @app.get("/api/search", include_in_schema=False)
 @app.get("/api/v1/search", include_in_schema=False)
