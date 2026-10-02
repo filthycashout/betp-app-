@@ -4,7 +4,7 @@ class BackendConfig {
   static const _key='philthy_backend_url';
   static const compiledDefault=String.fromEnvironment(
     'PHILTHY_API_BASE_URL',
-    defaultValue:'http://10.0.2.2:8787',
+    defaultValue:'https://philthysports-powerhouse-v8.onrender.com',
   );
 
   static Future<String> baseUrl() async {
