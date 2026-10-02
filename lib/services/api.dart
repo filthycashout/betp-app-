@@ -6,6 +6,16 @@ import 'package:http/http.dart' as http;
 import '../models/game.dart';
 import 'backend_config.dart';
 
+class TodayFeed {
+  const TodayFeed({
+    required this.games,
+    required this.nextGamesBySport,
+  });
+
+  final List<GameSummary> games;
+  final Map<String, List<GameSummary>> nextGamesBySport;
+}
+
 class PhilthyApi {
   PhilthyApi({http.Client? client, String? baseUrl, Future<void> Function(Duration)? delay})
       : _client = client, _baseUrl = baseUrl,
@@ -146,12 +156,32 @@ class PhilthyApi {
     return _get('/v1/live/$normalized/game/$id');
   }
 
-  Future<List<GameSummary>> today() async {
+  Future<TodayFeed> todayFeed() async {
     final j = await _get('/v1/today?include_props=true&props_limit=3&days=1');
-    return (j['games'] as List? ?? [])
+    final games = (j['games'] as List? ?? [])
         .map((x) => GameSummary.fromJson(Map<String, dynamic>.from(x)))
         .toList();
+
+    final next = <String, List<GameSummary>>{};
+    final rawNext = j['next_games_by_sport'];
+    if (rawNext is Map) {
+      for (final entry in rawNext.entries) {
+        final value = entry.value;
+        if (value is List) {
+          next[entry.key.toString().toUpperCase()] = value
+              .map(
+                (x) => GameSummary.fromJson(
+                  Map<String, dynamic>.from(x as Map),
+                ),
+              )
+              .toList();
+        }
+      }
+    }
+    return TodayFeed(games: games, nextGamesBySport: next);
   }
+
+  Future<List<GameSummary>> today() async => (await todayFeed()).games;
 
   Future<List<GameSummary>> search(
     String q, {
