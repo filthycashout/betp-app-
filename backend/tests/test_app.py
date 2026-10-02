@@ -58,6 +58,10 @@ def test_all_four_sports_have_prop_contracts():
     assert 'pitcher_record_a_win' in data['MLB']['markets']
     assert 'player_goal_scorer_first' in data['NHL']['markets']
     assert 'player_goal_scorer_last' in data['NHL']['markets']
+    assert 'player_pass_yds_alternate' in data['NFL']['alternate_markets']
+    assert 'player_points_alternate' in data['NBA']['alternate_markets']
+    assert 'pitcher_outs_alternate' in data['MLB']['alternate_markets']
+    assert 'player_shots_on_goal_alternate' in data['NHL']['alternate_markets']
 
     assert 'pitcher_strikeouts' in data['MLB']['default_live_markets']
     assert 'player_shots_on_goal' in data['NHL']['default_live_markets']
