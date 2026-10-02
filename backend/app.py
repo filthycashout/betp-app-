@@ -2329,6 +2329,36 @@ def legacy_runs_latest():
         "note": "Current runtime does not fabricate a persisted run when no durable run ledger has been written.",
     }
 
+def _next_scheduled_games(
+    sport: str,
+    start: date_cls,
+    *,
+    max_days: int = 14,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    for offset in range(1, max_days + 1):
+        d = start + timedelta(days=offset)
+        try:
+            scheduled = _schedule(sport, d)
+        except Exception:
+            continue
+        if not scheduled:
+            continue
+        try:
+            payload = _search(
+                sport=sport,
+                date=d.isoformat(),
+                include_props=False,
+                props_limit=0,
+            )
+            rows = list(payload.get("games") or [])
+        except Exception:
+            rows = []
+        if rows:
+            return rows[: max(1, limit)]
+    return []
+
+
 @app.get("/api/today", include_in_schema=False)
 @app.get("/api/v1/today", include_in_schema=False)
 @app.get("/v1/today")
@@ -2349,6 +2379,21 @@ def today(
             props_limit=props_limit,
         )
         games.extend(payload["games"])
+    today_sports = {str(game.get("sport") or "").upper() for game in games}
+    missing = [sport for sport in SPORTS if sport not in today_sports]
+    next_games_by_sport: dict[str, list[dict[str, Any]]] = {}
+    if missing:
+        with ThreadPoolExecutor(max_workers=len(missing)) as pool:
+            futures = {
+                sport: pool.submit(_next_scheduled_games, sport, start)
+                for sport in missing
+            }
+            for sport, future in futures.items():
+                try:
+                    next_games_by_sport[sport] = future.result()
+                except Exception:
+                    next_games_by_sport[sport] = []
+
     return {
         "query": "",
         "date": start.isoformat(),
@@ -2357,6 +2402,7 @@ def today(
         "sports": list(SPORTS),
         "fresh_fetch": True,
         "games": games,
+        "next_games_by_sport": next_games_by_sport,
         "source_telemetry": _SOURCE,
     }
 
