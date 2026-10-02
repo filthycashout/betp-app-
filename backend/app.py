@@ -1288,14 +1288,14 @@ def _build_multisport_parlay(
     d = date_cls.fromisoformat(date) if date else _pacific_today()
     candidates, dates_considered = _multisport_candidates(
         d,
-        target_count=max(28, leg_count * 3),
+        target_count=max(40, leg_count * 4),
         horizon_days=4,
     )
 
     profile = {
-        7: "BALANCED_HIGH_CONFIDENCE",
-        10: "PROP_WEIGHTED_DIVERSIFIED",
-        14: "BROAD_MULTISPORT_COVERAGE",
+        7: "BEST_7_BALANCED",
+        10: "BEST_10_PROP_WEIGHTED",
+        14: "BEST_14_DEEP_MULTISPORT",
     }[leg_count]
     desired_props = {7: 2, 10: 4, 14: 5}[leg_count]
 
@@ -1315,7 +1315,7 @@ def _build_multisport_parlay(
         event_counts[event_key] = event_counts.get(event_key, 0) + 1
         return True
 
-    # First guarantee multisport coverage whenever fresh candidates make it possible.
+    # Guarantee multisport coverage first whenever the live board has those sports.
     for sport in SPORTS:
         sport_best = next((x for x in candidates if x["sport"] == sport), None)
         if sport_best is not None:
@@ -1323,7 +1323,20 @@ def _build_multisport_parlay(
         if len(selected) >= leg_count:
             break
 
-    # Then deliberately include player props instead of allowing a card of only favorites.
+    # Cover the core game markets without inventing a side when two-sided pricing
+    # is unavailable. This is current de-vigged market evidence, not a fake model edge.
+    for market_type in ("moneyline", "spread", "total"):
+        if len(selected) >= leg_count:
+            break
+        if any(x.get("type") == market_type for x in selected):
+            continue
+        best = next((x for x in candidates if x.get("type") == market_type), None)
+        if best is not None:
+            add_leg(best)
+
+    # Deliberately reserve space for player props. If the rotated live prop
+    # credential or event mapping is unavailable, the response says so rather
+    # than substituting a made-up prop.
     prop_count = sum(1 for x in selected if x.get("type") == "player_prop")
     if prop_count < desired_props:
         for leg in (x for x in candidates if x.get("type") == "player_prop"):
@@ -1332,10 +1345,14 @@ def _build_multisport_parlay(
             if prop_count >= desired_props or len(selected) >= leg_count:
                 break
 
-    # Each card is built independently. A small deterministic rotation keeps the
-    # 7-, 10-, and 14-leg cards from being simple nested prefixes of one another.
+    # Build all three cards independently. The deterministic rotation changes the
+    # remaining candidate order so 7, 10, and 14 are not nested copies.
     if candidates:
-        rotation = {7: 0, 10: max(1, len(candidates) // 7), 14: max(2, len(candidates) // 5)}[leg_count]
+        rotation = {
+            7: 0,
+            10: max(1, len(candidates) // 7),
+            14: max(2, len(candidates) // 5),
+        }[leg_count]
         rotated = candidates[rotation:] + candidates[:rotation]
     else:
         rotated = []
@@ -1347,7 +1364,20 @@ def _build_multisport_parlay(
 
     props_used = sum(1 for x in selected if x.get("type") == "player_prop")
     sports_used = sorted({x["sport"] for x in selected})
+    type_counts = {
+        kind: sum(1 for x in selected if x.get("type") == kind)
+        for kind in ("moneyline", "spread", "total", "player_prop")
+    }
     card_id = f"{d.isoformat()}-{leg_count}-{profile}"
+
+    if len(selected) != leg_count or len(sports_used) <= 1:
+        status = "INSUFFICIENT_FRESH_ELIGIBLE_LEGS"
+    elif props_used == 0:
+        status = "LIVE_PLAYER_PROPS_UNAVAILABLE"
+    elif props_used < desired_props:
+        status = "PARTIAL_PLAYER_PROP_COVERAGE"
+    else:
+        status = "OK"
 
     return {
         "card_id": card_id,
@@ -1357,38 +1387,41 @@ def _build_multisport_parlay(
         "requested_legs": leg_count,
         "actual_legs": len(selected),
         "selection_profile": profile,
+        "selection_basis": "BEST_AVAILABLE_BY_FRESH_DEVIGGED_PROBABILITY_WITH_DIVERSIFICATION",
         "multisport": len(sports_used) > 1,
         "sports_included": sports_used,
+        "target_player_prop_legs": desired_props,
         "player_prop_legs": props_used,
         "market_pick_legs": len(selected) - props_used,
+        "selection_breakdown": type_counts,
         "legs": selected,
         "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL",
         "estimated_joint_probability": None,
         "reasoning": [
             (
-                "This card is generated independently from the other 7-, 10-, "
-                "and 14-leg cards. Fresh eligible legs are ranked by current "
-                "de-vigged probability, then diversified by sport and event."
+                f"This is an independent {leg_count}-leg card, not a prefix of "
+                "another card. Eligible live moneyline, spread, total, and "
+                "player-prop legs are ranked by fresh de-vigged probability."
             ),
             (
-                f"The {leg_count}-leg profile targets player props as part of "
-                f"the card when fresh mapped prop markets exist; {props_used} "
-                "player-prop legs are available in this card."
+                "Selection is diversified across sports and events, with no more "
+                "than two legs from the same event, to avoid stuffing one matchup "
+                "with highly related legs."
             ),
             (
-                "No leg is fabricated. Missing sportsbook markets, unmapped "
-                "prop events, or failed credential gates reduce the card size."
+                f"This profile targets {desired_props} player-prop legs when fresh "
+                f"mapped props exist; {props_used} passed the live evidence checks."
             ),
             (
-                "Joint probability is intentionally unscored until measured "
-                "cross-leg dependence passes the v8 governance threshold."
+                "No missing leg, side, total, player prop, or probability is "
+                "fabricated. Missing live evidence reduces coverage or changes status."
+            ),
+            (
+                "Joint probability remains unscored until measured cross-leg "
+                "dependence passes the v8 governance threshold."
             ),
         ],
-        "status": (
-            "OK"
-            if len(selected) == leg_count and len(sports_used) > 1
-            else "INSUFFICIENT_FRESH_ELIGIBLE_LEGS"
-        ),
+        "status": status,
     }
 
 
