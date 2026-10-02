@@ -1,0 +1,89 @@
+name: PhilthySports v8 Evidence Capture
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: philthysports-v8-evidence-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Preserve evidence tool from main
+        run: cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
+
+      - name: Capture strict pregame evidence from live Powerhouse
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pregame_capture
+          mkdir -p /tmp/pregame_capture
+          python /tmp/evidence_pipeline.py capture \
+            --base-url https://philthysports-powerhouse-v8.onrender.com \
+            --days 4 \
+            --output-dir /tmp/pregame_capture
+
+      - name: Switch to durable evidence branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin evidence-snapshots >/dev/null 2>&1; then
+            git fetch origin evidence-snapshots:evidence-snapshots
+            git switch evidence-snapshots
+          else
+            git switch -c evidence-snapshots
+          fi
+
+      - name: Store capture, settle results, and rebuild canonical rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="evidence/pregame/$(date -u +%Y/%m/%d)"
+          mkdir -p "$TARGET"
+          cp /tmp/pregame_capture/* "$TARGET"/
+
+          python /tmp/evidence_pipeline.py settle \
+            --root evidence \
+            --lookback-days 21
+
+          python /tmp/evidence_pipeline.py build \
+            --root evidence
+
+          mkdir -p evidence/run_metadata
+          cat > evidence/run_metadata/latest.json <<EOF
+          {
+            "captured_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "source_backend": "https://philthysports-powerhouse-v8.onrender.com",
+            "workflow_source_commit": "${GITHUB_SHA}",
+            "branch": "evidence-snapshots",
+            "secrets_embedded": false
+          }
+          EOF
+
+      - name: Commit immutable evidence history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "philthysports-evidence-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add evidence
+          if git diff --cached --quiet; then
+            echo "No evidence changes to commit."
+            exit 0
+          fi
+          git commit -m "Capture v8 pregame evidence $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin evidence-snapshots
