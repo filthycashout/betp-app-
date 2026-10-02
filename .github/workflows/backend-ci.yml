@@ -30,3 +30,5 @@ jobs:
         run: python -m compileall -q backend
       - name: Run backend tests
         run: PYTHONPATH=backend pytest -q backend/tests
+      - name: Live keyless prediction smoke
+        run: PYTHONPATH=backend python backend/live_prediction_smoke.py
