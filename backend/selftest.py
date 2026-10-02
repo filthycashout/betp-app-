@@ -74,9 +74,10 @@ def main() -> None:
     try:
         backend.os.environ["ODDS_API_KEY"] = "ci-placeholder-never-used"
         backend.os.environ.pop("CREDENTIAL_ROTATION_CONFIRMED", None)
-        gated = backend.props("MLB", "event", odds_event_id="provider-event")
-        assert gated["status"] == "CONTRACT_READY_LIVE_KEY_REQUIRED"
-        assert gated["props"] == []
+        assert backend._primary_prop_provider_ready() is False
+        capabilities = backend.prop_capabilities()
+        assert capabilities["keyless_fallback_configured"] is True
+        assert capabilities["keyless_fallback"]["credential_required"] is False
     finally:
         if old_key is None:
             backend.os.environ.pop("ODDS_API_KEY", None)
@@ -154,8 +155,10 @@ def main() -> None:
     assert generated["total"]["pick"] in {"OVER", "UNDER"}
 
     original_search = backend._search
+    original_props_for_game = backend._props_for_game
     try:
         backend._search = lambda *args, **kwargs: _fake_games()
+        backend._props_for_game = lambda *args, **kwargs: {"props": []}
         p7 = backend._build_multisport_parlay(7, "2026-10-02")
         p10 = backend._build_multisport_parlay(10, "2026-10-02")
         p14 = backend._build_multisport_parlay(14, "2026-10-02")
@@ -173,6 +176,7 @@ def main() -> None:
         assert p10["selection_profile"] != p14["selection_profile"]
     finally:
         backend._search = original_search
+        backend._props_for_game = original_props_for_game
 
     try:
         backend._build_multisport_parlay(3, "2026-10-02")
