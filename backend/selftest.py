@@ -46,9 +46,16 @@ def main() -> None:
     assert set(statuses) == set(backend.SPORTS)
     for sport in backend.SPORTS:
         gate = statuses[sport]["promotion_gate"]
-        # Current checked-in bundle is the governed fallback, not promoted trained ML.
-        assert gate["passed"] is False
-        assert gate["runtime_role"] == "BASELINE_FALLBACK"
+        if gate["passed"]:
+            assert statuses[sport]["promoted_artifact_loaded"] is True
+            assert statuses[sport]["runtime_mode"] == "PROMOTED_TRAINED_MODEL"
+        else:
+            assert statuses[sport]["runtime_mode"] == "EVIDENCE_GATED_HYBRID_MARKET_FORM_FALLBACK"
+
+    registry = backend.model_registry()
+    assert set(registry["sports"]) == set(backend.SPORTS)
+    for sport in backend.SPORTS:
+        assert registry["sports"][sport]["runtime_mode"] == statuses[sport]["runtime_mode"]
 
     for sport in backend.SPORTS:
         assert backend.PROP_MARKETS[sport], f"{sport} prop markets missing"
