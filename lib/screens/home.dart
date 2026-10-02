@@ -1,0 +1,13 @@
+import 'package:flutter/material.dart';
+import '../models/game.dart';import '../services/api.dart';import '../widgets/game_card.dart';import 'game_detail.dart';import 'settings.dart';
+class HomeScreen extends StatefulWidget{const HomeScreen({super.key});@override State<HomeScreen> createState()=>_HomeScreenState();}
+class _HomeScreenState extends State<HomeScreen>{final api=PhilthyApi();final ctl=TextEditingController();List<GameSummary> games=[];bool busy=true;String? err;
+ @override void initState(){super.initState();_loadToday();}
+ Future<void> _loadToday() async{setState((){busy=true;err=null;});try{final x=await api.today();if(mounted)setState(()=>games=x);}catch(e){if(mounted)setState(()=>err='$e');}finally{if(mounted)setState(()=>busy=false);}}
+ Future<void> _search() async{final q=ctl.text.trim();if(q.isEmpty){return _loadToday();}setState((){busy=true;err=null;});try{final x=await api.search(q);if(mounted)setState(()=>games=x);}catch(e){if(mounted)setState(()=>err='$e');}finally{if(mounted)setState(()=>busy=false);}}
+ @override Widget build(BuildContext c){final groups=<String,List<GameSummary>>{};for(final g in games){groups.putIfAbsent(g.sport,()=>[]).add(g);}return Scaffold(appBar:AppBar(title:const Text('PhilthySports'),actions:[IconButton(tooltip:'Backend settings',icon:const Icon(Icons.settings),onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const SettingsScreen())).then((_){_loadToday();}))]),body:RefreshIndicator(onRefresh:_loadToday,child:ListView(padding:const EdgeInsets.all(12),children:[
+ TextField(controller:ctl,textInputAction:TextInputAction.search,onSubmitted:(_)=>_search(),decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Search team, matchup, date, or sport',suffixIcon:IconButton(icon:const Icon(Icons.arrow_forward),onPressed:_search),border:const OutlineInputBorder())),
+ const SizedBox(height:12),if(busy)const LinearProgressIndicator(),if(err!=null)Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(err!,style:const TextStyle(color:Colors.red)),const SizedBox(height:8),const Text('If this is a backend connection error, open the gear icon and set the Python API URL.')] ))),
+ for(final sport in const ['NFL','NBA','MLB','NHL'])...[Padding(padding:const EdgeInsets.only(top:12,bottom:6),child:Text(sport,style:Theme.of(c).textTheme.headlineSmall)),
+   if((groups[sport]??[]).isEmpty)const Text('No matching scheduled games.'),for(final g in groups[sport]??[]) GameCard(game:g,onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>GameDetailScreen(game:g))))]
+ ])));}}
