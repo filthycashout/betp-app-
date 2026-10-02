@@ -46,7 +46,7 @@ def verify_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
     core = _signature_core(artifact)
     core_sha = sha256_json(core)
     security["core_checksum_verified"] = (
-        core_sha == artifact.get("artifact_core_sha256")
+        bool(signature.get("signed_core_sha256"))
         and core_sha == signature.get("signed_core_sha256")
     )
 
@@ -67,12 +67,18 @@ def verify_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
 
     evidence = artifact.get("promotion_evidence") or {}
     provenance = evidence.get("provenance") or {}
+    model_core = {
+        "features": artifact.get("features") or [],
+        "preprocessing": artifact.get("preprocessing") or {},
+        "probability": artifact.get("probability") or {},
+    }
     security["model_checksum_verified"] = (
-        sha256_json(artifact.get("portable_model") or {})
-        == provenance.get("model_sha256")
+        bool(provenance.get("model_sha256"))
+        and sha256_json(model_core) == provenance.get("model_sha256")
     )
     security["schema_checksum_verified"] = (
-        sha256_json(artifact.get("feature_schema") or {})
+        bool(provenance.get("feature_schema_sha256"))
+        and sha256_json(evidence.get("schema") or {})
         == provenance.get("feature_schema_sha256")
     )
     security["passed"] = all(security.values())
@@ -93,9 +99,15 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
     minimums = policy["sample_policy"][sport]
     security = verify_artifact(artifact)
 
-    brier_improvement = baseline.get("brier_improvement")
+    strict = evidence.get("strict_policy") or {}
+    brier_improvement = strict.get("brier_improvement")
+    if not isinstance(brier_improvement, (int, float)):
+        candidate_brier = baseline.get("candidate_brier")
+        market_brier = baseline.get("market_brier")
+        if isinstance(candidate_brier, (int, float)) and isinstance(market_brier, (int, float)):
+            brier_improvement = float(market_brier) - float(candidate_brier)
     candidate_log_loss = baseline.get("candidate_log_loss")
-    baseline_log_loss = baseline.get("baseline_log_loss")
+    baseline_log_loss = baseline.get("market_log_loss")
     ece = calibration.get("ece")
 
     features = artifact.get("features") or []
@@ -103,8 +115,8 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
     checks = {
         "sport_matches": artifact.get("sport") == sport,
         "trained_weights": artifact.get("trained_weights") is True,
-        "sample_total": int(samples.get("total_rows") or 0) >= int(minimums["minimum_total_rows"]),
-        "sample_oof": int(samples.get("oof_rows") or 0) >= int(minimums["minimum_oof_rows"]),
+        "sample_total": int(samples.get("rows") or 0) >= int(minimums["minimum_total_rows"]),
+        "sample_oof": int(strict.get("oof_rows") or 0) >= int(minimums["minimum_oof_rows"]),
         "sample_holdout": int(samples.get("holdout_rows") or 0) >= int(minimums["minimum_holdout_rows"]),
         "chronology_as_of_before_event": chronology.get("as_of_lt_event_time") is True,
         "walk_forward_oof": chronology.get("walk_forward_oof") is True,
@@ -134,8 +146,8 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
         "schema_checksum_verified": security["schema_checksum_verified"],
         "signing_key_id_verified": security["signing_key_id_verified"],
         "mobile_parity": (
-            isinstance((artifact.get("mobile_parity") or {}).get("max_abs_error_python_portable_vs_sklearn"), (int, float))
-            and float(artifact["mobile_parity"]["max_abs_error_python_portable_vs_sklearn"]) <= 1e-10
+            isinstance((artifact.get("mobile_parity") or {}).get("max_abs_error"), (int, float))
+            and float(artifact["mobile_parity"]["max_abs_error"]) <= 1e-10
             and int((artifact.get("mobile_parity") or {}).get("case_count") or 0) > 0
         ),
     }
@@ -166,35 +178,34 @@ def load_promoted(sport: str) -> dict[str, Any] | None:
 
 
 def predict_home_probability(artifact: dict[str, Any], feature_values: dict[str, float | None]) -> float:
-    features = artifact["features"]
-    model = artifact["portable_model"]
+    features = list(artifact.get("features") or [])
+    prep = artifact.get("preprocessing") or {}
+    prob = artifact.get("probability") or {}
+
+    medians = list(prep.get("imputer_statistics") or [])
+    means = list(prep.get("standard_scaler_mean") or [])
+    scales = list(prep.get("standard_scaler_scale") or [])
+    coefs = list(prob.get("coefficients") or [])
+    if not (len(features) == len(medians) == len(means) == len(scales) == len(coefs)):
+        raise ValueError("portable model vector lengths do not match")
+
     values = []
     for index, feature in enumerate(features):
         raw = feature_values.get(feature)
-        value = float(model["imputer_median"][index]) if raw is None else float(raw)
-        mean = float(model["scaler_mean"][index])
-        scale = float(model["scaler_scale"][index]) or 1.0
-        values.append((value - mean) / scale)
+        value = float(medians[index]) if raw is None else float(raw)
+        scale = float(scales[index]) or 1.0
+        values.append((value - float(means[index])) / scale)
 
-    logit = float(model["logistic_intercept"])
-    for coefficient, value in zip(model["logistic_coef"], values):
-        logit += float(coefficient) * value
-    raw_probability = 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
+    raw_logit = float(prob.get("intercept") or 0.0)
+    for coefficient, value in zip(coefs, values):
+        raw_logit += float(coefficient) * value
+    raw_probability = 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, raw_logit))))
 
-    xs = [float(x) for x in model["isotonic_x"]]
-    ys = [float(y) for y in model["isotonic_y"]]
-    if not xs:
-        return raw_probability
-    if raw_probability <= xs[0]:
-        return ys[0]
-    if raw_probability >= xs[-1]:
-        return ys[-1]
-    for idx in range(1, len(xs)):
-        if raw_probability <= xs[idx]:
-            x0, x1 = xs[idx - 1], xs[idx]
-            y0, y1 = ys[idx - 1], ys[idx]
-            if x1 == x0:
-                return y1
-            ratio = (raw_probability - x0) / (x1 - x0)
-            return y0 + ratio * (y1 - y0)
-    return ys[-1]
+    clipped = max(1e-6, min(1.0 - 1e-6, raw_probability))
+    logit_value = math.log(clipped / (1.0 - clipped))
+    calibrator = prob.get("calibrator") or {}
+    calibrated_logit = (
+        logit_value * float(calibrator.get("coefficient") or 0.0)
+        + float(calibrator.get("intercept") or 0.0)
+    )
+    return 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, calibrated_logit))))
