@@ -26,6 +26,11 @@ from ci_security import (
 from model_runtime import (
     load_promoted,
     predict_home_probability,
+    promotion_gate as trained_promotion_gate,
+)
+from model_runtime import (
+    load_promoted,
+    predict_home_probability,
     promotion_gate as promoted_promotion_gate,
 )
 
@@ -112,6 +117,7 @@ def _load_model_registry() -> dict[str, dict[str, Any]]:
 
 MODEL_REGISTRY = _load_model_registry()
 PROMOTED_MODELS = {sport: load_promoted(sport) for sport in SPORTS}
+PROMOTED_MODELS = {sport: load_promoted(sport) for sport in SPORTS}
 
 def _load_drive_reconstruction() -> dict[str, Any]:
     if not DRIVE_RECONSTRUCTION_PATH.exists():
@@ -167,63 +173,105 @@ def _baseline_promotion_gate_for(sport: str) -> dict[str, Any]:
 
 def _promotion_gate_for(sport: str) -> dict[str, Any]:
     promoted = PROMOTED_MODELS.get(sport)
-    if promoted is None:
-        return _baseline_promotion_gate_for(sport)
+    if promoted is not None:
+        raw = trained_promotion_gate(promoted, sport)
+        evidence = raw.get("evidence") or {}
+        calibration = evidence.get("calibration") or {}
+        rc = raw.get("checks") or {}
+        ece = calibration.get("ece")
+        checks = {
+            "canonical_dataset": rc.get("dataset_provenance") is True,
+            "feature_schema": (
+                rc.get("schema_compatible") is True
+                and rc.get("schema_checksum_verified") is True
+            ),
+            "chronology_as_of_before_event": rc.get("chronology_as_of_before_event") is True,
+            "walk_forward_oof": rc.get("walk_forward_oof") is True,
+            "calibration_oof_only": rc.get("calibration_oof_only") is True,
+            "calibration_metrics": (
+                isinstance(calibration.get("brier"), (int, float))
+                and isinstance(calibration.get("log_loss"), (int, float))
+                and isinstance(ece, (int, float))
+            ),
+            "ece_threshold": rc.get("ece_threshold") is True,
+            "separate_holdout": rc.get("separate_holdout") is True,
+            "leakage_audit": rc.get("leakage_audit") is True,
+            "provenance_hashes": (
+                rc.get("source_provenance") is True
+                and rc.get("model_checksum_verified") is True
+                and rc.get("artifact_checksum_verified") is True
+                and rc.get("core_checksum_verified") is True
+            ),
+            "beats_active_market_baseline": (
+                rc.get("brier_improvement") is True
+                and rc.get("log_loss_non_inferior") is True
+            ),
+            "sample_sufficiency": (
+                rc.get("sample_total") is True
+                and rc.get("sample_oof") is True
+                and rc.get("sample_holdout") is True
+            ),
+            "trained_weights": rc.get("trained_weights") is True,
+            "explicit_promotion": rc.get("status_promoted") is True,
+            "artifact_security": (
+                rc.get("signature_verified") is True
+                and rc.get("signing_key_id_verified") is True
+            ),
+            "mobile_parity": rc.get("mobile_parity") is True,
+        }
+        passed = raw.get("passed") is True and all(checks.values())
+        return {
+            "sport": sport,
+            "passed": passed,
+            "checks": checks,
+            "ece_max": PROMOTION_ECE_MAX,
+            "evidence": evidence,
+            "security": raw.get("security"),
+            "runtime_role": "PROMOTED_TRAINED_MODEL" if passed else "BASELINE_FALLBACK",
+            "model_id": promoted.get("model_id"),
+            "artifact_sha256": promoted.get("artifact_sha256"),
+        }
 
-    raw = promoted_promotion_gate(promoted, sport)
-    evidence = raw.get("evidence") or {}
+    model = MODEL_REGISTRY[sport]
+    evidence = model.get("promotion_evidence") or {}
+    chronology = evidence.get("chronology") or {}
     calibration = evidence.get("calibration") or {}
-    rc = raw.get("checks") or {}
+    holdout = evidence.get("holdout") or {}
+    provenance = evidence.get("provenance") or {}
+    leakage = evidence.get("leakage_audit") or {}
+    baseline = evidence.get("market_baseline_comparison") or {}
+
     ece = calibration.get("ece")
     checks = {
-        "canonical_dataset": rc.get("dataset_provenance") is True,
-        "feature_schema": rc.get("schema_compatible") is True and rc.get("schema_checksum_verified") is True,
-        "chronology_as_of_before_event": rc.get("chronology_as_of_before_event") is True,
-        "walk_forward_oof": rc.get("walk_forward_oof") is True,
-        "calibration_oof_only": rc.get("calibration_oof_only") is True,
+        "canonical_dataset": bool(provenance.get("dataset_sha256")),
+        "feature_schema": bool(provenance.get("feature_schema_sha256")),
+        "chronology_as_of_before_event": chronology.get("as_of_lt_event_time") is True,
+        "walk_forward_oof": chronology.get("walk_forward_oof") is True,
+        "calibration_oof_only": calibration.get("oof_only") is True,
         "calibration_metrics": (
             isinstance(calibration.get("brier"), (int, float))
             and isinstance(calibration.get("log_loss"), (int, float))
             and isinstance(ece, (int, float))
         ),
-        "ece_threshold": rc.get("ece_threshold") is True,
-        "separate_holdout": rc.get("separate_holdout") is True,
-        "leakage_audit": rc.get("leakage_audit") is True,
-        "provenance_hashes": (
-            rc.get("source_provenance") is True
-            and rc.get("model_checksum_verified") is True
-            and rc.get("core_checksum_verified") is True
-        ),
-        "beats_active_market_baseline": (
-            rc.get("brier_improvement") is True
-            and rc.get("log_loss_non_inferior") is True
-        ),
-        "sample_sufficiency": (
-            rc.get("sample_total") is True
-            and rc.get("sample_oof") is True
-            and rc.get("sample_holdout") is True
-        ),
-        "artifact_security": (
-            rc.get("signature_verified") is True
-            and rc.get("signing_key_id_verified") is True
-        ),
-        "mobile_parity": rc.get("mobile_parity") is True,
-        "trained_weights": rc.get("trained_weights") is True,
-        "explicit_promotion": promoted.get("status") == "PROMOTED_TRAINED_MODEL",
+        "ece_threshold": isinstance(ece, (int, float)) and float(ece) <= PROMOTION_ECE_MAX,
+        "separate_holdout": holdout.get("separate_from_calibration") is True
+        and int(holdout.get("resolved_games") or 0) > 0,
+        "leakage_audit": leakage.get("passed") is True,
+        "provenance_hashes": bool(provenance.get("source_manifest_sha256"))
+        and bool(provenance.get("model_sha256")),
+        "beats_active_market_baseline": baseline.get("passed") is True,
+        "trained_weights": model.get("trained_weights") is True,
+        "explicit_promotion": model.get("status") == "PROMOTED_TRAINED_MODEL",
     }
-    passed = raw.get("passed") is True and all(checks.values())
+    passed = all(checks.values())
     return {
         "sport": sport,
         "passed": passed,
         "checks": checks,
         "ece_max": PROMOTION_ECE_MAX,
         "evidence": evidence,
-        "security": raw.get("security"),
         "runtime_role": "PROMOTED_TRAINED_MODEL" if passed else "BASELINE_FALLBACK",
-        "model_id": promoted.get("model_id"),
-        "artifact_sha256": promoted.get("artifact_sha256"),
     }
-
 
 def _all_model_gates() -> dict[str, dict[str, Any]]:
     return {sport: _promotion_gate_for(sport) for sport in SPORTS}
