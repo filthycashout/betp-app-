@@ -80,6 +80,72 @@ def main() -> None:
         else:
             backend.os.environ["CREDENTIAL_ROTATION_CONFIRMED"] = old_rotation
 
+    snapshot = {
+        "teams": {
+            "testhome": {
+                "name": "Test Home",
+                "games": 4,
+                "wins": 3,
+                "ties": 0,
+                "points_for": 100.0,
+                "points_against": 80.0,
+            },
+            "testaway": {
+                "name": "Test Away",
+                "games": 4,
+                "wins": 1,
+                "ties": 0,
+                "points_for": 72.0,
+                "points_against": 96.0,
+            },
+        },
+        "completed_games": 8,
+        "league_mean_abs_margin": 7.0,
+        "window_start": "2026-09-01",
+        "window_end": "2026-10-01",
+    }
+    fallback_game = {
+        "home": "Test Home",
+        "away": "Test Away",
+        "home_record_pct": 0.75,
+        "away_record_pct": 0.25,
+    }
+    form = backend._recent_form_prediction(
+        "NFL",
+        fallback_game,
+        backend.date_cls(2026, 10, 2),
+        snapshot,
+    )
+    assert form is not None
+    assert form["source"] == "keyless_recent_form_heuristic"
+    assert form["home_win_probability"] > 0.5
+    assert form["projected_score"]["home"] > form["projected_score"]["away"]
+
+    empty_market = {
+        "home_probability": None,
+        "away_probability": None,
+        "home_spread": -3.0,
+        "away_spread": 3.0,
+        "spread_pick": None,
+        "spread_pick_probability": None,
+        "total": 44.5,
+        "total_pick": None,
+        "total_pick_probability": None,
+    }
+    generated = backend._prediction_bundle(
+        fallback_game,
+        empty_market,
+        form["projected_score"],
+        form["home_win_probability"],
+        form["source"],
+        form["note"],
+        form,
+    )
+    assert generated["generated"] is True
+    assert generated["moneyline"]["pick"] == "Test Home"
+    assert generated["spread"]["pick"] in {"Test Home", "Test Away"}
+    assert generated["total"]["pick"] in {"OVER", "UNDER"}
+
     original_search = backend._search
     try:
         backend._search = lambda *args, **kwargs: _fake_games()
