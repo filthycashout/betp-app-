@@ -73,6 +73,17 @@ def main() -> None:
 
     print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
 
+    available_candidates, _ = backend._multisport_candidates(
+        backend._pacific_today(),
+        target_count=56,
+        horizon_days=4,
+    )
+    available_candidate_sports = {
+        str(row.get("sport") or "")
+        for row in available_candidates
+        if row.get("sport")
+    }
+
     parlay_canary = {}
     for legs in (7, 10, 14):
         card = backend._build_multisport_parlay(
@@ -92,10 +103,11 @@ def main() -> None:
             )
         if card.get("multisport") is not True:
             raise SystemExit(f"{legs}-leg live parlay canary is not multisport")
-        if set(card.get("sports_included") or []) != set(backend.SPORTS):
+        if set(card.get("sports_included") or []) != available_candidate_sports:
             raise SystemExit(
-                f"{legs}-leg live parlay did not cover all available sports: "
-                f"{card.get('sports_included')}"
+                f"{legs}-leg live parlay did not cover every eligible candidate sport: "
+                f"card={card.get('sports_included')} "
+                f"eligible={sorted(available_candidate_sports)}"
             )
         if int(card.get("player_prop_legs") or 0) <= 0:
             raise SystemExit(
