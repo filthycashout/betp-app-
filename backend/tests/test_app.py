@@ -52,7 +52,12 @@ def test_api_prefix_compatibility():
 def test_all_four_sports_have_prop_contracts():
     payload = client.get('/v1/system/props').json()
     data = payload['sports']
-    assert payload['status'] == 'CONTRACT_READY_LIVE_KEY_REQUIRED'
+    assert payload['status'] in {
+        'PRIMARY_CONFIGURED_WITH_KEYLESS_FALLBACK',
+        'KEYLESS_FALLBACK_CONFIGURED_PRIMARY_KEY_NOT_REQUIRED',
+    }
+    assert payload['keyless_fallback_configured'] is True
+    assert payload['keyless_fallback']['credential_required'] is False
     assert set(data) == {'NFL', 'NBA', 'MLB', 'NHL'}
 
     assert 'player_pass_rush_reception_yds' in data['NFL']['markets']
@@ -73,14 +78,46 @@ def test_all_four_sports_have_prop_contracts():
     assert 'player_shots_on_goal' in data['NHL']['default_live_markets']
 
 
-def test_unrotated_key_never_falls_through_to_live_props(monkeypatch):
+def test_unrotated_key_never_uses_primary_prop_provider(monkeypatch):
     monkeypatch.setenv('ODDS_API_KEY', 'test-only-placeholder')
     monkeypatch.delenv('CREDENTIAL_ROTATION_CONFIRMED', raising=False)
-    response = client.get('/v1/games/MLB/test-event/props?odds_event_id=test-odds-event')
+
+    game = {
+        'event_id': 'test-event',
+        'sport': 'MLB',
+        'home': 'Home',
+        'away': 'Away',
+        'event_time': '2026-10-03T20:00:00Z',
+        'date': '2026-10-03',
+    }
+    monkeypatch.setattr(runtime, 'game_detail', lambda *a, **k: dict(game))
+    monkeypatch.setattr(runtime, '_odds', lambda *a, **k: [])
+    monkeypatch.setattr(
+        runtime,
+        '_prop_payload',
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError('unrotated primary credential must not be used')
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        '_keyless_prop_payload_for_game',
+        lambda *a, **k: {
+            'sport': 'MLB',
+            'event_id': 'test-event',
+            'provider': 'DraftKings keyless direct',
+            'props': [],
+            'status': 'KEYLESS_TEST_FALLBACK',
+        },
+    )
+
+    response = client.get(
+        '/v1/games/MLB/test-event/props?odds_event_id=test-odds-event&date=2026-10-03'
+    )
     assert response.status_code == 200
     payload = response.json()
-    assert payload['status'] == 'CONTRACT_READY_LIVE_KEY_REQUIRED'
-    assert payload['props'] == []
+    assert payload['status'] == 'KEYLESS_TEST_FALLBACK'
+    assert payload['provider'] == 'DraftKings keyless direct'
 
 
 def test_generated_prediction_bundle_without_moneyline():
