@@ -339,9 +339,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     artifact = portable_model(sport, final_pipeline, calibrator, features, evidence)
-    evidence["promotion_evidence"]["provenance"]["model_sha256"] = artifact["artifact_sha256"]
+    model_core = {
+        "features": artifact["features"],
+        "preprocessing": artifact["preprocessing"],
+        "probability": artifact["probability"],
+    }
+    evidence["promotion_evidence"]["provenance"]["model_sha256"] = sha256_bytes(
+        canonical_json(model_core)
+    )
     artifact["promotion_evidence"] = evidence["promotion_evidence"]
-    artifact["artifact_sha256"] = sha256_bytes(canonical_json({k:v for k,v in artifact.items() if k != "artifact_sha256"}))
+    artifact["artifact_format"] = "philthysports_portable_logistic_platt_v1"
+    artifact["artifact_sha256"] = sha256_bytes(
+        canonical_json({k: v for k, v in artifact.items() if k != "artifact_sha256"})
+    )
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
