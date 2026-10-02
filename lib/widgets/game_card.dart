@@ -25,6 +25,7 @@ class GameCard extends StatelessWidget {
     final m = game.market;
     final s = game.projectedScore;
     final predictions = game.predictions;
+    final live = game.live;
     final ml = Map<String, dynamic>.from(predictions['moneyline'] ?? {});
     final spread = Map<String, dynamic>.from(predictions['spread'] ?? {});
     final total = Map<String, dynamic>.from(predictions['total'] ?? {});
@@ -73,6 +74,25 @@ class GameCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text('${game.eventTime} PT'),
+              if (live.isNotEmpty &&
+                  (live['home_score'] != null ||
+                      live['away_score'] != null ||
+                      live['status'] != null))
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    [
+                      if (live['away_score'] != null ||
+                          live['home_score'] != null)
+                        'Live score: ${live['away_score'] ?? '—'} - ${live['home_score'] ?? '—'}',
+                      if (live['status'] != null) '${live['status']}',
+                      if (live['period'] != null) 'Period ${live['period']}',
+                      if (live['clock'] != null && '${live['clock']}'.isNotEmpty)
+                        '${live['clock']}',
+                    ].join(' • '),
+                    style: Theme.of(c).textTheme.bodyMedium,
+                  ),
+                ),
               const SizedBox(height: 8),
               Text(
                 'ML: ${ml['pick'] ?? game.pick ?? 'Unavailable'}'
