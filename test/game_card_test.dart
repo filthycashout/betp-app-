@@ -45,7 +45,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Thu Oct 2 • 3:30 PM PT'), findsOneWidget);
+    expect(find.text('Fri Oct 2 • 3:30 PM PT'), findsOneWidget);
     expect(find.text('LIVE • 0 - 0 • Period 1'), findsOneWidget);
     expect(find.textContaining('0.0 - 0.0'), findsNothing);
     expect(
