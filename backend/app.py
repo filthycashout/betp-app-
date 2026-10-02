@@ -15,7 +15,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
@@ -26,6 +26,8 @@ SPORT_KEYS = {
 ESPN = {
     "NFL": ("football", "nfl"),
     "NBA": ("basketball", "nba"),
+    "MLB": ("baseball", "mlb"),
+    "NHL": ("hockey", "nhl"),
 }
 PROP_MARKETS = {
     "NFL": [
@@ -231,16 +233,141 @@ def _odds_key() -> str:
         raise RuntimeError("ODDS_API_KEY missing")
     return key
 
+def _coerce_number(value: Any) -> float | None:
+    if isinstance(value, dict):
+        for key in ("value", "american", "alternateDisplayValue", "moneyLine"):
+            if key in value:
+                return _coerce_number(value.get(key))
+        return None
+    try:
+        return float(str(value).strip().replace("+", ""))
+    except (TypeError, ValueError):
+        return None
+
+def _espn_market_events(sport: str, d: date_cls) -> list[dict]:
+    a, b = ESPN[sport]
+    raw = _json(
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/scoreboard",
+        params={"dates": d.strftime("%Y%m%d"), "lang": "en", "region": "us"},
+        timeout=12,
+    )
+    now = datetime.now(timezone.utc)
+    events: list[dict] = []
+    for event in raw.get("events") or []:
+        competitions = event.get("competitions") or []
+        if not competitions or not isinstance(competitions[0], dict):
+            continue
+        comp = competitions[0]
+        competitors = comp.get("competitors") or []
+        home = next((x for x in competitors if isinstance(x, dict) and x.get("homeAway") == "home"), None)
+        away = next((x for x in competitors if isinstance(x, dict) and x.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        home_team = (home.get("team") or {}).get("displayName") or (home.get("team") or {}).get("name")
+        away_team = (away.get("team") or {}).get("displayName") or (away.get("team") or {}).get("name")
+        commence_raw = event.get("date") or comp.get("date")
+        try:
+            commence = datetime.fromisoformat(str(commence_raw).replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+        if commence <= now:
+            continue
+
+        odds_rows = comp.get("odds") or []
+        odds = next(
+            (
+                row for row in odds_rows
+                if isinstance(row, dict)
+                and "live" not in str((row.get("provider") or {}).get("name") or "").lower()
+            ),
+            None,
+        )
+        if not isinstance(odds, dict):
+            continue
+
+        home_odds = odds.get("homeTeamOdds") if isinstance(odds.get("homeTeamOdds"), dict) else {}
+        away_odds = odds.get("awayTeamOdds") if isinstance(odds.get("awayTeamOdds"), dict) else {}
+        home_ml = _coerce_number(home_odds.get("moneyLine") or (home_odds.get("current") or {}).get("moneyLine"))
+        away_ml = _coerce_number(away_odds.get("moneyLine") or (away_odds.get("current") or {}).get("moneyLine"))
+        markets: list[dict[str, Any]] = []
+        if home_ml is not None and away_ml is not None:
+            markets.append({
+                "key": "h2h",
+                "outcomes": [
+                    {"name": home_team, "price": home_ml},
+                    {"name": away_team, "price": away_ml},
+                ],
+            })
+
+        spread = _coerce_number(odds.get("spread"))
+        if spread is not None and spread != 0:
+            magnitude = abs(spread)
+            if bool(home_odds.get("favorite")):
+                home_point, away_point = -magnitude, magnitude
+            elif bool(away_odds.get("favorite")):
+                home_point, away_point = magnitude, -magnitude
+            else:
+                home_point, away_point = -spread, spread
+            markets.append({
+                "key": "spreads",
+                "outcomes": [
+                    {"name": home_team, "point": home_point},
+                    {"name": away_team, "point": away_point},
+                ],
+            })
+
+        total = _coerce_number(odds.get("overUnder"))
+        if total is not None and total > 0:
+            markets.append({
+                "key": "totals",
+                "outcomes": [
+                    {"name": "Over", "point": total},
+                    {"name": "Under", "point": total},
+                ],
+            })
+        if not markets:
+            continue
+
+        provider = odds.get("provider") if isinstance(odds.get("provider"), dict) else {}
+        events.append({
+            "id": str(event.get("id") or comp.get("id") or ""),
+            "home_team": str(home_team or ""),
+            "away_team": str(away_team or ""),
+            "commence_time": commence.isoformat(),
+            "bookmakers": [{
+                "key": str(provider.get("id") or "espn"),
+                "title": str(provider.get("name") or "ESPN"),
+                "last_update": now.isoformat(),
+                "markets": markets,
+            }],
+            "data_quality": "PREGAME_KEYLESS",
+            "market_source": "ESPN_SCOREBOARD_ODDS",
+        })
+    return events
+
 def _odds(sport: str, d: date_cls) -> list[dict]:
-    start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
-    end = start + timedelta(hours=36)
-    params = {
-        "apiKey": _odds_key(), "regions": "us", "markets": "h2h,spreads,totals",
-        "oddsFormat": "american", "dateFormat": "iso",
-        "commenceTimeFrom": start.isoformat().replace("+00:00", "Z"),
-        "commenceTimeTo": end.isoformat().replace("+00:00", "Z"),
-    }
-    return _timed(f"{sport}.odds", lambda: _json(f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/odds/", params=params, timeout=12))
+    key = os.getenv("ODDS_API_KEY", "").strip()
+    rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    if key and rotation:
+        start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+        end = start + timedelta(hours=36)
+        params = {
+            "apiKey": key, "regions": "us", "markets": "h2h,spreads,totals",
+            "oddsFormat": "american", "dateFormat": "iso",
+            "commenceTimeFrom": start.isoformat().replace("+00:00", "Z"),
+            "commenceTimeTo": end.isoformat().replace("+00:00", "Z"),
+        }
+        return _timed(
+            f"{sport}.odds.the_odds_api",
+            lambda: _json(
+                f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/odds/",
+                params=params,
+                timeout=12,
+            ),
+        )
+    return _timed(f"{sport}.odds.espn_keyless", lambda: _espn_market_events(sport, d))
 
 def _norm(s: str | None) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
@@ -475,7 +602,210 @@ def model_status():
 @app.get("/v1/system/props")
 def prop_capabilities():
     configured = bool(os.getenv("ODDS_API_KEY", "").strip())
-    return {"provider": "The Odds API v4", "credential_configured": configured, "sports": {s: {"supported": True, "markets": PROP_MARKETS[s]} for s in SPORTS}}
+    rotated = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    return {
+        "provider": "The Odds API v4",
+        "credential_configured": configured,
+        "credential_rotation_confirmed": rotated,
+        "live_player_props_enabled": configured and rotated,
+        "sports": {s: {"supported": True, "markets": PROP_MARKETS[s]} for s in SPORTS},
+    }
+
+def _team_code(name: str | None) -> str:
+    words = [x for x in str(name or "").replace("-", " ").split() if x]
+    if not words:
+        return "TEAM"
+    if len(words) == 1:
+        return words[0][:4].upper()
+    return "".join(x[0] for x in words)[-4:].upper()
+
+def _legacy_game(game: dict[str, Any]) -> dict[str, Any]:
+    when = game.get("event_time")
+    now = datetime.now(timezone.utc)
+    try:
+        dt = datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        dt = None
+    status = str(game.get("status") or "")
+    upper = status.upper()
+    if dt and dt > now:
+        state = "pre"
+    elif any(x in upper for x in ("FINAL", "COMPLETE", "OFF")):
+        state = "post"
+    else:
+        state = "in"
+    return {
+        "id": str(game.get("event_id") or ""),
+        "sport": str(game.get("sport") or "").upper(),
+        "date": when,
+        "status_name": status,
+        "status_text": status,
+        "state": state,
+        "home_name": str(game.get("home") or ""),
+        "away_name": str(game.get("away") or ""),
+        "home_abbr": _team_code(game.get("home")),
+        "away_abbr": _team_code(game.get("away")),
+        "home_record": "",
+        "away_record": "",
+        "home_score": "",
+        "away_score": "",
+        "home_logo": "",
+        "away_logo": "",
+    }
+
+def _fair_american(probability: float) -> int:
+    p = max(1e-6, min(1 - 1e-6, float(probability)))
+    if p >= 0.5:
+        return round(-100 * p / (1 - p))
+    return round(100 * (1 - p) / p)
+
+def _legacy_prediction(game: dict[str, Any]) -> dict[str, Any] | None:
+    market = game.get("market") or {}
+    hp = market.get("home_probability")
+    if hp is None:
+        return None
+    hp = float(hp)
+    selected = max(hp, 1.0 - hp)
+    home_name = str(game.get("home") or "")
+    away_name = str(game.get("away") or "")
+    pick_name = home_name if hp >= 0.5 else away_name
+    pick = _team_code(pick_name)
+    home_spread = market.get("home_spread")
+    if home_spread is None:
+        spread_lean = "MARKET N/A"
+    else:
+        point = float(home_spread) if pick_name == home_name else -float(home_spread)
+        spread_lean = f"{pick} {point:+g}"
+    total = market.get("total")
+    total_lean = f"MARKET {float(total):g}" if total is not None else "MARKET N/A"
+    return {
+        "home_win_probability": round(hp, 6),
+        "pick": pick,
+        "pick_confidence": round(selected, 6),
+        "moneyline": _fair_american(selected),
+        "spread_lean": spread_lean,
+        "total_lean": total_lean,
+        "total_confidence": 0.0,
+        "home_team_total": "MARKET N/A",
+        "away_team_total": "MARKET N/A",
+        "projected_outcome": f"{pick} ML · EVIDENCE_GATED_BASELINE",
+        "engine": "De-vigged fresh market consensus baseline v1",
+    }
+
+@app.get("/v1/protocol")
+def protocol():
+    return {
+        "master_protocol": [
+            "Understand", "Decompose", "Inspect", "Map", "Challenge", "Plan",
+            "Act", "Verify", "Recalibrate", "Explain", "Retain", "Improve",
+        ],
+        "promotion_policy": {
+            "chronological_training": True,
+            "in_fold_preprocessing": True,
+            "oof_calibration_only": True,
+            "ece_max": PROMOTION_ECE_MAX,
+            "market_baseline_fallback": True,
+            "automatic_wager_execution": False,
+        },
+    }
+
+@app.get("/v1/games/{sport}")
+def legacy_games(sport: str, days: int = Query(2, ge=1, le=7)):
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+    rows: list[dict[str, Any]] = []
+    hashes: list[str] = []
+    for offset in range(days):
+        d = date_cls.today() + timedelta(days=offset)
+        payload = _search(sport=s, date=d.isoformat(), include_props=False)
+        hashes.append(hashlib.sha256(json.dumps(payload["games"], sort_keys=True, default=str).encode()).hexdigest())
+        rows.extend(_legacy_game(g) for g in payload["games"])
+    return {
+        "sport": s,
+        "snapshot_sha256": hashlib.sha256("".join(hashes).encode()).hexdigest(),
+        "games": rows,
+    }
+
+@app.get("/v1/predictions/{sport}")
+def legacy_predictions(sport: str, days: int = Query(2, ge=1, le=7)):
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    rows: list[dict[str, Any]] = []
+    snapshots: list[str] = []
+    for offset in range(days):
+        d = date_cls.today() + timedelta(days=offset)
+        payload = _search(sport=s, date=d.isoformat(), include_props=False)
+        snapshots.append(hashlib.sha256(json.dumps(payload["games"], sort_keys=True, default=str).encode()).hexdigest())
+        for game in payload["games"]:
+            legacy_game = _legacy_game(game)
+            if legacy_game["state"] != "pre":
+                continue
+            pred = _legacy_prediction(game)
+            if pred is None:
+                continue
+            rows.append({
+                "game": legacy_game,
+                "prediction": pred,
+                "model_state": _runtime_mode_for(s),
+                "reasoning": "Fresh pregame market baseline used because no trained model is promoted without full chronology, OOF calibration, leakage, schema, sample, metric, and checksum evidence.",
+            })
+    snapshot = hashlib.sha256("".join(snapshots).encode()).hexdigest()
+    return {
+        "sport": s,
+        "generated_at": generated_at,
+        "engine": "PhilthySports evidence-gated ensemble",
+        "model_state": _runtime_mode_for(s),
+        "snapshot_sha256": snapshot,
+        "predictions": rows,
+        "tracking": {"games_predicted": len(rows), "generated_at": generated_at},
+        "governance": {
+            "mode": "EVIDENCE_GATED_ENSEMBLE",
+            "model_state": _runtime_mode_for(s),
+            "promotion_gate": _promotion_gate_for(s),
+            "private_provider_keys_embedded_in_apk": False,
+        },
+    }
+
+@app.get("/v1/odds/{sport}")
+def legacy_odds(sport: str, date: str | None = None):
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+    d = date_cls.fromisoformat(date) if date else date_cls.today()
+    events = _odds(s, d)
+    return {
+        "sport": s,
+        "date": d.isoformat(),
+        "provider": (
+            "The Odds API v4"
+            if os.getenv("ODDS_API_KEY", "").strip()
+            and os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+            else "ESPN scoreboard odds"
+        ),
+        "events": events,
+    }
+
+@app.get("/v1/predictions/latest")
+def legacy_predictions_latest():
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "verified_live_run": False,
+        "predictions": [],
+        "note": "No stale prediction cache is served. Use sport-scoped live prediction routes.",
+    }
+
+@app.get("/v1/runs/latest")
+def legacy_runs_latest():
+    return {
+        "latest_run": None,
+        "runtime": "stateless_live_fetch",
+        "note": "Current runtime does not fabricate a persisted run when no durable run ledger has been written.",
+    }
 
 @app.get("/v1/today")
 def today(include_props: bool = True, props_limit: int = 3):
