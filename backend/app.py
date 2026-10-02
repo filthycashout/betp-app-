@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import uuid
@@ -29,7 +30,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.4.6"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -415,6 +416,8 @@ def _espn_schedule(sport: str, date_yyyymmdd: str) -> list[dict]:
         out.append({
             "event_id": str(ev.get("id")), "sport": sport, "event_time": ev.get("date"),
             "home": home.get("team", {}).get("displayName"), "away": away.get("team", {}).get("displayName"),
+            "home_record_pct": _competitor_record_pct(home),
+            "away_record_pct": _competitor_record_pct(away),
             "status": ev.get("status", {}).get("type", {}).get("name", ""), "schedule_source": "ESPN",
         })
     return out
@@ -427,6 +430,8 @@ def _mlb_schedule(date_iso: str) -> list[dict]:
             out.append({
                 "event_id": str(g.get("gamePk")), "sport": "MLB", "event_time": g.get("gameDate"),
                 "home": g["teams"]["home"]["team"]["name"], "away": g["teams"]["away"]["team"]["name"],
+                "home_record_pct": _record_pct_mapping(g["teams"]["home"].get("leagueRecord") or {}),
+                "away_record_pct": _record_pct_mapping(g["teams"]["away"].get("leagueRecord") or {}),
                 "home_probable_pitcher": g["teams"]["home"].get("probablePitcher", {}).get("fullName"),
                 "away_probable_pitcher": g["teams"]["away"].get("probablePitcher", {}).get("fullName"),
                 "status": g.get("status", {}).get("detailedState", ""), "schedule_source": "MLB StatsAPI",
@@ -452,6 +457,8 @@ def _nhl_schedule(date_iso: str) -> list[dict]:
             out.append({
                 "event_id": str(g.get("id")), "sport": "NHL", "event_time": g.get("startTimeUTC"),
                 "home": _nhl_name(g.get("homeTeam") or {}), "away": _nhl_name(g.get("awayTeam") or {}),
+                "home_record_pct": _record_pct_mapping(g.get("homeTeam") or {}),
+                "away_record_pct": _record_pct_mapping(g.get("awayTeam") or {}),
                 "status": g.get("gameState") or "", "schedule_source": "NHL Web API",
             })
     return out
@@ -595,6 +602,321 @@ def _coerce_number(value: Any) -> float | None:
         return float(str(value).strip().replace("+", ""))
     except (TypeError, ValueError):
         return None
+
+
+def _record_pct_mapping(value: Any) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    for key in ("pct", "winPercent", "winPercentage", "pointPctg"):
+        raw = value.get(key)
+        if raw is not None:
+            try:
+                pct = float(raw)
+                if pct > 1:
+                    pct /= 100.0
+                if 0 <= pct <= 1:
+                    return pct
+            except (TypeError, ValueError):
+                pass
+    wins = value.get("wins")
+    losses = value.get("losses")
+    ot = value.get("otLosses") or value.get("overtimeLosses") or 0
+    try:
+        w, l, o = float(wins), float(losses), float(ot)
+        games = w + l + o
+        if games > 0:
+            return (w + 0.5 * o) / games
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _competitor_record_pct(competitor: dict[str, Any]) -> float | None:
+    direct = _record_pct_mapping(competitor)
+    if direct is not None:
+        return direct
+    for record in competitor.get("records") or []:
+        if not isinstance(record, dict):
+            continue
+        stats = {
+            str(item.get("name") or item.get("abbreviation") or ""): item.get("value")
+            for item in (record.get("stats") or [])
+            if isinstance(item, dict)
+        }
+        pct = _record_pct_mapping({
+            "wins": stats.get("wins"),
+            "losses": stats.get("losses"),
+            "winPercent": stats.get("winPercent") or stats.get("winPercentage"),
+        })
+        if pct is not None:
+            return pct
+        summary = str(record.get("summary") or "").strip()
+        if summary:
+            parts = summary.replace("–", "-").split("-")
+            try:
+                nums = [float(x) for x in parts if x.strip() != ""]
+                if len(nums) >= 2 and sum(nums[:2]) > 0:
+                    return nums[0] / sum(nums[:2])
+            except ValueError:
+                pass
+    return None
+
+
+_FORM_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_FORM_TTL_SECONDS = 900
+_FORM_LOOKBACK_DAYS = {"NFL": 120, "NBA": 45, "MLB": 35, "NHL": 45}
+
+
+def _espn_recent_form_snapshot(sport: str, d: date_cls) -> dict[str, Any]:
+    cache_key = (sport, d.isoformat())
+    cached = _FORM_CACHE.get(cache_key)
+    now = time.time()
+    if cached and now - cached[0] <= _FORM_TTL_SECONDS:
+        return cached[1]
+
+    end = d - timedelta(days=1)
+    start = end - timedelta(days=_FORM_LOOKBACK_DAYS[sport])
+    if end < start:
+        return {"teams": {}, "completed_games": 0, "league_mean_abs_margin": None}
+
+    a, b = ESPN[sport]
+    raw = _json(
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/scoreboard",
+        params={
+            "dates": f"{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}",
+            "limit": 1000,
+            "lang": "en",
+            "region": "us",
+        },
+        timeout=15,
+    )
+    teams: dict[str, dict[str, Any]] = {}
+    margins: list[float] = []
+    completed = 0
+
+    for event in raw.get("events") or []:
+        status = (event.get("status") or {}).get("type") or {}
+        if status.get("completed") is not True and str(status.get("state") or "").lower() != "post":
+            continue
+        competitions = event.get("competitions") or []
+        if not competitions or not isinstance(competitions[0], dict):
+            continue
+        competitors = competitions[0].get("competitors") or []
+        home = next((x for x in competitors if isinstance(x, dict) and x.get("homeAway") == "home"), None)
+        away = next((x for x in competitors if isinstance(x, dict) and x.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        hs = _coerce_number(home.get("score"))
+        aw = _coerce_number(away.get("score"))
+        if hs is None or aw is None:
+            continue
+
+        home_name = str((home.get("team") or {}).get("displayName") or (home.get("team") or {}).get("name") or "")
+        away_name = str((away.get("team") or {}).get("displayName") or (away.get("team") or {}).get("name") or "")
+        if not home_name or not away_name:
+            continue
+
+        completed += 1
+        margins.append(abs(hs - aw))
+        for name, scored, allowed, won in (
+            (home_name, hs, aw, hs > aw),
+            (away_name, aw, hs, aw > hs),
+        ):
+            key = _norm(name)
+            row = teams.setdefault(
+                key,
+                {
+                    "name": name,
+                    "games": 0,
+                    "wins": 0,
+                    "ties": 0,
+                    "points_for": 0.0,
+                    "points_against": 0.0,
+                },
+            )
+            row["games"] += 1
+            row["points_for"] += float(scored)
+            row["points_against"] += float(allowed)
+            if scored == allowed:
+                row["ties"] += 1
+            elif won:
+                row["wins"] += 1
+
+    snapshot = {
+        "teams": teams,
+        "completed_games": completed,
+        "league_mean_abs_margin": mean(margins) if margins else None,
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+    }
+    _FORM_CACHE[cache_key] = (now, snapshot)
+    return snapshot
+
+
+def _form_team(snapshot: dict[str, Any], team_name: str | None) -> dict[str, Any] | None:
+    wanted = _norm(team_name)
+    if not wanted:
+        return None
+    teams = snapshot.get("teams") or {}
+    if wanted in teams:
+        return teams[wanted]
+    for alias, row in teams.items():
+        if alias and (wanted in alias or alias in wanted):
+            return row
+    return None
+
+
+def _recent_form_prediction(sport: str, game: dict[str, Any], d: date_cls) -> dict[str, Any] | None:
+    try:
+        snapshot = _timed(
+            f"{sport}.recent_form",
+            lambda: _espn_recent_form_snapshot(sport, d),
+        )
+    except Exception:
+        snapshot = {"teams": {}}
+
+    home = _form_team(snapshot, game.get("home"))
+    away = _form_team(snapshot, game.get("away"))
+
+    if home and away and int(home.get("games") or 0) > 0 and int(away.get("games") or 0) > 0:
+        hg = float(home["games"])
+        ag = float(away["games"])
+        home_win = (float(home["wins"]) + 0.5 * float(home.get("ties") or 0) + 1.0) / (hg + 2.0)
+        away_win = (float(away["wins"]) + 0.5 * float(away.get("ties") or 0) + 1.0) / (ag + 2.0)
+        record_probability = (home_win + (1.0 - away_win)) / 2.0
+
+        home_pf = float(home["points_for"]) / hg
+        home_pa = float(home["points_against"]) / hg
+        away_pf = float(away["points_for"]) / ag
+        away_pa = float(away["points_against"]) / ag
+        projected_home = (home_pf + away_pa) / 2.0
+        projected_away = (away_pf + home_pa) / 2.0
+        margin = projected_home - projected_away
+        scale = float(snapshot.get("league_mean_abs_margin") or 1.0)
+        scale = max(scale, 1.0)
+        margin_probability = 1.0 / (1.0 + math.exp(-margin / scale))
+        home_probability = max(
+            0.10,
+            min(0.90, 0.65 * record_probability + 0.35 * margin_probability),
+        )
+        return {
+            "source": "keyless_recent_form_heuristic",
+            "calibrated": False,
+            "home_win_probability": round(home_probability, 6),
+            "projected_score": {
+                "home": round(max(0.0, projected_home), 1),
+                "away": round(max(0.0, projected_away), 1),
+                "method": "recent_completed_games_scoring_blend",
+            },
+            "home_recent_games": int(hg),
+            "away_recent_games": int(ag),
+            "window_start": snapshot.get("window_start"),
+            "window_end": snapshot.get("window_end"),
+            "note": (
+                "Fallback uses only completed games before the matchup date. "
+                "It is a transparent recent-form heuristic, not a calibrated promoted model."
+            ),
+        }
+
+    home_pct = game.get("home_record_pct")
+    away_pct = game.get("away_record_pct")
+    if isinstance(home_pct, (int, float)) and isinstance(away_pct, (int, float)):
+        p = max(0.10, min(0.90, (float(home_pct) + (1.0 - float(away_pct))) / 2.0))
+        return {
+            "source": "keyless_season_record_heuristic",
+            "calibrated": False,
+            "home_win_probability": round(p, 6),
+            "projected_score": {"home": None, "away": None, "method": "unavailable_without_scoring_form"},
+            "home_recent_games": None,
+            "away_recent_games": None,
+            "note": (
+                "Fallback uses the current season records exposed by the official schedule feed. "
+                "It is not a calibrated promoted model."
+            ),
+        }
+    return None
+
+
+def _prediction_bundle(
+    game: dict[str, Any],
+    market: dict[str, Any],
+    score: dict[str, Any],
+    hp: float | None,
+    probability_source: str,
+    reasoning: str,
+    form: dict[str, Any] | None,
+) -> dict[str, Any]:
+    pick = None
+    if hp is not None:
+        pick = game.get("home") if float(hp) >= 0.5 else game.get("away")
+
+    spread_pick = market.get("spread_pick")
+    spread_line = None
+    spread_probability = market.get("spread_pick_probability")
+    spread_source = "fresh_two_sided_devigged_spread_market"
+    home_spread = market.get("home_spread")
+
+    predicted_home = score.get("home")
+    predicted_away = score.get("away")
+    if spread_pick == game.get("home"):
+        spread_line = home_spread
+    elif spread_pick == game.get("away") and home_spread is not None:
+        spread_line = -float(home_spread)
+    elif (
+        spread_pick is None
+        and home_spread is not None
+        and predicted_home is not None
+        and predicted_away is not None
+    ):
+        projected_margin = float(predicted_home) - float(predicted_away)
+        cover_margin = projected_margin + float(home_spread)
+        spread_pick = game.get("home") if cover_margin >= 0 else game.get("away")
+        spread_line = float(home_spread) if spread_pick == game.get("home") else -float(home_spread)
+        spread_probability = None
+        spread_source = "recent_form_projection_vs_market_line"
+
+    total_pick = market.get("total_pick")
+    total_line = market.get("total")
+    total_probability = market.get("total_pick_probability")
+    total_source = "fresh_two_sided_devigged_total_market"
+    projected_total = None
+    if predicted_home is not None and predicted_away is not None:
+        projected_total = round(float(predicted_home) + float(predicted_away), 1)
+    if (
+        total_pick is None
+        and total_line is not None
+        and projected_total is not None
+    ):
+        total_pick = "OVER" if projected_total >= float(total_line) else "UNDER"
+        total_probability = None
+        total_source = "recent_form_projection_vs_market_line"
+
+    return {
+        "generated": pick is not None,
+        "moneyline": {
+            "pick": pick,
+            "home_win_probability": hp,
+            "source": probability_source,
+            "calibrated": probability_source == "signed_promoted_trained_model",
+        },
+        "spread": {
+            "pick": spread_pick,
+            "line": spread_line,
+            "probability": spread_probability,
+            "source": spread_source if spread_pick is not None else "unavailable",
+        },
+        "total": {
+            "pick": total_pick,
+            "line": total_line,
+            "probability": total_probability,
+            "projected_total": projected_total,
+            "source": total_source if total_pick is not None else "unavailable",
+        },
+        "score": score,
+        "reasoning": reasoning,
+        "fallback": form,
+    }
+
 
 def _espn_market_events(sport: str, d: date_cls) -> list[dict]:
     a, b = ESPN[sport]
