@@ -14,8 +14,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 from market_validation import parse_props, parse_game_market, utc_time
 from keyless_sportsbook import (
-    draftkings_game_events,
-    draftkings_prop_events,
+    keyless_game_events,
+    keyless_prop_events,
     keyless_sportsbook_status,
 )
 
@@ -1534,8 +1534,8 @@ def _odds(sport: str, d: date_cls) -> list[dict]:
     # ESPN's current game-line snapshot.
     try:
         direct = _timed(
-            f"{sport}.odds.draftkings_keyless",
-            lambda: draftkings_game_events(sport),
+            f"{sport}.odds.public_sportsbook_keyless",
+            lambda: keyless_game_events(sport),
         )
     except Exception:
         direct = []
@@ -1559,6 +1559,8 @@ def _market_source_rank(event: dict[str, Any]) -> int:
     source = str(event.get("market_source") or "").upper()
     if "THE_ODDS" in source:
         return 30
+    if "BOVADA" in source:
+        return 25
     if "DRAFTKINGS" in source:
         return 20
     if "ESPN" in source:
@@ -1654,15 +1656,15 @@ def _keyless_prop_payload_for_game(
 ) -> dict[str, Any]:
     markets = _requested_prop_markets(sport, requested)
     events = _timed(
-        f"{sport}.props.draftkings_keyless",
-        lambda: draftkings_prop_events(sport, markets),
+        f"{sport}.props.public_sportsbook_keyless",
+        lambda: keyless_prop_events(sport, markets),
     )
     raw = _match_odds(game, events)
     if raw is None:
         return {
             "sport": sport,
             "event_id": game.get("event_id"),
-            "provider": "DraftKings keyless direct",
+            "provider": "public keyless sportsbook fallback",
             "configured_markets": PROP_MARKETS[sport],
             "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
             "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
@@ -1679,7 +1681,7 @@ def _keyless_prop_payload_for_game(
         "sport": sport,
         "event_id": game.get("event_id"),
         "provider_event_id": raw.get("id"),
-        "provider": "DraftKings keyless direct",
+        "provider": str(raw.get("market_source") or "public keyless sportsbook fallback"),
         "credential_required": False,
         "configured_markets": PROP_MARKETS[sport],
         "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
@@ -1714,7 +1716,7 @@ def _props_for_game(
         return {
             "sport": sport,
             "event_id": game.get("event_id"),
-            "provider": "DraftKings keyless direct",
+            "provider": "public keyless sportsbook fallback",
             "credential_required": False,
             "configured_markets": PROP_MARKETS[sport],
             "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
