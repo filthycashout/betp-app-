@@ -27,6 +27,7 @@ class PhilthyApi {
   Future<Map<String, dynamic>> health() => _get('/health');
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
+  Future<Map<String, dynamic>> propCapabilities() => _get('/v1/system/props');
 
   Future<List<GameSummary>> today() async {
     final j = await _get('/v1/today?include_props=true&props_limit=3');
