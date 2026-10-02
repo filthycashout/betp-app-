@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: philthysports-full-ci-${{ github.ref }}
@@ -78,6 +79,81 @@ jobs:
               p.write_text(s)
           PY
 
+      - name: Fetch stable release signing key through GitHub OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUDIENCE="philthysports-ci"
+          OIDC_JSON="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
+          OIDC_TOKEN="$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"$OIDC_JSON")"
+          SIGNING_JSON="$(curl -fsS --retry 8 --retry-all-errors --retry-delay 2             -H "Authorization: Bearer $OIDC_TOKEN"             https://philthysports-powerhouse-v8.onrender.com/v1/ci/android-signing-material)"
+          python - <<'PY' <<<"$SIGNING_JSON"
+          import base64, json, pathlib, sys
+          payload=json.load(sys.stdin)
+          expected="0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
+          if payload.get("public_spki_sha256") != expected:
+              raise SystemExit("Powerhouse signing key does not match pinned release certificate")
+          pathlib.Path("android-release-key.pk8").write_bytes(
+              base64.b64decode(payload["private_key_pkcs8_b64"], validate=True)
+          )
+          PY
+          TEMP_PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$TEMP_PASS"
+          echo "PHILTHY_TEMP_STORE_PASSWORD=$TEMP_PASS" >> "$GITHUB_ENV"
+          openssl pkey -inform DER -in android-release-key.pk8 -out android-release-key.pem
+          openssl pkcs12 -export             -inkey android-release-key.pem             -in ci/android_release_cert.pem             -out android/app/philthysports-release.p12             -name philthysports-release             -passout "pass:$TEMP_PASS"
+          rm -f android-release-key.pk8 android-release-key.pem
+
+      - name: Configure generated Android host for stable release signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          kts=Path("android/app/build.gradle.kts")
+          groovy=Path("android/app/build.gradle")
+          if kts.exists():
+              s=kts.read_text()
+              block='''    signingConfigs {
+                  create("release") {
+                      storeFile = file("philthysports-release.p12")
+                      storePassword = System.getenv("PHILTHY_TEMP_STORE_PASSWORD")
+                      keyAlias = "philthysports-release"
+                      keyPassword = System.getenv("PHILTHY_TEMP_STORE_PASSWORD")
+                      storeType = "PKCS12"
+                  }
+              }
+
+          '''
+              if 'create("release")' not in s:
+                  s=s.replace("    buildTypes {", block+"    buildTypes {")
+              s=s.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+              )
+              kts.write_text(s)
+          elif groovy.exists():
+              s=groovy.read_text()
+              block='''    signingConfigs {
+                  release {
+                      storeFile file("philthysports-release.p12")
+                      storePassword System.getenv("PHILTHY_TEMP_STORE_PASSWORD")
+                      keyAlias "philthysports-release"
+                      keyPassword System.getenv("PHILTHY_TEMP_STORE_PASSWORD")
+                      storeType "PKCS12"
+                  }
+              }
+
+          '''
+              if "signingConfigs {" not in s:
+                  s=s.replace("    buildTypes {", block+"    buildTypes {")
+              s=s.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
+              groovy.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle file found")
+          PY
+
       - name: Flutter dependencies
         run: flutter pub get
 
@@ -92,23 +168,26 @@ jobs:
           flutter build apk --release
           --dart-define=PHILTHY_API_BASE_URL=https://philthysports-powerhouse-v8.onrender.com
 
-      - name: Verify APK signature
+      - name: Verify stable APK signature identity
         shell: bash
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -n "$APKSIGNER"
-          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk | tee apk-signature.txt
+          ACTUAL="$(grep -m1 'certificate SHA-256 digest:' apk-signature.txt | awk -F': ' '{print $2}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="97BE4C2028288638C8BE55CE7540164A1995A1F18675964E3D8E733744D89700"
+          test "$ACTUAL" = "$EXPECTED"
 
       - name: Create SHA-256
-        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.0.apk.sha256
+        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.1.apk.sha256
 
       - name: Stage APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.0.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.1.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-1.4.0-android
+          name: PhilthySports-1.4.1-android
           path: |
             PhilthySports-1.4.0.apk
             PhilthySports-1.4.0.apk.sha256
