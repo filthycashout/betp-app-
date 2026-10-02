@@ -6,7 +6,7 @@ client = TestClient(runtime.app)
 def test_health_and_compatibility_aliases():
     for path in ['/', '/health', '/v1/health', '/api/health']:
         assert client.get(path).status_code == 200
-    assert client.get('/health').json()['version'] == '1.4.6'
+    assert client.get('/health').json()['version'] == runtime.APP_VERSION
 
 def test_four_sport_model_baseline():
     data = client.get('/v1/models/status').json()

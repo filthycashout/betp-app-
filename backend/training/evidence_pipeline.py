@@ -9,6 +9,7 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 ESPN = {
@@ -51,12 +52,13 @@ def _parse_time(value: str) -> datetime:
 
 
 def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
-    fetched_at = datetime.now(timezone.utc)
     query = urllib.parse.urlencode(
         {"include_props": "true", "props_limit": "20", "days": str(days)}
     )
     source_url = f"{base_url.rstrip('/')}/v1/today?{query}"
     payload = _json(source_url)
+    # Availability is when the response arrives, not when its request started.
+    fetched_at = datetime.now(timezone.utc)
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = fetched_at.strftime("%Y%m%dT%H%M%SZ")
 
@@ -85,6 +87,7 @@ def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
             "sport": str(game.get("sport") or "").upper(),
             "event_id": str(game.get("event_id") or ""),
             "event_time": event_dt.isoformat(),
+            "schedule_date": game.get("date") or event_dt.astimezone(ZoneInfo("America/Los_Angeles")).date().isoformat(),
             "as_of": fetched_at.isoformat(),
             "home_team": game.get("home"),
             "away_team": game.get("away"),
@@ -213,6 +216,13 @@ def _nhl_results(game_date: date) -> dict[str, int]:
 def _all_pregame_rows(root: Path) -> list[dict[str, Any]]:
     rows = []
     for path in sorted((root / "pregame").rglob("pregame_*.jsonl")):
+        manifest_path = path.with_name(path.name.replace("pregame_", "manifest_").replace(".jsonl", ".json"))
+        manifest = json.loads(manifest_path.read_text())
+        raw_path = path.parent / manifest["raw_file"]["name"]
+        if raw_path.parent.resolve() != path.parent.resolve():
+            raise ValueError("Capture raw path must remain in its capture directory")
+        if _sha256(path) != manifest["rows_file"]["sha256"] or _sha256(raw_path) != manifest["raw_file"]["sha256"]:
+            raise ValueError(f"Capture checksum mismatch: {path.name}")
         with path.open(encoding="utf-8") as handle:
             for line in handle:
                 if line.strip():
@@ -222,15 +232,27 @@ def _all_pregame_rows(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _schedule_date(row: dict[str, Any]) -> date:
+    return date.fromisoformat(row["schedule_date"]) if row.get("schedule_date") else _parse_time(row["event_time"]).astimezone(ZoneInfo("America/Los_Angeles")).date()
+
+
 def settle(root: Path, lookback_days: int = 14) -> None:
     rows = _all_pregame_rows(root)
     today = datetime.now(timezone.utc).date()
+    settled_dir = root / "settled"
+    settled_dir.mkdir(parents=True, exist_ok=True)
+    labels_path = settled_dir / "labels.jsonl"
     labels: dict[tuple[str, str], dict[str, Any]] = {}
+    if labels_path.exists():
+        for line in labels_path.read_text().splitlines():
+            if line.strip():
+                item = json.loads(line)
+                labels[(item["sport"], item["event_id"])] = item
     requested: dict[tuple[str, date], set[str]] = {}
 
     for row in rows:
         try:
-            game_date = _parse_time(row["event_time"]).date()
+            game_date = _schedule_date(row)
         except Exception:
             continue
         if game_date > today or game_date < today - timedelta(days=lookback_days):
@@ -253,18 +275,22 @@ def settle(root: Path, lookback_days: int = 14) -> None:
 
     for row in rows:
         try:
-            game_date = _parse_time(row["event_time"]).date()
+            game_date = _schedule_date(row)
         except Exception:
             continue
         result = cache.get((row["sport"], game_date), {}).get(row["event_id"])
         if result is None:
             continue
+        prior = labels.get((row["sport"], row["event_id"]))
+        if prior and prior["target_home_win"] == result:
+            continue  # Keep the first observed outcome availability timestamp.
         labels[(row["sport"], row["event_id"])] = {
             "sport": row["sport"],
             "event_id": row["event_id"],
             "event_date": game_date.isoformat(),
             "target_home_win": result,
             "settled_at": datetime.now(timezone.utc).isoformat(),
+            "previous_labels": ([*prior.get("previous_labels", []), {"target_home_win": prior["target_home_win"], "settled_at": prior["settled_at"]}] if prior else []),
             "result_source": (
                 "ESPN scoreboard"
                 if row["sport"] in ESPN
@@ -274,12 +300,11 @@ def settle(root: Path, lookback_days: int = 14) -> None:
             ),
         }
 
-    settled_dir = root / "settled"
-    settled_dir.mkdir(parents=True, exist_ok=True)
-    labels_path = settled_dir / "labels.jsonl"
-    with labels_path.open("w", encoding="utf-8") as handle:
+    temporary_path = labels_path.with_suffix(".jsonl.tmp")
+    with temporary_path.open("w", encoding="utf-8") as handle:
         for item in sorted(labels.values(), key=lambda x: (x["sport"], x["event_date"], x["event_id"])):
             handle.write(json.dumps(item, sort_keys=True) + "\n")
+    temporary_path.replace(labels_path)
     print(json.dumps({"settled_labels": len(labels), "sha256": _sha256(labels_path)}, indent=2))
 
 
@@ -317,6 +342,7 @@ def build(root: Path) -> None:
         "home_team",
         "away_team",
         "target_home_win",
+        "label_available_at",
         "market_home_probability",
         "consensus_de_vig_home_probability",
         "home_spread",
@@ -342,6 +368,8 @@ def build(root: Path) -> None:
             try:
                 if _parse_time(row["as_of"]) >= _parse_time(row["event_time"]):
                     continue
+                if _parse_time(label["settled_at"]) <= _parse_time(row["event_time"]):
+                    continue
             except Exception:
                 continue
             merged.append({
@@ -352,6 +380,7 @@ def build(root: Path) -> None:
                 "home_team": row.get("home_team"),
                 "away_team": row.get("away_team"),
                 "target_home_win": label["target_home_win"],
+                "label_available_at": label["settled_at"],
                 "market_home_probability": row.get("market_home_probability"),
                 "consensus_de_vig_home_probability": row.get("consensus_de_vig_home_probability"),
                 "home_spread": row.get("home_spread"),

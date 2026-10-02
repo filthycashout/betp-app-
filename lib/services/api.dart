@@ -7,6 +7,13 @@ import '../models/game.dart';
 import 'backend_config.dart';
 
 class PhilthyApi {
+  PhilthyApi({http.Client? client, String? baseUrl, Future<void> Function(Duration)? delay})
+      : _client = client, _baseUrl = baseUrl,
+        _delay = delay ?? ((duration) => Future<void>.delayed(duration));
+
+  final http.Client? _client;
+  final String? _baseUrl;
+  final Future<void> Function(Duration) _delay;
   static const _transientStatuses = {429, 502, 503, 504};
 
   Future<Map<String, dynamic>> _get(
@@ -15,15 +22,14 @@ class PhilthyApi {
     Duration timeout = const Duration(seconds: 20),
     Duration retryBaseDelay = const Duration(milliseconds: 750),
   }) async {
-    final base = await BackendConfig.baseUrl();
+    final base = _baseUrl ?? await BackendConfig.baseUrl();
     final uri = Uri.parse('$base$path');
     Object? lastError;
 
     for (var attempt = 0; attempt < attempts; attempt++) {
       try {
-        final r = await http
-            .get(uri, headers: {'Accept': 'application/json'})
-            .timeout(timeout);
+        final r = await (_client?.get(uri, headers: {'Accept': 'application/json'}) ??
+                http.get(uri, headers: {'Accept': 'application/json'})).timeout(timeout);
 
         if (r.statusCode >= 200 && r.statusCode < 300) {
           final decoded = jsonDecode(r.body);
@@ -39,18 +45,18 @@ class PhilthyApi {
         if (_transientStatuses.contains(r.statusCode) &&
             attempt + 1 < attempts) {
           lastError = error;
-          await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+          await _delay(retryBaseDelay * (attempt + 1));
           continue;
         }
         throw error;
       } on TimeoutException catch (e) {
         lastError = e;
         if (attempt + 1 >= attempts) rethrow;
-        await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+        await _delay(retryBaseDelay * (attempt + 1));
       } on http.ClientException catch (e) {
         lastError = e;
         if (attempt + 1 >= attempts) rethrow;
-        await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+        await _delay(retryBaseDelay * (attempt + 1));
       }
     }
 
@@ -59,12 +65,18 @@ class PhilthyApi {
     );
   }
 
-  Future<Map<String, dynamic>> health() => _get(
+  Future<Map<String, dynamic>> health() async {
+    final result = await _get(
         '/health',
         attempts: 5,
-        timeout: const Duration(seconds: 25),
+        timeout: const Duration(seconds: 15),
         retryBaseDelay: const Duration(seconds: 2),
       );
+    if (result['status'] != 'ok' || result['service'] != 'philthysports-runtime') {
+      throw const FormatException('This URL did not identify a healthy PhilthyParleys backend.');
+    }
+    return result;
+  }
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
   Future<Map<String, dynamic>> propCapabilities() => _get('/v1/system/props');

@@ -29,13 +29,22 @@ class BackendConfig {
   }
 
   static Future<void> save(String value) async {
+    final normalized = validate(value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, normalized);
+  }
+
+  static String validate(String value) {
+    final input = Uri.tryParse(value.trim());
+    if (input != null && input.userInfo.isNotEmpty) {
+      throw const FormatException('Use a backend URL without credentials.');
+    }
     final normalized = normalize(value);
     final uri = Uri.tryParse(normalized);
     if (uri == null || !uri.hasScheme || uri.scheme != 'https' || uri.host.isEmpty) {
       throw const FormatException('Enter a complete HTTPS API URL.');
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, normalized);
+    return normalized;
   }
 
   static Future<void> reset() async {

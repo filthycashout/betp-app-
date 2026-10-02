@@ -104,7 +104,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(12),
                   child: Text(
-                    'PhilthySports keeps an always-available four-sport market baseline. '
+                    'PhilthyParleys uses a market baseline for NFL, NBA, MLB and NHL when current prices are available. '
                     'A trained model may replace that baseline only after chronological '
                     'calibration and promotion checks pass. Player-prop contracts are '
                     'listed separately for NFL, NBA, MLB, and NHL.',

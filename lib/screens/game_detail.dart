@@ -36,7 +36,10 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       Map<String, dynamic> pa = {'parlays': []};
       try {
         p = await api.props(widget.game);
-      } catch (_) {}
+      } catch (_) {
+        p = {'props': [], 'status': 'PROVIDER_UNAVAILABLE',
+          'message': 'Player props could not be loaded. Pull to refresh and retry.'};
+      }
       try {
         pa = await api.parlays(widget.game);
       } catch (_) {}

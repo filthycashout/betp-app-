@@ -152,6 +152,9 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
         "sample_oof": oof_rows >= int(minimums["minimum_oof_rows"]),
         "sample_holdout": holdout_rows >= int(minimums["minimum_holdout_rows"]),
         "chronology_as_of_before_event": chronology.get("as_of_lt_event_time") is True,
+        "labels_available_before_validation": chronology.get("labels_available_before_validation") is True,
+        "simultaneous_predictions_grouped": chronology.get("simultaneous_predictions_grouped") is True,
+        "policy_checksum": strict.get("policy_sha256") == hashlib.sha256((HERE / "training" / "policy.json").read_bytes()).hexdigest(),
         "walk_forward_oof": chronology.get("walk_forward_oof") is True,
         "in_fold_preprocessing": chronology.get("in_fold_preprocessing") is True,
         "calibration_oof_only": (
@@ -211,9 +214,9 @@ def load_promoted(sport: str) -> dict[str, Any] | None:
         return None
     try:
         artifact = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+        gate = promotion_gate(artifact, sport)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError):
         return None
-    gate = promotion_gate(artifact, sport)
     if not gate["passed"]:
         return None
     artifact["runtime_security"] = gate["security"]

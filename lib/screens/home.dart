@@ -153,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PhilthySports'),
+        title: const Text('PhilthyParleys'),
         actions: [
           IconButton(
             tooltip: 'System & model status',

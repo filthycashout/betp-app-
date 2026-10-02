@@ -1,18 +1,37 @@
-# PhilthySports
+# PhilthyParleys
 
-PhilthySports combines a Flutter Android client with a deployed Python API for NFL, NBA, MLB, and NHL.
+PhilthyParleys is the renamed PhilthySports Android client for NFL, NBA, MLB and NHL.
+Version **1.5.0+17** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
 
-## Current runtime
+- Search matchups, review available moneyline/spread/total markets and player props, and build 7/10/14-leg manual-review parlay cards when sufficient eligible markets exist.
+- The client validates a candidate HTTPS backend before saving it, checks service identity, and retries temporary gateway/network failures with a finite budget.
+- Provider credentials are server-side only. Live props require legitimately reissued credentials and provider-side revocation evidence. Setting a flag or receiving HTTP 200 from `/health` does not establish live provider validation.
+- Prop quotes must be timestamped and recent. Recommendations require complementary prices from the same bookmaker and line. Unpaired outcomes show raw implied prices without a recommendation.
+- Game markets retain actual offered lines. Unknown provider quote age is not re-stamped as current, and ambiguous doubleheader mappings are rejected.
+- Training retains prior settled labels, records result availability, verifies capture hashes and excludes unavailable results from chronological folds and holdout training.
+- No trained model replaces the market baseline until strict per-sport evaluation and signature checks pass. A baseline needs usable current market data; it does not guarantee prices exist for every game.
 
-- Homepage starts with **Search team, matchup, date, or sport**.
-- NFL, NBA, MLB, and NHL each have a dedicated today's-games section.
-- The deployed backend uses keyless schedule sources where available and an integrity-checked portable production-baseline bundle for all four sports.
-- Each sport has a complete player-prop market catalog plus a quota-conscious default live subset. The contract remains visible before a sportsbook credential is activated, and callers can request a supported subset explicitly.
-- Fresh sportsbook moneylines, spreads, totals, and player-prop prices require a newly issued server-side `ODDS_API_KEY` plus confirmed provider-side rotation. Exposed legacy keys are never reused.
-- A trained sport model may replace the market baseline only after chronological walk-forward, separated calibration/holdout evaluation, provenance hashing, and promotion checks pass.
-- Flutter retries transient gateway/rate-limit responses and temporary connection failures during backend validation before reverting a custom URL.\n- Provider credentials stay server-side. Never add them to Flutter, Android resources, assets, or GitHub.
-- Execution remains analytics/manual-review only.
+Backend: https://philthysports-powerhouse-v8.onrender.com
 
-Backend: `https://philthysports-powerhouse-v8.onrender.com`
+## Validation
 
-Current client version: **1.4.5+15**.
+```sh
+pip install -r backend/requirements.txt -r backend/requirements-validation.txt
+PYTHONPATH=backend pytest -q backend/tests
+PYTHONPATH=backend python backend/selftest.py
+flutter analyze
+flutter test
+```
+
+Full CI builds `PhilthyParleys.apk`, verifies the pinned certificate, and runs the exact signed APK on an Android 35 emulator. Emulator installation/launch is not physical-device end-to-end evidence.
+
+On a connected physical Android device, use:
+
+```sh
+python ci/device_smoke.py --apk PhilthyParleys.apk --output device-report --serial YOUR_ADB_SERIAL --require-physical
+flutter test integration_test/app_test.dart -d YOUR_ADB_SERIAL
+```
+
+The first command preserves app data, verifies installation/process survival and collects a screenshot/log/report. The integration test additionally exercises UI presence and public health/model/prop contracts. Manual acceptance must still cover Settings save/failure recovery, all sports, selected-game props, 7/10/14-leg cards, offline recovery, and an update from the previous installed release. Never uninstall to bypass a signing mismatch.
+
+Production readiness remains unproven: exposed legacy credential revocation, broad Drive permission removal, fresh live provider canaries, sufficient governed sport datasets, promoted models, physical-device acceptance, operational alerting/retention and rollback evidence are still required.

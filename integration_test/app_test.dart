@@ -7,11 +7,11 @@ import 'package:philthysports/services/api.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('PhilthySports physical-device smoke', (tester) async {
-    await tester.pumpWidget(const PhilthySportsApp());
+  testWidgets('PhilthyParleys device smoke', (tester) async {
+    await tester.pumpWidget(const PhilthyParleysApp());
     await tester.pump();
 
-    expect(find.text('PhilthySports'), findsOneWidget);
+    expect(find.text('PhilthyParleys'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Multisport parlays'), findsOneWidget);
     expect(find.text('7-leg best picks + props'), findsOneWidget);

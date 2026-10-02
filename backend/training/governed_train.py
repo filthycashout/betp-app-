@@ -22,7 +22,7 @@ MIN_HOLDOUT_ROWS = 100
 ECE_MAX = 0.01
 REQUIRED = {
     "sport", "event_id", "event_time", "as_of", "home_team", "away_team",
-    "target_home_win", "market_home_probability",
+    "target_home_win", "market_home_probability", "label_available_at",
 }
 FORBIDDEN_FEATURE_TOKENS = {
     "target", "winner", "won", "final", "postgame", "result", "outcome",
@@ -59,7 +59,7 @@ def logit(p: np.ndarray) -> np.ndarray:
 
 def make_pipeline() -> Pipeline:
     return Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
         ("scaler", StandardScaler()),
         ("clf", LogisticRegression(max_iter=2000, random_state=42)),
     ])
@@ -90,28 +90,36 @@ def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame
         raise ValueError(f"Canonical dataset missing columns: {missing}")
 
     df["sport"] = df["sport"].astype(str).str.upper().str.strip()
+    if df["event_id"].isna().any():
+        raise ValueError("Canonical dataset contains missing event_id values")
     df["event_id"] = df["event_id"].astype(str).str.strip()
     if bool((df["event_id"] == "").any()):
         raise ValueError("Canonical dataset contains empty event_id values")
 
     df["event_time"] = pd.to_datetime(df["event_time"], utc=True, errors="raise")
     df["as_of"] = pd.to_datetime(df["as_of"], utc=True, errors="raise")
+    df["label_available_at"] = pd.to_datetime(df["label_available_at"], utc=True, errors="raise")
+    if not bool((df["label_available_at"] > df["event_time"]).all()):
+        raise ValueError("Outcome availability must be recorded after the event starts")
     if not bool((df["as_of"] < df["event_time"]).all()):
         offenders = int((df["as_of"] >= df["event_time"]).sum())
         raise ValueError(f"Chronology violation: {offenders} rows have as_of >= event_time")
 
-    df["target_home_win"] = pd.to_numeric(df["target_home_win"], errors="raise").astype(int)
+    df["target_home_win"] = pd.to_numeric(df["target_home_win"], errors="raise")
     if not set(df["target_home_win"].unique()).issubset({0, 1}):
         raise ValueError("target_home_win must be binary")
+    df["target_home_win"] = df["target_home_win"].astype(int)
     df["market_home_probability"] = pd.to_numeric(df["market_home_probability"], errors="raise")
     if not bool(df["market_home_probability"].between(0.0, 1.0, inclusive="neither").all()):
         raise ValueError("market_home_probability must be strictly between 0 and 1")
 
     features = select_features(df, features)
     for col in features:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = pd.to_numeric(df[col], errors="raise")
+        if np.isinf(df[col].to_numpy(dtype=float)).any():
+            raise ValueError(f"Non-finite feature values rejected: {col}")
 
-    df = df.sort_values(["event_time", "as_of"]).reset_index(drop=True)
+    df = df.sort_values(["as_of", "event_time", "event_id"]).reset_index(drop=True)
     duplicate_keys = int(df.duplicated(["sport", "event_id"], keep=False).sum())
     if duplicate_keys:
         raise ValueError(f"Duplicate canonical sport/event_id keys detected: {duplicate_keys}")
@@ -142,24 +150,59 @@ def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame
     return df, features, meta
 
 
-def fit_oof(df: pd.DataFrame, features: list[str], splits: int) -> tuple[np.ndarray, np.ndarray]:
+def chronological_holdout(df: pd.DataFrame, fraction: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if not 0 < fraction < 0.5:
+        raise ValueError("Holdout fraction must be between zero and one half")
+    count = max(MIN_HOLDOUT_ROWS, int(round(len(df) * fraction)))
+    if count >= len(df) // 2:
+        raise ValueError("Holdout would consume too much of dataset")
+    cutoff = df.iloc[-count]["as_of"]
+    # Never split simultaneous predictions or train on unresolved earlier games.
+    dev = df[(df["as_of"] < cutoff) & (df["label_available_at"] < cutoff)].copy()
+    holdout = df[df["as_of"] >= cutoff].copy()
+    if len(dev) < 100 or dev["target_home_win"].nunique() != 2:
+        raise ValueError("Insufficient resolved pre-holdout training rows")
+    return dev.reset_index(drop=True), holdout.reset_index(drop=True)
+
+
+def walk_forward_splits(df: pd.DataFrame, splits: int):
+    times = pd.Index(df["as_of"].sort_values().unique())
+    if len(times) <= splits:
+        raise ValueError("Insufficient distinct prediction timestamps for walk-forward folds")
+    for train_times, valid_times in TimeSeriesSplit(n_splits=splits).split(times):
+        cutoff = times[valid_times[0]]
+        train_mask = df["as_of"].isin(times[train_times]) & (df["label_available_at"] < cutoff)
+        valid_mask = df["as_of"].isin(times[valid_times])
+        yield np.flatnonzero(train_mask), np.flatnonzero(valid_mask)
+
+
+def fit_oof(df: pd.DataFrame, features: list[str], splits: int, *, return_details: bool = False):
     X = df[features]
     y = df["target_home_win"].to_numpy(dtype=int)
-    tscv = TimeSeriesSplit(n_splits=splits)
     oof_p = np.full(len(df), np.nan, dtype=float)
     oof_y = np.full(len(df), -1, dtype=int)
 
-    for train_idx, valid_idx in tscv.split(X):
-        if train_idx.max() >= valid_idx.min():
-            raise RuntimeError("TimeSeriesSplit chronology invariant failed")
+    folds = []
+    for train_idx, valid_idx in walk_forward_splits(df, splits):
+        if not len(train_idx) or len(np.unique(y[train_idx])) < 2:
+            continue
+        if df.iloc[train_idx]["label_available_at"].max() >= df.iloc[valid_idx]["as_of"].min():
+            raise RuntimeError("Training outcome was unavailable at validation prediction time")
         pipeline = make_pipeline()
         pipeline.fit(X.iloc[train_idx], y[train_idx])
         oof_p[valid_idx] = pipeline.predict_proba(X.iloc[valid_idx])[:, 1]
         oof_y[valid_idx] = y[valid_idx]
+        folds.append({"train_rows": len(train_idx), "validation_rows": len(valid_idx),
+                      "latest_training_label_available_at": df.iloc[train_idx]["label_available_at"].max().isoformat(),
+                      "first_validation_as_of": df.iloc[valid_idx]["as_of"].min().isoformat()})
 
     mask = np.isfinite(oof_p)
     if int(mask.sum()) < max(100, len(df) // 3):
         raise ValueError("Insufficient OOF coverage for calibration")
+    if return_details:
+        records = df.loc[mask, ["event_id", "as_of", "event_time", "label_available_at", "target_home_win"]].copy()
+        records["raw_oof_probability"] = oof_p[mask]
+        return oof_p[mask], oof_y[mask], {"folds": folds, "records": records}
     return oof_p[mask], oof_y[mask]
 
 
@@ -187,7 +230,7 @@ def portable_model(
         "model_type": "logistic_regression_oof_platt",
         "portable": True,
         "trained_weights": True,
-        "status": "PROMOTED_TRAINED_MODEL" if evidence["promotion_pass"] else "CANDIDATE_SHADOW",
+        "status": "CANDIDATE_ELIGIBLE_FOR_STRICT_CHECKS" if evidence["promotion_pass"] else "CANDIDATE_SHADOW",
         "features": features,
         "preprocessing": {
             "imputer": "median",
@@ -227,13 +270,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
     min_rows = int(args.min_rows or SPORT_MIN_ROWS[sport])
 
-    holdout_n = max(MIN_HOLDOUT_ROWS, int(round(len(df) * args.holdout_fraction)))
-    if holdout_n >= len(df) // 2:
-        raise ValueError("Holdout would consume too much of dataset")
-    dev = df.iloc[:-holdout_n].copy()
-    holdout = df.iloc[-holdout_n:].copy()
+    dev, holdout = chronological_holdout(df, args.holdout_fraction)
 
-    oof_p, oof_y = fit_oof(dev, features, args.splits)
+    oof_p, oof_y, oof_details = fit_oof(dev, features, args.splits, return_details=True)
     calibrator = LogisticRegression(max_iter=1000, random_state=42)
     calibrator.fit(logit(oof_p), oof_y)
 
@@ -261,6 +300,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         source_raw = Path(args.source_manifest).read_bytes()
         source_manifest = json.loads(source_raw)
         source_manifest_sha = sha256_bytes(source_raw)
+        if source_manifest.get("canonical_sha256") != provenance["dataset_sha256"]:
+            raise ValueError("Source manifest does not match canonical dataset checksum")
+        if source_manifest.get("sport") != sport or source_manifest.get("rows") != len(df):
+            raise ValueError("Source manifest sport or row count mismatch")
+        if not source_manifest.get("labels_sha256") or not source_manifest.get("pregame_sources"):
+            raise ValueError("Source manifest is missing pregame or settled-label provenance")
     else:
         source_manifest_sha = ""
 
@@ -291,6 +336,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "as_of_lt_event_time": True,
                 "walk_forward_oof": True,
                 "in_fold_preprocessing": True,
+                "labels_available_before_validation": True,
+                "simultaneous_predictions_grouped": True,
+                "folds": oof_details["folds"],
+                "latest_development_label_available_at": dev["label_available_at"].max().isoformat(),
+                "first_holdout_as_of": holdout["as_of"].min().isoformat(),
                 "dataset_rows": len(df),
                 "dev_rows": len(dev),
                 "holdout_rows": len(holdout),
@@ -355,6 +405,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    oof_path = out / f"{sport.lower()}_oof_predictions.csv"
+    oof_details["records"].to_csv(oof_path, index=False)
     artifact_path = out / f"{sport.lower()}_mobile_model.json"
     artifact_path.write_bytes(canonical_json(artifact))
     joblib_path = out / f"{sport.lower()}_server_model.joblib"
@@ -374,6 +426,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "market_metrics": market_metrics,
         "dataset_rows": len(df),
         "holdout_rows": len(holdout),
+        "development_rows": len(dev),
+        "oof_rows": len(oof_p),
+        "oof_file": str(oof_path),
+        "oof_sha256": sha256_bytes(oof_path.read_bytes()),
         "features": features,
         "dataset_sha256": provenance["dataset_sha256"],
         "feature_schema_sha256": provenance["feature_schema_sha256"],

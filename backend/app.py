@@ -12,6 +12,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 from zoneinfo import ZoneInfo
+from market_validation import parse_props, parse_game_market, utc_time
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -30,7 +31,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.4.6"
+APP_VERSION = "1.5.0"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -394,13 +395,33 @@ def _timed(name: str, fn):
         _SOURCE[name] = {"ok": True, "elapsed_ms": round((time.perf_counter()-started)*1000, 1), "checked_at": datetime.now(timezone.utc).isoformat()}
         return value
     except Exception as exc:
-        _SOURCE[name] = {"ok": False, "elapsed_ms": round((time.perf_counter()-started)*1000, 1), "checked_at": datetime.now(timezone.utc).isoformat(), "error": f"{type(exc).__name__}: {exc}"}
+        _SOURCE[name] = {"ok": False, "elapsed_ms": round((time.perf_counter()-started)*1000, 1), "checked_at": datetime.now(timezone.utc).isoformat(), "error": type(exc).__name__}
         raise
 
+class ProviderError(RuntimeError):
+    """Safe error: never includes a URL, query string, header or response body."""
+
+
 def _json(url: str, *, params: dict | None = None, timeout: int = 10):
-    r = SESSION.get(url, params=params, timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+    for attempt in range(3):
+        try:
+            r = SESSION.get(url, params=params, timeout=(3, timeout))
+            if r.status_code in {429, 502, 503, 504} and attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            if r.status_code >= 400:
+                raise ProviderError(f"Provider HTTP {r.status_code}")
+            try:
+                return r.json()
+            except ValueError:
+                raise ProviderError("Provider returned invalid JSON") from None
+        except (requests.Timeout, requests.ConnectionError):
+            if attempt == 2:
+                raise ProviderError("Provider network timeout or connection failure") from None
+            time.sleep(0.5 * (attempt + 1))
+        except requests.RequestException:
+            raise ProviderError("Provider request failed") from None
+
 
 def _espn_schedule(sport: str, date_yyyymmdd: str) -> list[dict]:
     a, b = ESPN[sport]
@@ -1019,7 +1040,8 @@ def _espn_market_events(sport: str, d: date_cls) -> list[dict]:
             "bookmakers": [{
                 "key": str(provider.get("id") or "espn"),
                 "title": str(provider.get("name") or "ESPN"),
-                "last_update": now.isoformat(),
+                "last_update": odds.get("lastUpdated") or odds.get("last_update"),
+                "observed_at": now.isoformat(),
                 "markets": markets,
             }],
             "data_quality": "PREGAME_KEYLESS",
@@ -1057,7 +1079,18 @@ def _same_team(a: str | None, b: str | None) -> bool:
     return bool(x and y and (x == y or x in y or y in x))
 
 def _match_odds(game: dict, events: list[dict]) -> dict | None:
-    return next((e for e in events if _same_team(game.get("home"), e.get("home_team")) and _same_team(game.get("away"), e.get("away_team"))), None)
+    start = utc_time(game.get("event_time"))
+    if start is None:
+        return None
+    matches = []
+    for event in events:
+        when = utc_time(event.get("commence_time"))
+        if (when and abs((when - start).total_seconds()) <= 1800
+                and _same_team(game.get("home"), event.get("home_team"))
+                and _same_team(game.get("away"), event.get("away_team"))):
+            matches.append(event)
+    # Ambiguity must not silently attach the wrong doubleheader's markets.
+    return matches[0] if len(matches) == 1 else None
 
 def _american_to_prob(x: float) -> float:
     x = float(x)
@@ -1068,138 +1101,7 @@ def _devig(a: float, b: float) -> tuple[float, float]:
     return (a/s, b/s) if s else (.5, .5)
 
 def _market(event: dict | None) -> dict:
-    empty = {
-        "home_probability": None,
-        "away_probability": None,
-        "home_spread": None,
-        "away_spread": None,
-        "spread_home_probability": None,
-        "spread_away_probability": None,
-        "spread_pick": None,
-        "spread_pick_probability": None,
-        "total": None,
-        "over_probability": None,
-        "under_probability": None,
-        "total_pick": None,
-        "total_pick_probability": None,
-        "books_used": [],
-    }
-    if not event:
-        return empty
-
-    home, away = event.get("home_team"), event.get("away_team")
-    h2h = {home: [], away: []}
-    home_spreads: list[float] = []
-    spread_home_probs: list[float] = []
-    spread_away_probs: list[float] = []
-    totals: list[float] = []
-    over_probs: list[float] = []
-    under_probs: list[float] = []
-    books: set[str] = set()
-
-    for book in event.get("bookmakers") or []:
-        used = False
-        for m in book.get("markets") or []:
-            key = m.get("key")
-            outcomes = m.get("outcomes") or []
-
-            if key == "h2h":
-                for o in outcomes:
-                    if o.get("name") in h2h and o.get("price") is not None:
-                        h2h[o["name"]].append(float(o["price"]))
-                        used = True
-
-            elif key == "spreads":
-                home_o = next((o for o in outcomes if o.get("name") == home), None)
-                away_o = next((o for o in outcomes if o.get("name") == away), None)
-                if home_o and home_o.get("point") is not None:
-                    home_spreads.append(float(home_o["point"]))
-                    used = True
-                if (
-                    home_o
-                    and away_o
-                    and home_o.get("price") is not None
-                    and away_o.get("price") is not None
-                ):
-                    hp = _american_to_prob(float(home_o["price"]))
-                    ap = _american_to_prob(float(away_o["price"]))
-                    home_p, away_p = _devig(hp, ap)
-                    spread_home_probs.append(home_p)
-                    spread_away_probs.append(away_p)
-                    used = True
-
-            elif key == "totals":
-                over_o = next(
-                    (o for o in outcomes if str(o.get("name") or "").lower() == "over"),
-                    None,
-                )
-                under_o = next(
-                    (o for o in outcomes if str(o.get("name") or "").lower() == "under"),
-                    None,
-                )
-                point = None
-                if over_o and over_o.get("point") is not None:
-                    point = float(over_o["point"])
-                elif under_o and under_o.get("point") is not None:
-                    point = float(under_o["point"])
-                if point is not None:
-                    totals.append(point)
-                    used = True
-                if (
-                    over_o
-                    and under_o
-                    and over_o.get("price") is not None
-                    and under_o.get("price") is not None
-                ):
-                    op = _american_to_prob(float(over_o["price"]))
-                    up = _american_to_prob(float(under_o["price"]))
-                    over_p, under_p = _devig(op, up)
-                    over_probs.append(over_p)
-                    under_probs.append(under_p)
-                    used = True
-
-        if used:
-            books.add(book.get("key") or "unknown")
-
-    out = {**empty, "books_used": sorted(books)}
-
-    if home and away and h2h.get(home) and h2h.get(away):
-        hp = mean(_american_to_prob(x) for x in h2h[home])
-        ap = mean(_american_to_prob(x) for x in h2h[away])
-        out["home_probability"], out["away_probability"] = _devig(hp, ap)
-
-    if home_spreads:
-        out["home_spread"] = round(mean(home_spreads), 2)
-        out["away_spread"] = round(-float(out["home_spread"]), 2)
-
-    if spread_home_probs and spread_away_probs:
-        home_p = mean(spread_home_probs)
-        away_p = mean(spread_away_probs)
-        out["spread_home_probability"], out["spread_away_probability"] = _devig(
-            home_p, away_p
-        )
-        if out["spread_home_probability"] >= out["spread_away_probability"]:
-            out["spread_pick"] = home
-            out["spread_pick_probability"] = out["spread_home_probability"]
-        else:
-            out["spread_pick"] = away
-            out["spread_pick_probability"] = out["spread_away_probability"]
-
-    if totals:
-        out["total"] = round(mean(totals), 2)
-
-    if over_probs and under_probs:
-        over_p = mean(over_probs)
-        under_p = mean(under_probs)
-        out["over_probability"], out["under_probability"] = _devig(over_p, under_p)
-        if out["over_probability"] >= out["under_probability"]:
-            out["total_pick"] = "OVER"
-            out["total_pick_probability"] = out["over_probability"]
-        else:
-            out["total_pick"] = "UNDER"
-            out["total_pick_probability"] = out["under_probability"]
-
-    return out
+    return parse_game_market(event)
 
 def _score(market: dict) -> dict:
     total, spread = market.get("total"), market.get("home_spread")
@@ -1237,79 +1139,14 @@ def _prop_payload(sport: str, event_id: str, requested: str | None = None) -> di
             timeout=12,
         ),
     )
-    grouped: dict[tuple[str, str, float], dict[str, list[float]]] = {}
-    discrete: dict[tuple[str, str, str, float | None], list[float]] = {}
-    for book in raw.get("bookmakers") or []:
-        for market in book.get("markets") or []:
-            key = market.get("key")
-            if key not in markets:
-                continue
-            for o in market.get("outcomes") or []:
-                if o.get("price") is None:
-                    continue
-                side = str(o.get("name", "")).lower()
-                player = str(o.get("description") or o.get("name") or "Unknown")
-                if side in {"over", "under"} and o.get("point") is not None:
-                    k = (key, player, float(o["point"]))
-                    grouped.setdefault(k, {"over": [], "under": []})[side].append(float(o["price"]))
-                    continue
-                point = float(o["point"]) if o.get("point") is not None else None
-                outcome = str(o.get("name") or "")
-                discrete.setdefault((key, player, outcome, point), []).append(float(o["price"]))
-
-    props = []
-    for (market, player, line), sides in grouped.items():
-        op = mean(_american_to_prob(x) for x in sides["over"]) if sides["over"] else None
-        up = mean(_american_to_prob(x) for x in sides["under"]) if sides["under"] else None
-        rec = prob = None
-        if op is not None and up is not None:
-            over, under = _devig(op, up)
-            rec, prob = ("OVER", over) if over >= under else ("UNDER", under)
-        props.append({
-            "sport": sport,
-            "player": player,
-            "market": market,
-            "line": line,
-            "outcome": rec,
-            "recommended_side": rec,
-            "market_probability": prob,
-            "probability_method": "two_sided_devig" if rec else "unavailable",
-            "reason": (
-                f"Fresh two-sided sportsbook market; de-vigged market lean {rec} at {prob:.1%}."
-                if rec
-                else "Fresh market returned but a two-sided de-vigged probability was unavailable."
-            ),
-            "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
-        })
-
-    for (market, player, outcome, line), prices in discrete.items():
-        implied = mean(_american_to_prob(price) for price in prices)
-        props.append({
-            "sport": sport,
-            "player": player,
-            "market": market,
-            "line": line,
-            "outcome": outcome,
-            "recommended_side": None,
-            "market_probability": implied,
-            "probability_method": "raw_implied_not_devigged",
-            "book_count": len(prices),
-            "reason": (
-                "Fresh sportsbook outcome price is available, but PhilthySports does not "
-                "promote a recommendation without a complementary outcome that can be de-vigged."
-            ),
-            "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
-        })
-
-    props.sort(key=lambda x: x.get("market_probability") or 0, reverse=True)
+    if not isinstance(raw, dict) or str(raw.get("id")) != str(event_id):
+        raise ProviderError("Provider event response does not match requested event")
     return {
-        "sport": sport,
-        "event_id": event_id,
+        "sport": sport, "event_id": event_id,
         "configured_markets": PROP_MARKETS[sport],
         "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
         "requested_markets": markets,
-        "props": props,
-        "status": "OK",
+        **parse_props(raw, sport, markets),
     }
 
 def _search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3) -> dict:
@@ -1347,7 +1184,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 injury_feed = {
                     "available": False,
                     "source": "ESPN league injury feed",
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": type(exc).__name__,
                 }
             try:
                 form_snapshot = forms[s].result()
@@ -1463,7 +1300,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     try:
                         item["props_to_watch"] = _prop_payload(s, item["odds_event_id"])["props"][:max(0, min(int(props_limit), 20))]
                     except Exception as exc:
-                        item["props_error"] = f"{type(exc).__name__}: {exc}"
+                        item["props_error"] = type(exc).__name__
                 games.append(item)
     return {"query": q, "date": d.isoformat(), "sports": selected, "fresh_fetch": True, "games": games, "source_telemetry": _SOURCE}
 
@@ -1573,8 +1410,7 @@ def system_status():
         "physical Android-device end-to-end smoke testing",
         "durable runtime prediction ledger plus rollback/alert validation",
     ]
-    if not rotation or not odds_key:
-        remaining.insert(0, "fresh legitimately issued live odds/props credential plus provider-side rotation evidence")
+    remaining.insert(0, "fresh live odds/props provider canary and provider-side revocation evidence")
     if not promotion_pass:
         remaining.insert(0, "four sport trained model promotion evidence")
 
@@ -1590,7 +1426,7 @@ def system_status():
             "provenance": "PASS" if provenance_pass else "BLOCKED_EVIDENCE",
             "four_sport_model_promotion": "PASS" if promotion_pass else "BLOCKED_EVIDENCE",
             "credential_core_keyless": "PASS",
-            "credential_live_odds_props": "PASS" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+            "credential_live_odds_props": "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
             "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE",
             "immutable_pregame_evidence_capture": "PASS_AUTOMATED_GITHUB_HISTORY",
         },
@@ -1599,6 +1435,8 @@ def system_status():
             "rotation_confirmed": rotation,
             "odds_api_key_configured": odds_key,
             "odds_props_live_allowed": rotation and odds_key,
+            "provider_revocation_independently_verified": False,
+            "live_canary_evidence_verified": False,
         },
         "production_ready": False,
         "production_ready_reason": "The HTTPS backend, pinned Android signing, four-sport live adapters, and immutable pregame evidence capture are operational. Production-ready remains blocked until four sport-specific trained models pass every v8 promotion gate, fresh live odds/props credentials pass canaries, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
@@ -1644,7 +1482,7 @@ def prop_capabilities():
         "credential_configured": configured,
         "credential_rotation_confirmed": rotated,
         "live_player_props_enabled": enabled,
-        "status": "LIVE" if enabled else "CONTRACT_READY_LIVE_KEY_REQUIRED",
+        "status": "CONFIGURED_AWAITING_LIVE_VALIDATION" if enabled else "CONTRACT_READY_LIVE_KEY_REQUIRED",
         "sports": {
             s: {
                 "supported": True,
@@ -2052,7 +1890,7 @@ def props(
             "props": [],
             "status": "LIVE_KEY_READY_EVENT_MAPPING_REQUIRED",
             "message": (
-                "The fresh live provider credential is ready but this schedule event "
+                "A provider key is configured, but this schedule event "
                 "has not yet been mapped to a sportsbook event id."
             ),
         }
@@ -2061,7 +1899,7 @@ def props(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(502, f"fresh props fetch failed: {type(exc).__name__}: {exc}")
+        raise HTTPException(502, "Player-prop provider unavailable. Retry shortly; server credentials and provider access may need verification.") from None
 
 @app.get("/api/games/{sport}/{event_id}/parlays", include_in_schema=False)
 @app.get("/api/v1/games/{sport}/{event_id}/parlays", include_in_schema=False)
@@ -2135,9 +1973,9 @@ def _multisport_candidates(
                 "model_state": _runtime_mode_for(sport),
             }
 
-            hp = game.get("home_win_probability")
-            if hp is None:
-                hp = market.get("home_probability")
+            hp = (game.get("home_win_probability")
+                  if game.get("probability_source") == "signed_promoted_trained_model"
+                  else market.get("home_probability"))
             if hp is not None and game.get("pick"):
                 picked_home = game["pick"] == game.get("home")
                 probability = float(hp) if picked_home else 1.0 - float(hp)

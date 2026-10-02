@@ -1,4 +1,4 @@
-name: PhilthySports Full CI
+name: PhilthyParleys Full CI
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
 
       - name: Reject tracked secret files
         shell: bash
@@ -42,6 +42,9 @@ jobs:
 
       - name: Python syntax
         run: python -m py_compile backend/app.py backend/selftest.py
+
+      - name: Backend regression tests
+        run: PYTHONPATH=backend pytest -q backend/tests
 
       - name: Backend governance selftest
         working-directory: backend
@@ -71,13 +74,14 @@ jobs:
           from pathlib import Path
           p = Path('android/app/src/main/AndroidManifest.xml')
           s = p.read_text()
+          s = s.replace('android:label="philthysports"', 'android:label="PhilthyParleys"')
           permission = '<uses-permission android:name="android.permission.INTERNET"/>'
           if permission not in s:
               s = s.replace(
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission,
               )
-              p.write_text(s)
+          p.write_text(s)
           PY
 
       - name: Fetch stable release signing key through GitHub OIDC
@@ -191,15 +195,55 @@ jobs:
           EXPECTED="97BE4C2028288638C8BE55CE7540164A1995A1F18675964E3D8E733744D89700"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Create SHA-256
-        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.4.apk.sha256
-
-      - name: Stage APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.4.apk
+      - name: Stage and hash APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk PhilthyParleys.apk
+          sha256sum PhilthyParleys.apk > PhilthyParleys.apk.sha256
+          python - <<'PY2'
+          import json, os
+          from pathlib import Path
+          Path("build-metadata.json").write_text(json.dumps({
+            "app_name": "PhilthyParleys", "version": "1.5.0", "version_code": 17,
+            "package_id": "com.philthysports.philthysports", "commit": os.environ["GITHUB_SHA"],
+            "physical_device_test": "NOT_RUN",
+          }, indent=2)+"\n")
+          PY2
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-1.4.4-android
+          name: PhilthyParleys-1.5.0-android
           path: |
-            PhilthySports-1.4.4.apk
-            PhilthySports-1.4.4.apk.sha256
+            PhilthyParleys.apk
+            PhilthyParleys.apk.sha256
+            apk-signature.txt
+            build-metadata.json
+
+  emulator:
+    runs-on: ubuntu-latest
+    needs: android
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhilthyParleys-1.5.0-android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch exact signed APK on Android 35
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python ci/device_smoke.py --apk PhilthyParleys.apk --output device-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PhilthyParleys-1.5.0-emulator-evidence
+          path: device-report/

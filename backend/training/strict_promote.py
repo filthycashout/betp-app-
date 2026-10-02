@@ -71,9 +71,8 @@ def enforce(args: argparse.Namespace) -> dict:
     )
 
     holdout_rows = int(report["holdout_rows"])
-    holdout = dataset.iloc[-holdout_rows:].copy()
-    dev = dataset.iloc[:-holdout_rows].copy()
-    oof_p, _ = base.fit_oof(dev, features, args.splits)
+    _, holdout = base.chronological_holdout(dataset, args.holdout_fraction)
+    oof_rows = int(report["oof_rows"])
 
     local_model = joblib.load(joblib_path)
     server_raw = local_model["pipeline"].predict_proba(holdout[features])[:, 1]
@@ -93,10 +92,12 @@ def enforce(args: argparse.Namespace) -> dict:
 
     strict_checks = {
         "minimum_total_rows": int(report["dataset_rows"]) >= int(min_policy["minimum_total_rows"]),
-        "minimum_oof_rows": int(len(oof_p)) >= int(min_policy["minimum_oof_rows"]),
+        "minimum_oof_rows": oof_rows >= int(min_policy["minimum_oof_rows"]),
         "minimum_holdout_rows": holdout_rows >= int(min_policy["minimum_holdout_rows"]),
         "chronology": bool(report["promotion_checks"].get("chronology")),
         "walk_forward_oof": bool(report["promotion_checks"].get("walk_forward_oof")),
+        "label_availability": artifact["promotion_evidence"]["chronology"].get("labels_available_before_validation") is True,
+        "simultaneous_predictions_grouped": artifact["promotion_evidence"]["chronology"].get("simultaneous_predictions_grouped") is True,
         "in_fold_preprocessing": (
             artifact.get("preprocessing", {}).get("fit_scope")
             == "final_pre_holdout_training_only"
@@ -140,11 +141,11 @@ def enforce(args: argparse.Namespace) -> dict:
         "minimums": min_policy,
         "metric_policy": metric_policy,
         "brier_improvement": brier_improvement,
-        "oof_rows": int(len(oof_p)),
+        "oof_rows": oof_rows,
     }
     artifact["mobile_parity"] = {
         "source": "untouched_chronological_holdout",
-        "case_count": int(min(64, len(holdout))),
+        "case_count": len(holdout),
         "max_abs_error": parity_max_abs,
         "tolerance": 1e-10,
     }
@@ -158,7 +159,7 @@ def enforce(args: argparse.Namespace) -> dict:
     report["strict_policy_pass"] = eligible
     report["strict_checks"] = strict_checks
     report["brier_improvement"] = brier_improvement
-    report["oof_rows"] = int(len(oof_p))
+    report["oof_rows"] = oof_rows
     report["mobile_parity_max_abs_error"] = parity_max_abs
     report["status"] = artifact["status"]
     report["mobile_artifact_sha256"] = _sha256(artifact_path.read_bytes())

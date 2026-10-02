@@ -25,7 +25,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: backend/requirements.txt
       - name: Install runtime and test dependencies
-        run: pip install -r backend/requirements.txt pytest httpx
+        run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
       - name: Compile
         run: python -m compileall -q backend
       - name: Run backend tests

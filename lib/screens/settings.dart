@@ -17,26 +17,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() { super.initState(); _load(); }
 
+  @override
+  void dispose() { ctl.dispose(); super.dispose(); }
+
   Future<void> _load() async {
-    ctl.text = await BackendConfig.baseUrl();
-    if (mounted) setState(() => busy = false);
+    final base = await BackendConfig.baseUrl();
+    if (!mounted) return;
+    ctl.text = base;
+    setState(() => busy = false);
   }
 
   Future<void> _save() async {
     setState(() => busy = true);
-    final previous = await BackendConfig.baseUrl();
     try {
-      await BackendConfig.save(ctl.text);
-      final resolved = await BackendConfig.baseUrl();
+      final resolved = BackendConfig.validate(ctl.text);
+      final h = await PhilthyApi(baseUrl: resolved).health();
+      await BackendConfig.save(resolved);
+      if (!mounted) return;
       ctl.text = resolved;
-      final h = await PhilthyApi().health();
       status = 'Connected to $resolved • ${h['service']} v${h['version']}';
     } catch (e) {
-      try {
-        await BackendConfig.save(previous);
-        ctl.text = previous;
-      } catch (_) {}
-      status = 'Backend validation failed after retrying temporary gateway/network errors. The previous verified URL was kept. $e';
+      status = 'Connection could not be verified after bounded retries. Your saved backend URL was kept. $e';
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -52,7 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext c) => Scaffold(
     appBar: AppBar(title: const Text('Backend settings')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
-      const Text('Enter the API base URL only. PhilthySports automatically removes /health, /ready, /docs, /openapi.json, or /v1 suffixes so endpoint paths are not accidentally doubled.'),
+      const Text('Enter the API base URL only. PhilthyParleys automatically removes /health, /ready, /docs, /openapi.json, or /v1 suffixes so endpoint paths are not accidentally doubled.'),
       const SizedBox(height: 16),
       TextField(controller: ctl, keyboardType: TextInputType.url, autocorrect: false, decoration: const InputDecoration(labelText: 'Python API base URL', hintText: 'https://api.example.com', border: OutlineInputBorder())),
       const SizedBox(height: 12),

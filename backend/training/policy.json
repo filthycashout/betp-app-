@@ -45,7 +45,8 @@
       "market_home_probability",
       "consensus_de_vig_home_probability",
       "home_spread",
-      "consensus_total"
+      "consensus_total",
+      "label_available_at"
     ]
   },
   "forbidden_pregame_feature_fragments": [

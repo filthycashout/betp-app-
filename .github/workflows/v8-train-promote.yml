@@ -186,3 +186,15 @@ jobs:
           else
             echo "Promoted this run: none"
           fi
+
+      - name: Retain promotion pass/fail evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: four-sport-promotion-evidence
+          path: |
+            /tmp/sample_counts.json
+            /tmp/promotions/**/*.json
+            /tmp/promotions/**/*oof_predictions.csv
+          retention-days: 90
+          if-no-files-found: warn
