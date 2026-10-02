@@ -394,6 +394,10 @@ def root():
         "multisport_parlays": "/v1/parlays/multisport?legs=7",
     }
 
+@app.head("/")
+def root_head():
+    return None
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION}
