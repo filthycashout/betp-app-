@@ -87,6 +87,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   'Status: ${payload['status'] ?? 'UNKNOWN'} • '
                   'Sports: ${List<dynamic>.from(payload['sports_included'] ?? []).join(', ')}',
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  'Profile: ${payload['selection_profile'] ?? '—'} • '
+                  'Props: ${payload['player_prop_legs'] ?? 0} • '
+                  'Market picks: ${payload['market_pick_legs'] ?? 0}',
+                ),
                 const SizedBox(height: 12),
                 for (final leg in selected)
                   Card(
@@ -194,8 +200,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Build fresh 7, 10, or 14-leg cards across NFL, NBA, MLB, and NHL. '
-                      'Player props are included when mapped live prop markets are available.',
+                      'Each 7, 10, and 14-leg card is built independently from the best fresh multisport picks. '
+                      'Player props are deliberately included when mapped live prop markets pass the credential gate.',
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -205,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         for (final legs in const [7, 10, 14])
                           FilledButton.tonal(
                             onPressed: busy ? null : () => _openMultisportParlay(legs),
-                            child: Text('$legs legs'),
+                            child: Text('$legs-leg best picks + props'),
                           ),
                       ],
                     ),
@@ -236,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 6),
                 child: Text(
-                  "$sport today's games",
+                  "$sport today & upcoming",
                   style: Theme.of(c).textTheme.headlineSmall,
                 ),
               ),
