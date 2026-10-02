@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import app as backend
-from keyless_sportsbook import draftkings_game_events, draftkings_prop_events
+from keyless_sportsbook import keyless_game_events, keyless_prop_events
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
 
     sportsbook = {}
     for sport in backend.SPORTS:
-        events = draftkings_game_events(sport)
+        events = keyless_game_events(sport)
         market_keys = sorted({
             market.get("key")
             for event in events
@@ -44,14 +44,14 @@ def main() -> None:
     for sport in ("NFL", "NHL"):
         if sportsbook[sport]["events"] <= 0:
             raise SystemExit(
-                f"{sport}: keyless DraftKings game-market canary returned no events"
+                f"{sport}: keyless sportsbook game-market canary returned no events"
             )
         if "h2h" not in sportsbook[sport]["market_keys"]:
             raise SystemExit(
-                f"{sport}: keyless DraftKings board did not expose moneyline markets"
+                f"{sport}: keyless sportsbook board did not expose moneyline markets"
             )
 
-    nfl_props = draftkings_prop_events(
+    nfl_props = keyless_prop_events(
         "NFL",
         backend.PROP_DEFAULT_LIVE_MARKETS["NFL"],
     )
@@ -65,7 +65,7 @@ def main() -> None:
     })
     if not nfl_props:
         raise SystemExit(
-            "NFL: keyless DraftKings player-prop canary returned no mapped events"
+            "NFL: keyless sportsbook player-prop canary returned no mapped events"
         )
 
     print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
