@@ -16,6 +16,25 @@ class PhilthyApi {
   final Future<void> Function(Duration) _delay;
   static const _transientStatuses = {429, 502, 503, 504};
 
+  List<String> _compatiblePaths(String rawPath) {
+    final parsed = Uri.parse(rawPath);
+    final path = parsed.path;
+    final paths = <String>[path];
+
+    if (path == '/health') {
+      paths.addAll(const ['/v1/health', '/api/health']);
+    } else if (path.startsWith('/v1/')) {
+      paths.add('/api$path');
+    } else if (path.startsWith('/api/v1/')) {
+      paths.add(path.substring(4));
+    }
+
+    return paths
+        .toSet()
+        .map((candidate) => parsed.replace(path: candidate).toString())
+        .toList(growable: false);
+  }
+
   Future<Map<String, dynamic>> _get(
     String path, {
     int attempts = 2,
@@ -23,45 +42,65 @@ class PhilthyApi {
     Duration retryBaseDelay = const Duration(milliseconds: 750),
   }) async {
     final base = _baseUrl ?? await BackendConfig.baseUrl();
-    final uri = Uri.parse('$base$path');
     Object? lastError;
+    final candidatePaths = _compatiblePaths(path);
 
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      try {
-        final r = await (_client?.get(uri, headers: {'Accept': 'application/json'}) ??
-                http.get(uri, headers: {'Accept': 'application/json'})).timeout(timeout);
+    for (var pathIndex = 0; pathIndex < candidatePaths.length; pathIndex++) {
+      final candidate = candidatePaths[pathIndex];
+      final uri = Uri.parse('$base$candidate');
 
-        if (r.statusCode >= 200 && r.statusCode < 300) {
-          final decoded = jsonDecode(r.body);
-          if (decoded is! Map) {
-            throw const FormatException(
-              'Backend returned a non-object JSON response.',
-            );
+      for (var attempt = 0; attempt < attempts; attempt++) {
+        try {
+          final r = await (_client?.get(
+                    uri,
+                    headers: {'Accept': 'application/json'},
+                  ) ??
+                  http.get(uri, headers: {'Accept': 'application/json'}))
+              .timeout(timeout);
+
+          if (r.statusCode >= 200 && r.statusCode < 300) {
+            final decoded = jsonDecode(r.body);
+            if (decoded is! Map) {
+              throw const FormatException(
+                'Backend returned a non-object JSON response.',
+              );
+            }
+            return Map<String, dynamic>.from(decoded);
           }
-          return Map<String, dynamic>.from(decoded);
-        }
 
-        final error = Exception('API ${r.statusCode} for ${uri.path}');
-        if (_transientStatuses.contains(r.statusCode) &&
-            attempt + 1 < attempts) {
-          lastError = error;
+          final error = Exception('API ${r.statusCode} for ${uri.path}');
+          if (r.statusCode == 404 && pathIndex + 1 < candidatePaths.length) {
+            lastError = error;
+            break;
+          }
+          if (_transientStatuses.contains(r.statusCode) &&
+              attempt + 1 < attempts) {
+            lastError = error;
+            await _delay(retryBaseDelay * (attempt + 1));
+            continue;
+          }
+          throw error;
+        } on TimeoutException catch (e) {
+          lastError = e;
+          if (attempt + 1 >= attempts) {
+            if (pathIndex + 1 >= candidatePaths.length) rethrow;
+            break;
+          }
           await _delay(retryBaseDelay * (attempt + 1));
-          continue;
+        } on http.ClientException catch (e) {
+          lastError = e;
+          if (attempt + 1 >= attempts) {
+            if (pathIndex + 1 >= candidatePaths.length) rethrow;
+            break;
+          }
+          await _delay(retryBaseDelay * (attempt + 1));
         }
-        throw error;
-      } on TimeoutException catch (e) {
-        lastError = e;
-        if (attempt + 1 >= attempts) rethrow;
-        await _delay(retryBaseDelay * (attempt + 1));
-      } on http.ClientException catch (e) {
-        lastError = e;
-        if (attempt + 1 >= attempts) rethrow;
-        await _delay(retryBaseDelay * (attempt + 1));
       }
     }
 
+    final original = Uri.parse(path).path;
     throw Exception(
-      'Backend unavailable after $attempts attempts for ${uri.path}: $lastError',
+      'Backend unavailable for $original after bounded retries and compatible route checks: $lastError',
     );
   }
 
