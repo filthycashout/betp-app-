@@ -416,27 +416,32 @@ def train(
         "portable_parity": parity_max_abs <= 1e-10,
     }
 
-    unsigned_sha = _sha256_bytes(_canonical(core))
-    core["promotion_evidence"]["provenance"]["model_sha256"] = unsigned_sha
-    signature = _sign_artifact(core, policy)
-    checks["artifact_signed"] = signature is not None
-    passed = all(checks.values())
-
-    core["promotion_checks"] = checks
-    core["status"] = "PROMOTED_TRAINED_MODEL" if passed else "CANDIDATE_REJECTED"
+    model_sha = _sha256_bytes(_canonical(core["portable_model"]))
+    core["promotion_evidence"]["provenance"]["model_sha256"] = model_sha
     core["promotion_evidence"]["market_baseline_comparison"]["passed"] = bool(
         checks["brier_improvement"] and checks["log_loss_non_inferior"]
     )
-    core["promotion_evidence"]["provenance"]["artifact_sha256"] = _sha256_bytes(_canonical(core))
+    data_passed = all(checks.values())
+    core["promotion_checks"] = dict(checks)
+    core["status"] = "PROMOTION_ELIGIBLE" if data_passed else "CANDIDATE_REJECTED"
+
+    signed_core_sha = _sha256_bytes(_canonical(core))
+    signature = _sign_artifact(core, policy)
+    checks["artifact_signed"] = signature is not None
+    passed = bool(data_passed and signature is not None)
 
     artifact = dict(core)
+    artifact["effective_status"] = (
+        "PROMOTED_TRAINED_MODEL" if passed else "CANDIDATE_REJECTED"
+    )
+    artifact["artifact_core_sha256"] = signed_core_sha
     if signature is not None:
         key_id, sig_b64 = signature
         artifact["signature"] = {
             "algorithm": "ed25519",
             "key_id": key_id,
             "signature_b64": sig_b64,
-            "signed_core_sha256": unsigned_sha,
+            "signed_core_sha256": signed_core_sha,
         }
 
     output_dir.mkdir(parents=True, exist_ok=True)
