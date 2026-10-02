@@ -2742,14 +2742,18 @@ def props(
 @app.get("/api/v1/games/{sport}/{event_id}/parlays", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}/parlays")
 def parlays(sport: str, event_id: str, date: str | None = None):
-    game = game_detail(sport, event_id, date)
-    oid = game.get("odds_event_id")
-    if not oid:
-        return {"sport": sport.upper(), "event_id": event_id, "parlays": [], "status": "NO_ODDS_EVENT"}
+    s = sport.upper()
+    game = game_detail(s, event_id, date)
+    matched = None
     try:
-        props_payload = _prop_payload(sport.upper(), oid)
+        game_date = date_cls.fromisoformat(str(game.get("date") or _pacific_today()))
+        matched = _match_odds(game, _odds(s, game_date))
     except Exception:
-        props_payload = {"props": []}
+        matched = None
+    try:
+        props_payload = _props_for_game(s, game, matched)
+    except Exception:
+        props_payload = {"props": [], "status": "PROP_LOOKUP_FAILED_CLOSED"}
     legs = []
     if game.get("pick"):
         legs.append({"label": f"{game['pick']} moneyline"})
