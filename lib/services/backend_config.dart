@@ -50,7 +50,15 @@ class BackendConfig {
       return raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
     }
     var path = uri.path;
-    const suffixes = ['/openapi.json', '/docs', '/ready', '/health', '/v1'];
+    const suffixes = [
+      '/openapi.json',
+      '/docs',
+      '/ready',
+      '/health',
+      '/api/v1',
+      '/v1',
+      '/api',
+    ];
     var changed = true;
     while (changed && path.isNotEmpty && path != '/') {
       changed = false;

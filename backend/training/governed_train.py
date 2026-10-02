@@ -21,12 +21,14 @@ SPORT_MIN_ROWS = {"NFL": 500, "NBA": 1000, "MLB": 1200, "NHL": 1000}
 MIN_HOLDOUT_ROWS = 100
 ECE_MAX = 0.01
 REQUIRED = {
-    "event_time", "as_of", "home_team", "away_team",
+    "sport", "event_id", "event_time", "as_of", "home_team", "away_team",
     "target_home_win", "market_home_probability",
 }
 FORBIDDEN_FEATURE_TOKENS = {
-    "target", "winner", "won", "final", "postgame", "result",
-    "home_score", "away_score", "score_final", "actual_result",
+    "target", "winner", "won", "final", "postgame", "result", "outcome",
+    "home_score", "away_score", "score_home", "score_away", "score_final",
+    "actual_result", "live_win", "live_score", "game_status", "status_live",
+    "inning", "period", "quarter", "settled",
 }
 
 
@@ -87,6 +89,11 @@ def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame
     if missing:
         raise ValueError(f"Canonical dataset missing columns: {missing}")
 
+    df["sport"] = df["sport"].astype(str).str.upper().str.strip()
+    df["event_id"] = df["event_id"].astype(str).str.strip()
+    if bool((df["event_id"] == "").any()):
+        raise ValueError("Canonical dataset contains empty event_id values")
+
     df["event_time"] = pd.to_datetime(df["event_time"], utc=True, errors="raise")
     df["as_of"] = pd.to_datetime(df["as_of"], utc=True, errors="raise")
     if not bool((df["as_of"] < df["event_time"]).all()):
@@ -105,9 +112,9 @@ def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.sort_values(["event_time", "as_of"]).reset_index(drop=True)
-    duplicate_keys = int(df.duplicated(["event_time", "home_team", "away_team"], keep=False).sum())
+    duplicate_keys = int(df.duplicated(["sport", "event_id"], keep=False).sum())
     if duplicate_keys:
-        raise ValueError(f"Duplicate canonical game keys detected: {duplicate_keys}")
+        raise ValueError(f"Duplicate canonical sport/event_id keys detected: {duplicate_keys}")
 
     target = df["target_home_win"].to_numpy()
     exact_target_features = []
@@ -213,6 +220,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     feature_list = [x.strip() for x in args.features.split(",") if x.strip()] if args.features else None
     df, features, provenance = load_canonical(Path(args.input), feature_list)
+    observed_sports = sorted(set(df["sport"]))
+    if observed_sports != [sport]:
+        raise ValueError(
+            f"Canonical dataset sport mismatch: expected {[sport]}, observed {observed_sports}"
+        )
     min_rows = int(args.min_rows or SPORT_MIN_ROWS[sport])
 
     holdout_n = max(MIN_HOLDOUT_ROWS, int(round(len(df) * args.holdout_fraction)))

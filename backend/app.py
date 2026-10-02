@@ -23,7 +23,7 @@ from ci_security import (
     verify_github_oidc,
 )
 
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.4.3"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
@@ -245,6 +245,9 @@ def _schedule(sport: str, d: date_cls) -> list[dict]:
 
 def _odds_key() -> str:
     key = os.getenv("ODDS_API_KEY", "").strip()
+    rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    if not rotation:
+        raise RuntimeError("credential rotation is not confirmed")
     if not key:
         raise RuntimeError("ODDS_API_KEY missing")
     return key
@@ -669,14 +672,14 @@ def model_status():
         for sport in SPORTS
     }
 
-@app.get("/api/system/props", include_in_schema=False)
-@app.get("/api/v1/system/props", include_in_schema=False)
 @app.get("/api/training/reconstruction", include_in_schema=False)
 @app.get("/api/v1/training/reconstruction", include_in_schema=False)
 @app.get("/v1/training/reconstruction")
 def training_reconstruction():
     return DRIVE_RECONSTRUCTION
 
+@app.get("/api/system/props", include_in_schema=False)
+@app.get("/api/v1/system/props", include_in_schema=False)
 @app.get("/v1/system/props")
 def prop_capabilities():
     configured = bool(os.getenv("ODDS_API_KEY", "").strip())
@@ -789,6 +792,8 @@ def protocol():
         },
     }
 
+@app.get("/api/games/{sport}", include_in_schema=False)
+@app.get("/api/v1/games/{sport}", include_in_schema=False)
 @app.get("/v1/games/{sport}")
 def legacy_games(sport: str, days: int = Query(2, ge=1, le=7)):
     s = sport.upper()
@@ -807,8 +812,12 @@ def legacy_games(sport: str, days: int = Query(2, ge=1, le=7)):
         "games": rows,
     }
 
+@app.get("/api/predictions/{sport}", include_in_schema=False)
+@app.get("/api/v1/predictions/{sport}", include_in_schema=False)
 @app.get("/v1/predictions/{sport}")
 def legacy_predictions(sport: str, days: int = Query(2, ge=1, le=7)):
+    if sport.lower() == "latest":
+        return legacy_predictions_latest()
     s = sport.upper()
     if s not in SPORTS:
         raise HTTPException(404, "unsupported sport")
@@ -849,6 +858,8 @@ def legacy_predictions(sport: str, days: int = Query(2, ge=1, le=7)):
         },
     }
 
+@app.get("/api/odds/{sport}", include_in_schema=False)
+@app.get("/api/v1/odds/{sport}", include_in_schema=False)
 @app.get("/v1/odds/{sport}")
 def legacy_odds(sport: str, date: str | None = None):
     s = sport.upper()
@@ -868,6 +879,8 @@ def legacy_odds(sport: str, date: str | None = None):
         "events": events,
     }
 
+@app.get("/api/predictions/latest", include_in_schema=False)
+@app.get("/api/v1/predictions/latest", include_in_schema=False)
 @app.get("/v1/predictions/latest")
 def legacy_predictions_latest():
     return {
@@ -877,6 +890,8 @@ def legacy_predictions_latest():
         "note": "No stale prediction cache is served. Use sport-scoped live prediction routes.",
     }
 
+@app.get("/api/runs/latest", include_in_schema=False)
+@app.get("/api/v1/runs/latest", include_in_schema=False)
 @app.get("/v1/runs/latest")
 def legacy_runs_latest():
     return {
@@ -900,6 +915,8 @@ def search(q: str = "", sport: str | None = None, date: str | None = None, inclu
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
+@app.get("/api/games/{sport}/{event_id}", include_in_schema=False)
+@app.get("/api/v1/games/{sport}/{event_id}", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}")
 def game_detail(sport: str, event_id: str, date: str | None = None):
     result = _search(sport=sport, date=date)
@@ -916,6 +933,8 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
     game["team_totals"] = {"home": score.get("home"), "away": score.get("away"), "method": score.get("method")}
     return game
 
+@app.get("/api/games/{sport}/{event_id}/props", include_in_schema=False)
+@app.get("/api/v1/games/{sport}/{event_id}/props", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}/props")
 def props(sport: str, event_id: str, odds_event_id: str | None = None):
     s = sport.upper()
@@ -944,6 +963,8 @@ def props(sport: str, event_id: str, odds_event_id: str | None = None):
     except Exception as exc:
         raise HTTPException(502, f"fresh props fetch failed: {type(exc).__name__}: {exc}")
 
+@app.get("/api/games/{sport}/{event_id}/parlays", include_in_schema=False)
+@app.get("/api/v1/games/{sport}/{event_id}/parlays", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}/parlays")
 def parlays(sport: str, event_id: str, date: str | None = None):
     game = game_detail(sport, event_id, date)
@@ -1068,6 +1089,8 @@ def _build_multisport_parlay(leg_count: int, date: str | None = None) -> dict[st
         "status": "OK" if len(selected) == leg_count else "INSUFFICIENT_FRESH_ELIGIBLE_LEGS",
     }
 
+@app.get("/api/parlays/multisport", include_in_schema=False)
+@app.get("/api/v1/parlays/multisport", include_in_schema=False)
 @app.get("/v1/parlays/multisport")
 def multisport_parlays(legs: int = Query(7), date: str | None = None):
     try:

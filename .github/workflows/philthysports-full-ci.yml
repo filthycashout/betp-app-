@@ -86,10 +86,15 @@ jobs:
           AUDIENCE="philthysports-ci"
           OIDC_JSON="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
           OIDC_TOKEN="$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"$OIDC_JSON")"
-          SIGNING_JSON="$(curl -fsS --retry 8 --retry-all-errors --retry-delay 2             -H "Authorization: Bearer $OIDC_TOKEN"             https://philthysports-powerhouse-v8.onrender.com/v1/ci/android-signing-material)"
-          python - <<'PY' <<<"$SIGNING_JSON"
+          SIGNING_JSON="$(curl -fsS --retry 8 --retry-all-errors --retry-delay 2 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            https://philthysports-powerhouse-v8.onrender.com/v1/ci/android-signing-material)"
+          SIGNING_PATH="$RUNNER_TEMP/philthysports-signing.json"
+          umask 077
+          printf '%s' "$SIGNING_JSON" > "$SIGNING_PATH"
+          python - "$SIGNING_PATH" <<'PY'
           import base64, json, pathlib, sys
-          payload=json.load(sys.stdin)
+          payload=json.loads(pathlib.Path(sys.argv[1]).read_text())
           expected="0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
           if payload.get("public_spki_sha256") != expected:
               raise SystemExit("Powerhouse signing key does not match pinned release certificate")
@@ -97,11 +102,17 @@ jobs:
               base64.b64decode(payload["private_key_pkcs8_b64"], validate=True)
           )
           PY
+          rm -f "$SIGNING_PATH"
           TEMP_PASS="$(openssl rand -hex 24)"
           echo "::add-mask::$TEMP_PASS"
           echo "PHILTHY_TEMP_STORE_PASSWORD=$TEMP_PASS" >> "$GITHUB_ENV"
           openssl pkey -inform DER -in android-release-key.pk8 -out android-release-key.pem
-          openssl pkcs12 -export             -inkey android-release-key.pem             -in ci/android_release_cert.pem             -out android/app/philthysports-release.p12             -name philthysports-release             -passout "pass:$TEMP_PASS"
+          openssl pkcs12 -export \
+            -inkey android-release-key.pem \
+            -in ci/android_release_cert.pem \
+            -out android/app/philthysports-release.p12 \
+            -name philthysports-release \
+            -passout "pass:$TEMP_PASS"
           rm -f android-release-key.pk8 android-release-key.pem
 
       - name: Configure generated Android host for stable release signing
@@ -180,14 +191,14 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Create SHA-256
-        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.2.apk.sha256
+        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.3.apk.sha256
 
       - name: Stage APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.2.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.3.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-1.4.2-android
+          name: PhilthySports-1.4.3-android
           path: |
-            PhilthySports-1.4.2.apk
-            PhilthySports-1.4.2.apk.sha256
+            PhilthySports-1.4.3.apk
+            PhilthySports-1.4.3.apk.sha256
