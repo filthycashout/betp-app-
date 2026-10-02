@@ -60,6 +60,38 @@ def main() -> None:
         )
     )
 
+    # Regression for the physical-device screenshot: today's NHL cards must no
+    # longer all collapse to ML/projected-score unavailable.
+    nhl = backend._search(
+        sport="NHL",
+        date=backend._pacific_today().isoformat(),
+        include_props=False,
+    )
+    nhl_games = nhl.get("games") or []
+    nhl_generated = [
+        game
+        for game in nhl_games
+        if bool((game.get("predictions") or {}).get("generated"))
+    ]
+    print(
+        json.dumps(
+            {
+                "nhl_today_games": len(nhl_games),
+                "nhl_generated": len(nhl_generated),
+                "nhl_sources": sorted({
+                    str(game.get("probability_source") or "")
+                    for game in nhl_generated
+                }),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    if nhl_games and not nhl_generated:
+        raise SystemExit(
+            "live smoke: today's NHL board loaded but every matchup remained unavailable"
+        )
+
 
 if __name__ == "__main__":
     main()
