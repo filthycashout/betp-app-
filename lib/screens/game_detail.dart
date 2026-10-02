@@ -71,6 +71,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final propStatus = props?['status']?.toString();
     final propMessage = props?['message']?.toString();
     final parl = List<dynamic>.from(parlays?['parlays'] ?? []);
+    final injuryReport = Map<String, dynamic>.from(d['injury_report'] ?? {});
+    final homeInjuries = Map<String, dynamic>.from(injuryReport['home'] ?? {});
+    final awayInjuries = Map<String, dynamic>.from(injuryReport['away'] ?? {});
+    final homeRows = List<dynamic>.from(homeInjuries['injuries'] ?? []);
+    final awayRows = List<dynamic>.from(awayInjuries['injuries'] ?? []);
 
     return Scaffold(
       appBar: AppBar(title: Text('${widget.game.away} @ ${widget.game.home}')),
@@ -91,6 +96,51 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
               (r) => ListTile(
                 leading: const Icon(Icons.insights),
                 title: Text('$r'),
+              ),
+            ),
+            const Divider(),
+            Text('Current injuries', style: Theme.of(c).textTheme.headlineSmall),
+            Text(
+              injuryReport['analytics_note']?.toString() ??
+                  'Current injury context is unavailable.',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${widget.game.away}: '
+              '${awayInjuries['available'] == false ? 'feed unavailable' : '${awayInjuries['count'] ?? 0} listed'}',
+            ),
+            ...awayRows.take(8).map(
+              (x) => ListTile(
+                dense: true,
+                leading: const Icon(Icons.healing_outlined),
+                title: Text(
+                  '${x['player'] ?? 'Unknown player'} '
+                  '${x['position'] != null ? '(${x['position']})' : ''}',
+                ),
+                subtitle: Text(
+                  [x['status'], x['injury']]
+                      .where((v) => v != null && '$v'.trim().isNotEmpty)
+                      .join(' • '),
+                ),
+              ),
+            ),
+            Text(
+              '${widget.game.home}: '
+              '${homeInjuries['available'] == false ? 'feed unavailable' : '${homeInjuries['count'] ?? 0} listed'}',
+            ),
+            ...homeRows.take(8).map(
+              (x) => ListTile(
+                dense: true,
+                leading: const Icon(Icons.healing_outlined),
+                title: Text(
+                  '${x['player'] ?? 'Unknown player'} '
+                  '${x['position'] != null ? '(${x['position']})' : ''}',
+                ),
+                subtitle: Text(
+                  [x['status'], x['injury']]
+                      .where((v) => v != null && '$v'.trim().isNotEmpty)
+                      .join(' • '),
+                ),
               ),
             ),
             const Divider(),
