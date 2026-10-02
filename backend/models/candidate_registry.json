@@ -1,0 +1,44 @@
+{
+  "registry_version": 1,
+  "updated": "2026-10-02",
+  "policy": "Only signed portable artifacts that pass the strict runtime promotion gate are production-promoted. Legacy serialized files remain candidates only.",
+  "promoted_directory": "backend/models/promoted",
+  "sports": {
+    "NFL": {
+      "promotion_state": "NO_PROMOTED_MATCHUP_MODEL",
+      "reconstructable_state": "ARTIFACT_AND_SCHEMA_RECONSTRUCTABLE_TRAINING_ROWS_MISSING",
+      "candidate_roles": [
+        "legacy player passing-yards model",
+        "legacy player rushing-yards model",
+        "legacy player receiving-yards model"
+      ],
+      "eligible_for_matchup_promotion": false
+    },
+    "NBA": {
+      "promotion_state": "NO_PROMOTED_MATCHUP_MODEL",
+      "reconstructable_state": "FRAMEWORK_ONLY_NO_RECONSTRUCTABLE_TRAINING_BUNDLE",
+      "candidate_roles": [],
+      "eligible_for_matchup_promotion": false
+    },
+    "MLB": {
+      "promotion_state": "NO_PROMOTED_MATCHUP_MODEL",
+      "reconstructable_state": "PARTIALLY_RECONSTRUCTABLE_NOT_PROMOTION_READY",
+      "candidate_roles": ["legacy serialized MLB model"],
+      "reconstructable_evidence": [
+        "daily feature snapshot",
+        "predicted-vs-actual result files",
+        "tracked pregame/live outcome files",
+        "feature dictionary",
+        "experiment summary"
+      ],
+      "evidence_limit": "Pregame-looking July files do not prove a point-in-time capture timestamp for every prediction. Live-adjusted rows are excluded.",
+      "eligible_for_matchup_promotion": false
+    },
+    "NHL": {
+      "promotion_state": "NO_PROMOTED_MATCHUP_MODEL",
+      "reconstructable_state": "SCAFFOLD_ONLY_NO_RECONSTRUCTABLE_TRAINING_BUNDLE",
+      "candidate_roles": [],
+      "eligible_for_matchup_promotion": false
+    }
+  }
+}
