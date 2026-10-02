@@ -381,6 +381,346 @@ app.add_middleware(
 )
 _SOURCE: dict[str, dict[str, Any]] = {}
 
+KEYLESS_LIVE_SOURCES = {
+    "NFL": {
+        "scoreboard": "ESPN Site API",
+        "detail": "ESPN Site API summary",
+        "github_evidence": [
+            "sportsdataverse/sportsdataverse-js",
+            "stylo-stack/ESPN-API-Documentation",
+        ],
+        "credential_required": False,
+    },
+    "NBA": {
+        "scoreboard": "NBA CDN LiveData",
+        "detail": "NBA CDN LiveData boxscore/play-by-play",
+        "fallback": "ESPN Site API",
+        "github_evidence": [
+            "swar/nba_api",
+            "sportsdataverse/sportsdataverse-py",
+        ],
+        "credential_required": False,
+    },
+    "MLB": {
+        "scoreboard": "MLB StatsAPI",
+        "detail": "MLB StatsAPI live feed",
+        "github_evidence": [
+            "toddrob99/MLB-StatsAPI",
+            "sportsdataverse/sportsdataverse-js",
+        ],
+        "credential_required": False,
+    },
+    "NHL": {
+        "scoreboard": "NHL Web API",
+        "detail": "NHL Gamecenter landing/play-by-play",
+        "github_evidence": [
+            "coreyjs/nhl-api-py",
+            "Zmalski/NHL-API-Reference",
+        ],
+        "credential_required": False,
+    },
+}
+
+_LIVE_CACHE: dict[str, tuple[float, Any]] = {}
+
+
+def _cached_json(
+    cache_key: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    ttl_seconds: int = 15,
+    timeout: int = 12,
+) -> Any:
+    now = time.time()
+    cached = _LIVE_CACHE.get(cache_key)
+    if cached and now - cached[0] <= ttl_seconds:
+        return cached[1]
+    value = _json(url, params=params, timeout=timeout)
+    _LIVE_CACHE[cache_key] = (now, value)
+    return value
+
+
+def _espn_live_scoreboard(sport: str, d: date_cls) -> dict[str, Any]:
+    a, b = ESPN[sport]
+    raw = _cached_json(
+        f"live:{sport}:espn:{d.isoformat()}",
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/scoreboard",
+        params={"dates": d.strftime("%Y%m%d"), "limit": 1000},
+        ttl_seconds=15,
+    )
+    games = []
+    for event in raw.get("events") or []:
+        comp = (event.get("competitions") or [{}])[0]
+        competitors = comp.get("competitors") or []
+        home = next((x for x in competitors if x.get("homeAway") == "home"), {})
+        away = next((x for x in competitors if x.get("homeAway") == "away"), {})
+        status = (event.get("status") or {}).get("type") or {}
+        games.append({
+            "event_id": str(event.get("id") or ""),
+            "sport": sport,
+            "event_time": event.get("date") or comp.get("date"),
+            "status": status.get("name") or status.get("description"),
+            "state": status.get("state"),
+            "completed": status.get("completed"),
+            "period": (event.get("status") or {}).get("period"),
+            "clock": (event.get("status") or {}).get("displayClock"),
+            "home": (home.get("team") or {}).get("displayName"),
+            "away": (away.get("team") or {}).get("displayName"),
+            "home_score": _coerce_number(home.get("score")),
+            "away_score": _coerce_number(away.get("score")),
+        })
+    return {
+        "sport": sport,
+        "provider": "ESPN Site API",
+        "credential_required": False,
+        "date": d.isoformat(),
+        "games": games,
+    }
+
+
+def _nba_cdn_scoreboard() -> dict[str, Any]:
+    raw = _cached_json(
+        "live:NBA:cdn:today",
+        "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json",
+        ttl_seconds=10,
+    )
+    board = raw.get("scoreboard") or {}
+    games = []
+    for game in board.get("games") or []:
+        home = game.get("homeTeam") or {}
+        away = game.get("awayTeam") or {}
+        games.append({
+            "event_id": str(game.get("gameId") or ""),
+            "sport": "NBA",
+            "event_time": game.get("gameTimeUTC") or game.get("gameTimeLocal"),
+            "status": game.get("gameStatusText"),
+            "state": game.get("gameStatus"),
+            "completed": game.get("gameStatus") == 3,
+            "period": game.get("period"),
+            "clock": game.get("gameClock"),
+            "home": home.get("teamName") or home.get("teamTricode"),
+            "away": away.get("teamName") or away.get("teamTricode"),
+            "home_team_id": home.get("teamId"),
+            "away_team_id": away.get("teamId"),
+            "home_score": _coerce_number(home.get("score")),
+            "away_score": _coerce_number(away.get("score")),
+        })
+    return {
+        "sport": "NBA",
+        "provider": "NBA CDN LiveData",
+        "credential_required": False,
+        "date": board.get("gameDate"),
+        "games": games,
+    }
+
+
+def _mlb_live_scoreboard(d: date_cls) -> dict[str, Any]:
+    raw = _cached_json(
+        f"live:MLB:statsapi:{d.isoformat()}",
+        "https://statsapi.mlb.com/api/v1/schedule",
+        params={
+            "sportId": 1,
+            "date": d.isoformat(),
+            "hydrate": "team,linescore,probablePitcher",
+        },
+        ttl_seconds=10,
+    )
+    games = []
+    for day in raw.get("dates") or []:
+        for game in day.get("games") or []:
+            home = (game.get("teams") or {}).get("home") or {}
+            away = (game.get("teams") or {}).get("away") or {}
+            linescore = game.get("linescore") or {}
+            games.append({
+                "event_id": str(game.get("gamePk") or ""),
+                "sport": "MLB",
+                "event_time": game.get("gameDate"),
+                "status": (game.get("status") or {}).get("detailedState"),
+                "state": (game.get("status") or {}).get("abstractGameState"),
+                "completed": (game.get("status") or {}).get("abstractGameState") == "Final",
+                "period": linescore.get("currentInning"),
+                "clock": linescore.get("inningState"),
+                "home": ((home.get("team") or {}).get("name")),
+                "away": ((away.get("team") or {}).get("name")),
+                "home_score": _coerce_number(home.get("score")),
+                "away_score": _coerce_number(away.get("score")),
+                "home_probable_pitcher": (home.get("probablePitcher") or {}).get("fullName"),
+                "away_probable_pitcher": (away.get("probablePitcher") or {}).get("fullName"),
+            })
+    return {
+        "sport": "MLB",
+        "provider": "MLB StatsAPI",
+        "credential_required": False,
+        "date": d.isoformat(),
+        "games": games,
+    }
+
+
+def _nhl_live_scoreboard(d: date_cls) -> dict[str, Any]:
+    raw = _cached_json(
+        f"live:NHL:web:{d.isoformat()}",
+        f"https://api-web.nhle.com/v1/schedule/{d.isoformat()}",
+        ttl_seconds=10,
+    )
+    games = []
+    for day in raw.get("gameWeek") or []:
+        if day.get("date") != d.isoformat():
+            continue
+        for game in day.get("games") or []:
+            home = game.get("homeTeam") or {}
+            away = game.get("awayTeam") or {}
+            clock = game.get("clock") or {}
+            period = game.get("periodDescriptor") or {}
+            games.append({
+                "event_id": str(game.get("id") or ""),
+                "sport": "NHL",
+                "event_time": game.get("startTimeUTC"),
+                "status": game.get("gameState"),
+                "state": game.get("gameState"),
+                "completed": str(game.get("gameState") or "").upper() in {"FINAL", "OFF"},
+                "period": period.get("number"),
+                "clock": clock.get("timeRemaining"),
+                "home": _nhl_name(home),
+                "away": _nhl_name(away),
+                "home_score": _coerce_number(home.get("score")),
+                "away_score": _coerce_number(away.get("score")),
+            })
+    return {
+        "sport": "NHL",
+        "provider": "NHL Web API",
+        "credential_required": False,
+        "date": d.isoformat(),
+        "games": games,
+    }
+
+
+def _keyless_live_scoreboard(sport: str, d: date_cls) -> dict[str, Any]:
+    s = sport.upper()
+    if s == "NBA" and d == _pacific_today():
+        try:
+            return _timed("NBA.live.nba_cdn", _nba_cdn_scoreboard)
+        except Exception:
+            return _timed("NBA.live.espn_fallback", lambda: _espn_live_scoreboard("NBA", d))
+    if s == "MLB":
+        return _timed("MLB.live.statsapi", lambda: _mlb_live_scoreboard(d))
+    if s == "NHL":
+        return _timed("NHL.live.web", lambda: _nhl_live_scoreboard(d))
+    if s in {"NFL", "NBA"}:
+        return _timed(f"{s}.live.espn", lambda: _espn_live_scoreboard(s, d))
+    raise ValueError(f"unsupported sport: {sport}")
+
+
+def _keyless_live_game(sport: str, event_id: str) -> dict[str, Any]:
+    s = sport.upper()
+    if s == "NFL":
+        payload = _timed(
+            "NFL.live.summary",
+            lambda: _cached_json(
+                f"live:NFL:summary:{event_id}",
+                "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary",
+                params={"event": event_id},
+                ttl_seconds=10,
+            ),
+        )
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "provider": "ESPN Site API",
+            "credential_required": False,
+            "summary": payload,
+        }
+
+    if s == "NBA":
+        try:
+            box = _timed(
+                "NBA.live.boxscore",
+                lambda: _cached_json(
+                    f"live:NBA:boxscore:{event_id}",
+                    f"https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{event_id}.json",
+                    ttl_seconds=8,
+                ),
+            )
+            pbp = _timed(
+                "NBA.live.playbyplay",
+                lambda: _cached_json(
+                    f"live:NBA:pbp:{event_id}",
+                    f"https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{event_id}.json",
+                    ttl_seconds=5,
+                ),
+            )
+            return {
+                "sport": s,
+                "event_id": event_id,
+                "provider": "NBA CDN LiveData",
+                "credential_required": False,
+                "boxscore": box,
+                "play_by_play": pbp,
+            }
+        except Exception:
+            payload = _timed(
+                "NBA.live.espn_summary_fallback",
+                lambda: _cached_json(
+                    f"live:NBA:espn_summary:{event_id}",
+                    "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary",
+                    params={"event": event_id},
+                    ttl_seconds=10,
+                ),
+            )
+            return {
+                "sport": s,
+                "event_id": event_id,
+                "provider": "ESPN Site API fallback",
+                "credential_required": False,
+                "summary": payload,
+            }
+
+    if s == "MLB":
+        payload = _timed(
+            "MLB.live.feed",
+            lambda: _cached_json(
+                f"live:MLB:feed:{event_id}",
+                f"https://statsapi.mlb.com/api/v1.1/game/{event_id}/feed/live",
+                ttl_seconds=5,
+            ),
+        )
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "provider": "MLB StatsAPI",
+            "credential_required": False,
+            "live_feed": payload,
+        }
+
+    if s == "NHL":
+        landing = _timed(
+            "NHL.live.landing",
+            lambda: _cached_json(
+                f"live:NHL:landing:{event_id}",
+                f"https://api-web.nhle.com/v1/gamecenter/{event_id}/landing",
+                ttl_seconds=8,
+            ),
+        )
+        pbp = _timed(
+            "NHL.live.playbyplay",
+            lambda: _cached_json(
+                f"live:NHL:pbp:{event_id}",
+                f"https://api-web.nhle.com/v1/gamecenter/{event_id}/play-by-play",
+                ttl_seconds=5,
+            ),
+        )
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "provider": "NHL Web API",
+            "credential_required": False,
+            "landing": landing,
+            "play_by_play": pbp,
+        }
+
+    raise ValueError(f"unsupported sport: {sport}")
+
+
 @app.middleware("http")
 async def request_ids(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
@@ -1303,6 +1643,58 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                         item["props_error"] = type(exc).__name__
                 games.append(item)
     return {"query": q, "date": d.isoformat(), "sports": selected, "fresh_fetch": True, "games": games, "source_telemetry": _SOURCE}
+
+@app.get("/api/live/sources", include_in_schema=False)
+@app.get("/api/v1/live/sources", include_in_schema=False)
+@app.get("/v1/live/sources")
+def live_sources():
+    return {
+        "credential_required": False,
+        "sports": KEYLESS_LIVE_SOURCES,
+        "note": (
+            "These keyless feeds replace credentials for schedules, live scores, "
+            "game details and play-by-play/boxscore data. They do not replace "
+            "sportsbook odds or player-prop feeds."
+        ),
+    }
+
+
+@app.get("/api/live/{sport}/scoreboard", include_in_schema=False)
+@app.get("/api/v1/live/{sport}/scoreboard", include_in_schema=False)
+@app.get("/v1/live/{sport}/scoreboard")
+def live_scoreboard(sport: str, date: str | None = None):
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+    try:
+        d = date_cls.fromisoformat(date) if date else _pacific_today()
+        return _keyless_live_scoreboard(s, d)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            f"keyless {s} live scoreboard fetch failed: {type(exc).__name__}: {exc}",
+        )
+
+
+@app.get("/api/live/{sport}/game/{event_id}", include_in_schema=False)
+@app.get("/api/v1/live/{sport}/game/{event_id}", include_in_schema=False)
+@app.get("/v1/live/{sport}/game/{event_id}")
+def live_game(sport: str, event_id: str):
+    s = sport.upper()
+    if s not in SPORTS:
+        raise HTTPException(404, "unsupported sport")
+    try:
+        return _keyless_live_game(s, event_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            f"keyless {s} live game fetch failed: {type(exc).__name__}: {exc}",
+        )
+
 
 @app.get("/")
 def root():
