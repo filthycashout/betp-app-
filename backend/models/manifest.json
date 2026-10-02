@@ -1,0 +1,26 @@
+{
+  "bundle_id": "philthysports-four-sport-market-baseline-v1",
+  "note": "This is the governed live market baseline bundle, not a claim of trained sport-specific ML weights.",
+  "portable": true,
+  "schema_version": 1,
+  "sports": {
+    "MLB": {
+      "path": "backend/models/mlb/production.json",
+      "sha256": "d92b44a06e1415a17e73ab6cd0fb94e281ec952b7591fcf96151568460d7d2df"
+    },
+    "NBA": {
+      "path": "backend/models/nba/production.json",
+      "sha256": "e415ec5063d06a12cf0e27d897ffa80a8e12cdff2a0411b143c3fdc8ae5857cc"
+    },
+    "NFL": {
+      "path": "backend/models/nfl/production.json",
+      "sha256": "0e1a68e30d5af7186bbba84da7b96197de8fd8026c3002352e3987ca81439a6d"
+    },
+    "NHL": {
+      "path": "backend/models/nhl/production.json",
+      "sha256": "1f96c46766d96ee6c6b699c91b9872c8524c9a0c963627bd523739df751fa07f"
+    }
+  },
+  "status": "PRODUCTION_BASELINE",
+  "trained_weights": false
+}
