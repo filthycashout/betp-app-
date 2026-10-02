@@ -1954,11 +1954,17 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     },
                     "props_to_watch": [],
                 }
-                if include_props and item["odds_event_id"]:
+                if include_props:
                     try:
-                        item["props_to_watch"] = _prop_payload(s, item["odds_event_id"])["props"][:max(0, min(int(props_limit), 20))]
+                        prop_payload = _props_for_game(s, game, oe)
+                        item["props_to_watch"] = prop_payload.get("props", [])[
+                            : max(0, min(int(props_limit), 20))
+                        ]
+                        item["props_status"] = prop_payload.get("status")
+                        item["props_provider"] = prop_payload.get("provider")
                     except Exception as exc:
                         item["props_error"] = type(exc).__name__
+                        item["props_status"] = "PROP_LOOKUP_FAILED_CLOSED"
                 games.append(item)
     return {"query": q, "date": d.isoformat(), "sports": selected, "fresh_fetch": True, "games": games, "source_telemetry": _SOURCE}
 
