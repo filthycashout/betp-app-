@@ -36,7 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await BackendConfig.save(previous);
         ctl.text = previous;
       } catch (_) {}
-      status = 'Backend validation failed. The previous verified URL was kept. $e';
+      status = 'Backend validation failed after retrying temporary gateway/network errors. The previous verified URL was kept. $e';
     } finally {
       if (mounted) setState(() => busy = false);
     }
