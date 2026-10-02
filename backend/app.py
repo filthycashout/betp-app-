@@ -23,6 +23,11 @@ from ci_security import (
     sign_model_artifact,
     verify_github_oidc,
 )
+from model_runtime import (
+    load_promoted,
+    predict_home_probability,
+    promotion_gate as promoted_promotion_gate,
+)
 
 APP_VERSION = "1.4.4"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
@@ -106,6 +111,7 @@ def _load_model_registry() -> dict[str, dict[str, Any]]:
     return registry
 
 MODEL_REGISTRY = _load_model_registry()
+PROMOTED_MODELS = {sport: load_promoted(sport) for sport in SPORTS}
 
 def _load_drive_reconstruction() -> dict[str, Any]:
     if not DRIVE_RECONSTRUCTION_PATH.exists():
@@ -116,7 +122,7 @@ DRIVE_RECONSTRUCTION = _load_drive_reconstruction()
 
 PROMOTION_ECE_MAX = 0.01
 
-def _promotion_gate_for(sport: str) -> dict[str, Any]:
+def _baseline_promotion_gate_for(sport: str) -> dict[str, Any]:
     model = MODEL_REGISTRY[sport]
     evidence = model.get("promotion_evidence") or {}
     chronology = evidence.get("chronology") or {}
@@ -143,18 +149,81 @@ def _promotion_gate_for(sport: str) -> dict[str, Any]:
         "leakage_audit": leakage.get("passed") is True,
         "provenance_hashes": bool(provenance.get("source_manifest_sha256")) and bool(provenance.get("model_sha256")),
         "beats_active_market_baseline": baseline.get("passed") is True,
+        "sample_sufficiency": False,
+        "artifact_security": False,
+        "mobile_parity": False,
         "trained_weights": model.get("trained_weights") is True,
         "explicit_promotion": model.get("status") == "PROMOTED_TRAINED_MODEL",
     }
-    passed = all(checks.values())
+    return {
+        "sport": sport,
+        "passed": False,
+        "checks": checks,
+        "ece_max": PROMOTION_ECE_MAX,
+        "evidence": evidence,
+        "runtime_role": "BASELINE_FALLBACK",
+    }
+
+
+def _promotion_gate_for(sport: str) -> dict[str, Any]:
+    promoted = PROMOTED_MODELS.get(sport)
+    if promoted is None:
+        return _baseline_promotion_gate_for(sport)
+
+    raw = promoted_promotion_gate(promoted, sport)
+    evidence = raw.get("evidence") or {}
+    calibration = evidence.get("calibration") or {}
+    rc = raw.get("checks") or {}
+    ece = calibration.get("ece")
+    checks = {
+        "canonical_dataset": rc.get("dataset_provenance") is True,
+        "feature_schema": rc.get("schema_compatible") is True and rc.get("schema_checksum_verified") is True,
+        "chronology_as_of_before_event": rc.get("chronology_as_of_before_event") is True,
+        "walk_forward_oof": rc.get("walk_forward_oof") is True,
+        "calibration_oof_only": rc.get("calibration_oof_only") is True,
+        "calibration_metrics": (
+            isinstance(calibration.get("brier"), (int, float))
+            and isinstance(calibration.get("log_loss"), (int, float))
+            and isinstance(ece, (int, float))
+        ),
+        "ece_threshold": rc.get("ece_threshold") is True,
+        "separate_holdout": rc.get("separate_holdout") is True,
+        "leakage_audit": rc.get("leakage_audit") is True,
+        "provenance_hashes": (
+            rc.get("source_provenance") is True
+            and rc.get("model_checksum_verified") is True
+            and rc.get("core_checksum_verified") is True
+        ),
+        "beats_active_market_baseline": (
+            rc.get("brier_improvement") is True
+            and rc.get("log_loss_non_inferior") is True
+        ),
+        "sample_sufficiency": (
+            rc.get("sample_total") is True
+            and rc.get("sample_oof") is True
+            and rc.get("sample_holdout") is True
+        ),
+        "artifact_security": (
+            rc.get("signature_verified") is True
+            and rc.get("signing_key_id_verified") is True
+        ),
+        "mobile_parity": rc.get("mobile_parity") is True,
+        "trained_weights": rc.get("trained_weights") is True,
+        "explicit_promotion": promoted.get("status") == "PROMOTED_TRAINED_MODEL",
+    }
+    passed = raw.get("passed") is True and all(checks.values())
     return {
         "sport": sport,
         "passed": passed,
         "checks": checks,
         "ece_max": PROMOTION_ECE_MAX,
         "evidence": evidence,
+        "security": raw.get("security"),
         "runtime_role": "PROMOTED_TRAINED_MODEL" if passed else "BASELINE_FALLBACK",
+        "model_id": promoted.get("model_id"),
+        "artifact_sha256": promoted.get("artifact_sha256"),
     }
+
 
 def _all_model_gates() -> dict[str, dict[str, Any]]:
     return {sport: _promotion_gate_for(sport) for sport in SPORTS}
@@ -624,7 +693,39 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 oe = _match_odds(game, odd_events)
                 market = _market(oe)
                 score = _score(market)
-                hp = market.get("home_probability")
+                market_hp = market.get("home_probability")
+                hp = market_hp
+                probability_source = "fresh_de_vigged_consensus_moneyline"
+                prediction_reasoning = (
+                    "Fresh pregame market baseline is active because no signed trained "
+                    "artifact has passed every v8 promotion and runtime-security gate."
+                )
+                promoted = PROMOTED_MODELS.get(s)
+                gate = _promotion_gate_for(s)
+                if promoted is not None and gate["passed"] and market_hp is not None:
+                    try:
+                        hp = predict_home_probability(
+                            promoted,
+                            {
+                                "consensus_de_vig_home_probability": market_hp,
+                                "home_spread": market.get("home_spread"),
+                                "consensus_total": market.get("total"),
+                            },
+                        )
+                        probability_source = "signed_promoted_trained_model"
+                        prediction_reasoning = (
+                            "Signed sport-specific trained model is active. Its artifact "
+                            "passed chronology, OOF calibration, Brier/log-loss/ECE, "
+                            "leakage, provenance, sample, signature/checksum, schema, "
+                            "and mobile-parity gates."
+                        )
+                    except Exception as exc:
+                        hp = market_hp
+                        probability_source = "fresh_de_vigged_consensus_moneyline"
+                        prediction_reasoning = (
+                            "Promoted model inference failed safely, so this event uses "
+                            f"the fresh governed market baseline ({type(exc).__name__})."
+                        )
                 item = {
                     **game,
                     "date": d.isoformat(),
@@ -632,9 +733,22 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     "timezone": "America/Los_Angeles",
                     "matchup": f"{game.get('away')} @ {game.get('home')}",
                     "odds_event_id": oe.get("id") if oe else None,
-                    "market": market, "projected_score": score,
+                    "market": market,
+                    "projected_score": score,
+                    "home_win_probability": hp,
+                    "probability_source": probability_source,
+                    "prediction_reasoning": prediction_reasoning,
                     "pick": (game.get("home") if hp >= .5 else game.get("away")) if hp is not None else None,
-                    "model_status": _runtime_mode_for(s), "model_metadata": {**MODEL_REGISTRY[s], "promotion_gate": _promotion_gate_for(s)},
+                    "model_status": _runtime_mode_for(s),
+                    "model_metadata": {
+                        **MODEL_REGISTRY[s],
+                        "active_model_id": (
+                            promoted.get("model_id") if promoted is not None and gate["passed"]
+                            else MODEL_REGISTRY[s].get("model_id")
+                        ),
+                        "promoted_artifact_loaded": promoted is not None,
+                        "promotion_gate": gate,
+                    },
                     "props_to_watch": [],
                 }
                 if include_props and item["odds_event_id"]:
@@ -785,7 +899,17 @@ def system_status():
 @app.get("/v1/models/status")
 def model_status():
     return {
-        sport: {**MODEL_REGISTRY[sport], "promotion_gate": _promotion_gate_for(sport), "runtime_mode": _runtime_mode_for(sport)}
+        sport: {
+            **MODEL_REGISTRY[sport],
+            "active_model_id": (
+                PROMOTED_MODELS[sport].get("model_id")
+                if PROMOTED_MODELS.get(sport) is not None and _promotion_gate_for(sport)["passed"]
+                else MODEL_REGISTRY[sport].get("model_id")
+            ),
+            "promoted_artifact_loaded": PROMOTED_MODELS.get(sport) is not None,
+            "promotion_gate": _promotion_gate_for(sport),
+            "runtime_mode": _runtime_mode_for(sport),
+        }
         for sport in SPORTS
     }
 
@@ -861,7 +985,9 @@ def _fair_american(probability: float) -> int:
 
 def _legacy_prediction(game: dict[str, Any]) -> dict[str, Any] | None:
     market = game.get("market") or {}
-    hp = market.get("home_probability")
+    hp = game.get("home_win_probability")
+    if hp is None:
+        hp = market.get("home_probability")
     if hp is None:
         return None
     hp = float(hp)
@@ -888,8 +1014,12 @@ def _legacy_prediction(game: dict[str, Any]) -> dict[str, Any] | None:
         "total_confidence": 0.0,
         "home_team_total": "MARKET N/A",
         "away_team_total": "MARKET N/A",
-        "projected_outcome": f"{pick} ML · EVIDENCE_GATED_BASELINE",
-        "engine": "De-vigged fresh market consensus baseline v1",
+        "projected_outcome": f"{pick} ML · {_runtime_mode_for(str(game.get('sport') or '').upper())}",
+        "engine": (
+            "Signed promoted sport-specific trained model"
+            if game.get("probability_source") == "signed_promoted_trained_model"
+            else "De-vigged fresh market consensus baseline v1"
+        ),
     }
 
 @app.get("/v1/protocol")
@@ -956,7 +1086,7 @@ def legacy_predictions(sport: str, days: int = Query(2, ge=1, le=7)):
                 "game": legacy_game,
                 "prediction": pred,
                 "model_state": _runtime_mode_for(s),
-                "reasoning": "Fresh pregame market baseline used because no trained model is promoted without full chronology, OOF calibration, leakage, schema, sample, metric, and checksum evidence.",
+                "reasoning": game.get("prediction_reasoning"),
             })
     snapshot = hashlib.sha256("".join(snapshots).encode()).hexdigest()
     return {
