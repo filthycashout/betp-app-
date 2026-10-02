@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _save() async {
     setState(() => busy = true);
+    final previous = await BackendConfig.baseUrl();
     try {
       await BackendConfig.save(ctl.text);
       final resolved = await BackendConfig.baseUrl();
@@ -31,8 +32,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final h = await PhilthyApi().health();
       status = 'Connected to $resolved • ${h['service']} v${h['version']}';
     } catch (e) {
-      final resolved = await BackendConfig.baseUrl();
-      status = 'Configured backend failed at $resolved: $e';
+      try {
+        await BackendConfig.save(previous);
+        ctl.text = previous;
+      } catch (_) {}
+      status = 'Backend validation failed. The previous verified URL was kept. $e';
     } finally {
       if (mounted) setState(() => busy = false);
     }
