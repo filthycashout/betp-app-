@@ -1,11 +1,21 @@
 {
-  "bundle_version": "8.0.0",
+  "bundle_version": "9.0.0",
+  "runtime_location": "server",
+  "runtime_bundle_id": "philthysports-four-sport-market-baseline-v1",
+  "four_sport_runtime_ready": true,
   "production_on_device_ready": false,
-  "reason": "No promoted portable four-sport production weights are present in the verified source evidence. Legacy joblibs remain quarantined in the unified source package and are not executed by Flutter.",
-  "required_for_activation": [
-    "portable model artifacts for NFL/NBA/MLB/NHL",
-    "feature schema per model",
-    "conversion/runtime contract for logistic/XGBoost/LightGBM",
-    "hash-signed update manifest"
+  "sports": {
+    "NFL": "PRODUCTION_BASELINE",
+    "NBA": "PRODUCTION_BASELINE",
+    "MLB": "PRODUCTION_BASELINE",
+    "NHL": "PRODUCTION_BASELINE"
+  },
+  "reason": "The production baseline is an integrity-checked server-side portable JSON bundle. Flutter does not execute legacy Python joblib files.",
+  "trained_model_upgrade_gate": [
+    "canonical pregame-only sport dataset",
+    "chronological walk-forward out-of-fold predictions",
+    "separate calibration and holdout evaluation",
+    "feature and dataset provenance hashes",
+    "promotion test versus the active market baseline"
   ]
 }
