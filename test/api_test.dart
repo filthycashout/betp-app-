@@ -40,6 +40,43 @@ void main() {
     await expectLater(api.health(),throwsException);
     expect(calls,1);
   });
+
+  test('health falls back to compatible alias after 404', () async {
+    final paths = <String>[];
+    final api = PhilthyApi(
+      baseUrl: 'https://example.com',
+      delay: (_) async {},
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path == '/health') {
+          return http.Response('missing', 404);
+        }
+        if (request.url.path == '/v1/health') {
+          return http.Response(good, 200);
+        }
+        return http.Response('missing', 404);
+      }),
+    );
+    expect((await api.health())['status'], 'ok');
+    expect(paths, ['/health', '/v1/health']);
+  });
+
+  test('v1 requests fall back to api v1 alias after 404', () async {
+    final paths = <String>[];
+    final api = PhilthyApi(
+      baseUrl: 'https://example.com',
+      delay: (_) async {},
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path == '/api/v1/system/status') {
+          return http.Response('{"status":"ok"}', 200);
+        }
+        return http.Response('missing', 404);
+      }),
+    );
+    expect((await api.systemStatus())['status'], 'ok');
+    expect(paths, ['/v1/system/status', '/api/v1/system/status']);
+  });
   test('backend URL must be HTTPS and contain no credentials', () {
     expect(() => BackendConfig.validate('http://example.com'),throwsFormatException);
     expect(() => BackendConfig.validate('https://user:password@example.com'),throwsFormatException);
