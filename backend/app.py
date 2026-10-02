@@ -1517,9 +1517,9 @@ def _build_multisport_parlay(
             break
         if any(x.get("type") == market_type for x in selected):
             continue
-        best = next((x for x in candidates if x.get("type") == market_type), None)
-        if best is not None:
-            add_leg(best)
+        for candidate in (x for x in candidates if x.get("type") == market_type):
+            if add_leg(candidate):
+                break
 
     # Deliberately reserve space for player props. If the rotated live prop
     # credential or event mapping is unavailable, the response says so rather
