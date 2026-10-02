@@ -1641,6 +1641,94 @@ def _prop_payload(sport: str, event_id: str, requested: str | None = None) -> di
         **parse_props(raw, sport, markets),
     }
 
+def _primary_prop_provider_ready() -> bool:
+    return bool(os.getenv("ODDS_API_KEY", "").strip()) and (
+        os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    )
+
+
+def _keyless_prop_payload_for_game(
+    sport: str,
+    game: dict[str, Any],
+    requested: str | None = None,
+) -> dict[str, Any]:
+    markets = _requested_prop_markets(sport, requested)
+    events = _timed(
+        f"{sport}.props.draftkings_keyless",
+        lambda: draftkings_prop_events(sport, markets),
+    )
+    raw = _match_odds(game, events)
+    if raw is None:
+        return {
+            "sport": sport,
+            "event_id": game.get("event_id"),
+            "provider": "DraftKings keyless direct",
+            "configured_markets": PROP_MARKETS[sport],
+            "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
+            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
+            "requested_markets": markets,
+            "props": [],
+            "status": "KEYLESS_SPORTSBOOK_NO_MATCHED_PROP_EVENT",
+            "message": (
+                "No current keyless sportsbook prop event matched this schedule "
+                "event by teams and verified start time."
+            ),
+        }
+    parsed = parse_props(raw, sport, markets)
+    return {
+        "sport": sport,
+        "event_id": game.get("event_id"),
+        "provider_event_id": raw.get("id"),
+        "provider": "DraftKings keyless direct",
+        "credential_required": False,
+        "configured_markets": PROP_MARKETS[sport],
+        "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
+        "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
+        "requested_markets": markets,
+        **parsed,
+    }
+
+
+def _props_for_game(
+    sport: str,
+    game: dict[str, Any],
+    matched_odds_event: dict[str, Any] | None = None,
+    requested: str | None = None,
+) -> dict[str, Any]:
+    if _primary_prop_provider_ready() and matched_odds_event is not None:
+        provider_event_id = matched_odds_event.get("id")
+        if provider_event_id:
+            try:
+                payload = _prop_payload(sport, str(provider_event_id), requested)
+                payload["provider"] = "The Odds API v4"
+                payload["credential_required"] = True
+                return payload
+            except Exception:
+                pass
+
+    try:
+        return _keyless_prop_payload_for_game(sport, game, requested)
+    except ValueError:
+        raise
+    except Exception as exc:
+        return {
+            "sport": sport,
+            "event_id": game.get("event_id"),
+            "provider": "DraftKings keyless direct",
+            "credential_required": False,
+            "configured_markets": PROP_MARKETS[sport],
+            "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
+            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
+            "requested_markets": _requested_prop_markets(sport, requested),
+            "props": [],
+            "status": "KEYLESS_SPORTSBOOK_UNAVAILABLE",
+            "message": (
+                "The keyless sportsbook fallback did not return a validated prop "
+                f"board ({type(exc).__name__}). No prop was fabricated."
+            ),
+        }
+
+
 def _matches_search_query(q: str, game: dict[str, Any], sport: str, d: date_cls) -> bool:
     raw = str(q or "").strip()
     if not raw:
