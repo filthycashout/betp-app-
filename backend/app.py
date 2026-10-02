@@ -101,8 +101,51 @@ PROP_MARKETS = {
     ],
 }
 
+PROP_ALTERNATE_MARKETS = {
+    "NFL": [
+        "player_assists_alternate", "player_field_goals_alternate",
+        "player_kicking_points_alternate", "player_pass_attempts_alternate",
+        "player_pass_completions_alternate", "player_pass_interceptions_alternate",
+        "player_pass_longest_completion_alternate", "player_pass_rush_yds_alternate",
+        "player_pass_rush_reception_tds_alternate",
+        "player_pass_rush_reception_yds_alternate", "player_pass_tds_alternate",
+        "player_pass_yds_alternate", "player_pats_alternate",
+        "player_receptions_alternate", "player_reception_longest_alternate",
+        "player_reception_tds_alternate", "player_reception_yds_alternate",
+        "player_rush_attempts_alternate", "player_rush_longest_alternate",
+        "player_rush_reception_tds_alternate", "player_rush_reception_yds_alternate",
+        "player_rush_tds_alternate", "player_rush_yds_alternate",
+        "player_sacks_alternate", "player_solo_tackles_alternate",
+        "player_tackles_assists_alternate",
+    ],
+    "NBA": [
+        "player_points_alternate", "player_rebounds_alternate",
+        "player_assists_alternate", "player_blocks_alternate",
+        "player_steals_alternate", "player_turnovers_alternate",
+        "player_threes_alternate", "player_points_assists_alternate",
+        "player_points_rebounds_alternate", "player_rebounds_assists_alternate",
+        "player_points_rebounds_assists_alternate", "player_fantasy_points_alternate",
+    ],
+    "MLB": [
+        "batter_total_bases_alternate", "batter_home_runs_alternate",
+        "batter_hits_alternate", "batter_rbis_alternate", "batter_walks_alternate",
+        "batter_strikeouts_alternate", "batter_runs_scored_alternate",
+        "batter_hits_runs_rbis_alternate", "batter_singles_alternate",
+        "batter_doubles_alternate", "batter_triples_alternate",
+        "batter_fantasy_score_alternate", "pitcher_hits_allowed_alternate",
+        "pitcher_walks_alternate", "pitcher_earned_runs_alternate",
+        "pitcher_strikeouts_alternate", "pitcher_outs_alternate",
+    ],
+    "NHL": [
+        "player_points_alternate", "player_assists_alternate",
+        "player_power_play_points_alternate", "player_goals_alternate",
+        "player_shots_on_goal_alternate", "player_blocked_shots_alternate",
+        "player_total_saves_alternate",
+    ],
+}
+
 # Default live pulls stay intentionally narrower to protect quota and latency.
-# The complete contract above remains discoverable through /v1/system/props,
+# Standard and alternate catalogs remain discoverable through /v1/system/props,
 # and callers may request any supported subset explicitly.
 PROP_DEFAULT_LIVE_MARKETS = {
     "NFL": [
@@ -838,7 +881,7 @@ def _score(market: dict) -> dict:
     return {"home": round(max(0, (float(total)+margin)/2), 1), "away": round(max(0, (float(total)-margin)/2), 1), "method": "consensus_total_plus_spread"}
 
 def _requested_prop_markets(sport: str, requested: str | None = None) -> list[str]:
-    supported = PROP_MARKETS[sport]
+    supported = [*PROP_MARKETS[sport], *PROP_ALTERNATE_MARKETS[sport]]
     if not requested:
         return list(PROP_DEFAULT_LIVE_MARKETS[sport])
     wanted = [item.strip() for item in requested.split(",") if item.strip()]
@@ -935,6 +978,7 @@ def _prop_payload(sport: str, event_id: str, requested: str | None = None) -> di
         "sport": sport,
         "event_id": event_id,
         "configured_markets": PROP_MARKETS[sport],
+        "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
         "requested_markets": markets,
         "props": props,
         "status": "OK",
@@ -1232,6 +1276,7 @@ def prop_capabilities():
             s: {
                 "supported": True,
                 "markets": PROP_MARKETS[s],
+                "alternate_markets": PROP_ALTERNATE_MARKETS[s],
                 "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
             }
             for s in SPORTS
@@ -1586,6 +1631,7 @@ def props(
             "sport": s,
             "event_id": event_id,
             "configured_markets": PROP_MARKETS[s],
+            "alternate_markets": PROP_ALTERNATE_MARKETS[s],
             "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
             "props": [],
             "status": "CONTRACT_READY_LIVE_KEY_REQUIRED",
@@ -1599,6 +1645,7 @@ def props(
             "sport": s,
             "event_id": event_id,
             "configured_markets": PROP_MARKETS[s],
+            "alternate_markets": PROP_ALTERNATE_MARKETS[s],
             "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
             "props": [],
             "status": "LIVE_KEY_READY_EVENT_MAPPING_REQUIRED",
