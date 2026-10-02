@@ -218,3 +218,71 @@ def test_search_query_matches_team_matchup_sport_and_date():
     assert runtime._matches_search_query('2026-10-04', game, 'NFL', d)
     assert runtime._matches_search_query('10/04/2026', game, 'NFL', d)
     assert not runtime._matches_search_query('Dodgers', game, 'NFL', d)
+
+
+def test_nhl_recent_form_uses_completed_official_games(monkeypatch):
+    runtime._FORM_CACHE.clear()
+    d = runtime.date_cls(2026, 10, 2)
+
+    def fake_json(*args, **kwargs):
+        return {
+            'gameWeek': [{
+                'date': '2026-10-01',
+                'games': [{
+                    'id': 9001,
+                    'gameState': 'FINAL',
+                    'homeTeam': {
+                        'commonName': {'default': 'Red Wings'},
+                        'score': 4,
+                    },
+                    'awayTeam': {
+                        'commonName': {'default': 'Rangers'},
+                        'score': 2,
+                    },
+                }],
+            }],
+        }
+
+    monkeypatch.setattr(runtime, '_json', fake_json)
+    snapshot = runtime._nhl_recent_form_snapshot(d)
+    assert snapshot['completed_games'] == 1
+    assert snapshot['source'] == 'NHL Web API completed schedules'
+
+    projection = runtime._recent_form_prediction(
+        'NHL',
+        {'home': 'Red Wings', 'away': 'Rangers'},
+        d,
+        snapshot,
+    )
+    assert projection is not None
+    assert projection['home_win_probability'] is not None
+    assert projection['projected_score']['home'] is not None
+    assert projection['projected_score']['away'] is not None
+
+
+def test_next_scheduled_games_returns_first_nonempty_date(monkeypatch):
+    start = runtime.date_cls(2026, 10, 2)
+    calls = []
+
+    def fake_schedule(sport, d):
+        calls.append(d.isoformat())
+        if d == runtime.date_cls(2026, 10, 4):
+            return [{'event_id': 'next'}]
+        return []
+
+    def fake_search(**kwargs):
+        return {
+            'games': [{
+                'event_id': 'next',
+                'sport': kwargs['sport'],
+                'home': 'Home',
+                'away': 'Away',
+                'date': kwargs['date'],
+            }]
+        }
+
+    monkeypatch.setattr(runtime, '_schedule', fake_schedule)
+    monkeypatch.setattr(runtime, '_search', fake_search)
+    rows = runtime._next_scheduled_games('NFL', start, max_days=7, limit=3)
+    assert rows[0]['event_id'] == 'next'
+    assert calls == ['2026-10-03', '2026-10-04']
