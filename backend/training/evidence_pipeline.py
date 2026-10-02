@@ -296,6 +296,12 @@ def build(root: Path) -> None:
 
     latest: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
+        try:
+            market_probability = float(row.get("market_home_probability"))
+        except (TypeError, ValueError):
+            continue
+        if not 0.0 < market_probability < 1.0:
+            continue
         key = (row["sport"], row["event_id"])
         existing = latest.get(key)
         if existing is None or row["as_of"] > existing["as_of"]:
@@ -316,7 +322,14 @@ def build(root: Path) -> None:
         "home_spread",
         "consensus_total",
     ]
-    source_files = sorted(str(p.relative_to(root)) for p in (root / "pregame").rglob("pregame_*.jsonl"))
+    source_files = [
+        {
+            "path": str(p.relative_to(root)),
+            "sha256": _sha256(p),
+            "bytes": p.stat().st_size,
+        }
+        for p in sorted((root / "pregame").rglob("pregame_*.jsonl"))
+    ]
 
     for sport in SPORTS:
         merged = []
