@@ -80,6 +80,31 @@ class PhilthyApi {
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
   Future<Map<String, dynamic>> propCapabilities() => _get('/v1/system/props');
+  Future<Map<String, dynamic>> liveSources() => _get('/v1/live/sources');
+
+  Future<Map<String, dynamic>> liveScoreboard(
+    String sport, {
+    String? date,
+  }) {
+    final normalized = sport.trim().toUpperCase();
+    final params = {
+      if (date != null && date.isNotEmpty) 'date': date,
+    };
+    final uri = Uri(
+      path: '/v1/live/$normalized/scoreboard',
+      queryParameters: params.isEmpty ? null : params,
+    );
+    return _get(uri.toString());
+  }
+
+  Future<Map<String, dynamic>> liveGame(
+    String sport,
+    String eventId,
+  ) {
+    final normalized = sport.trim().toUpperCase();
+    final id = Uri.encodeComponent(eventId);
+    return _get('/v1/live/$normalized/game/$id');
+  }
 
   Future<List<GameSummary>> today() async {
     final j = await _get('/v1/today?include_props=true&props_limit=3&days=2');
