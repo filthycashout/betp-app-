@@ -6,7 +6,7 @@ import 'package:philthysports/services/api.dart';
 import 'package:philthysports/services/backend_config.dart';
 
 void main() {
-  const good = '{"status":"ok","service":"philthysports-runtime","version":"1.5.1"}';
+  const good = '{"status":"ok","service":"philthysports-runtime","version":"1.5.2"}';
   test('health recovers from transient 502 and 503', () async {
     var calls = 0;
     final api = PhilthyApi(baseUrl: 'https://example.com', delay: (_) async {},
