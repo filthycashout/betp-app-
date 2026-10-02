@@ -47,7 +47,13 @@ def parse_props(raw, sport, markets, now=None):
             key = market.get("key")
             if key not in markets:
                 continue
-            updated = utc_time(market.get("last_update") or book.get("last_update"))
+            provider_updated = utc_time(
+                market.get("last_update") or book.get("last_update")
+            )
+            observed = utc_time(
+                market.get("observed_at") or book.get("observed_at")
+            )
+            updated = provider_updated or observed
             if (
                 updated is None
                 or not -30
@@ -56,6 +62,11 @@ def parse_props(raw, sport, markets, now=None):
             ):
                 skipped += 1
                 continue
+            timestamp_basis = (
+                "provider_timestamp"
+                if provider_updated is not None
+                else "fresh_fetch_observed_at"
+            )
 
             local = {}
             for outcome in market.get("outcomes") or []:
@@ -86,10 +97,12 @@ def parse_props(raw, sport, markets, now=None):
                         "prices": {},
                         "books": set(),
                         "updates": [],
+                        "timestamp_bases": set(),
                     },
                 )
                 entry["books"].add(book_name)
                 entry["updates"].append(updated)
+                entry["timestamp_bases"].add(timestamp_basis)
                 for side, quote in sides.items():
                     entry["quotes"].setdefault(side, []).append(
                         quote["probability"]
@@ -129,6 +142,9 @@ def parse_props(raw, sport, markets, now=None):
             "book_count": len(entry["books"]),
             "contributing_books": sorted(entry["books"]),
             "last_update": min(entry["updates"]).isoformat(),
+            "freshness_basis": sorted(entry["timestamp_bases"]),
+            "provider_timestamp_verified": "provider_timestamp" in entry["timestamp_bases"],
+            "observed_at_verified": "fresh_fetch_observed_at" in entry["timestamp_bases"],
             "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
         }
         pairs = entry["pairs"]
