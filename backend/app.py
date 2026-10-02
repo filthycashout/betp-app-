@@ -1247,7 +1247,7 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
     reasons = [
         f"Fresh de-vigged consensus moneyline implies home win probability {market['home_probability']:.1%}." if market.get("home_probability") is not None else "Fresh sportsbook win probability is unavailable; no replacement probability is invented.",
         f"Consensus spread {market['home_spread']:+.1f} and total {market['total']:.1f} define the score projection." if market.get("home_spread") is not None and market.get("total") is not None else "Spread/total evidence is incomplete, so no synthetic score inputs are inserted.",
-        "Runtime model is the governed four-sport market baseline; trained calibrated models may override it only after chronological promotion gates pass.",
+        game.get("prediction_reasoning") or "No governed probability explanation is available.",
     ]
     game["score_prediction"] = {"home": score.get("home"), "away": score.get("away"), "pick": game.get("pick"), "reasons": reasons}
     game["team_totals"] = {"home": score.get("home"), "away": score.get("away"), "method": score.get("method")}
@@ -1355,20 +1355,29 @@ def _multisport_candidates(
                 "model_state": _runtime_mode_for(sport),
             }
 
-            hp = market.get("home_probability")
+            hp = game.get("home_win_probability")
+            if hp is None:
+                hp = market.get("home_probability")
             if hp is not None and game.get("pick"):
                 picked_home = game["pick"] == game.get("home")
                 probability = float(hp) if picked_home else 1.0 - float(hp)
+                if game.get("probability_source") == "signed_promoted_trained_model":
+                    moneyline_reason = (
+                        f"Signed promoted {sport} model assigns this side "
+                        f"{probability:.1%} win probability from fresh pregame features."
+                    )
+                else:
+                    moneyline_reason = (
+                        f"Fresh de-vigged consensus moneyline gives this side "
+                        f"{probability:.1%} implied probability across "
+                        f"{len(market.get('books_used') or [])} contributing books."
+                    )
                 append_candidate({
                     **common,
                     "type": "moneyline",
                     "label": f"{game['pick']} moneyline",
                     "probability": round(probability, 6),
-                    "reason": (
-                        f"Fresh de-vigged consensus moneyline gives this side "
-                        f"{probability:.1%} implied probability across "
-                        f"{len(market.get('books_used') or [])} contributing books."
-                    ),
+                    "reason": moneyline_reason,
                 })
 
             spread_pick = market.get("spread_pick")
