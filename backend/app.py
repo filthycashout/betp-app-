@@ -181,6 +181,7 @@ PROP_DEFAULT_LIVE_MARKETS = {
 
 MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
 DRIVE_RECONSTRUCTION_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_manifest.json"
+DRIVE_RECONSTRUCTION_ADDENDUM_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_addendum_2026-10-02.json"
 CANDIDATE_REGISTRY_PATH = Path(__file__).resolve().parent / "models" / "candidate_registry.json"
 
 def _load_model_registry() -> dict[str, dict[str, Any]]:
@@ -214,6 +215,15 @@ def _load_drive_reconstruction() -> dict[str, Any]:
     return json.loads(DRIVE_RECONSTRUCTION_PATH.read_text())
 
 DRIVE_RECONSTRUCTION = _load_drive_reconstruction()
+
+
+def _load_drive_reconstruction_addendum() -> dict[str, Any]:
+    if not DRIVE_RECONSTRUCTION_ADDENDUM_PATH.exists():
+        return {"status": "MISSING"}
+    return json.loads(DRIVE_RECONSTRUCTION_ADDENDUM_PATH.read_text())
+
+
+DRIVE_RECONSTRUCTION_ADDENDUM = _load_drive_reconstruction_addendum()
 
 
 def _load_candidate_registry() -> dict[str, Any]:
@@ -1986,7 +1996,10 @@ def model_registry():
 @app.get("/api/v1/training/reconstruction", include_in_schema=False)
 @app.get("/v1/training/reconstruction")
 def training_reconstruction():
-    return DRIVE_RECONSTRUCTION
+    return {
+        **DRIVE_RECONSTRUCTION,
+        "additional_evidence": DRIVE_RECONSTRUCTION_ADDENDUM,
+    }
 
 @app.get("/api/system/props", include_in_schema=False)
 @app.get("/api/v1/system/props", include_in_schema=False)
