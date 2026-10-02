@@ -382,9 +382,33 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 games.append(item)
     return {"query": q, "date": d.isoformat(), "sports": selected, "fresh_fetch": True, "games": games, "source_telemetry": _SOURCE}
 
+@app.get("/")
+def root():
+    return {
+        "service": "PhilthySports Powerhouse",
+        "status": "ok",
+        "version": APP_VERSION,
+        "health": "/health",
+        "system_status": "/v1/system/status",
+        "models_status": "/v1/models/status",
+        "multisport_parlays": "/v1/parlays/multisport?legs=7",
+    }
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION}
+
+@app.get("/ready")
+def ready():
+    gates = _all_model_gates()
+    return {
+        "status": "ready",
+        "model_bundle_loaded": len(MODEL_REGISTRY) == len(SPORTS),
+        "sports": list(SPORTS),
+        "model_policy": "EVIDENCE_GATED_ENSEMBLE",
+        "promoted_sports": [sport for sport, gate in gates.items() if gate["passed"]],
+        "baseline_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
+    }
 
 @app.get("/v1/system/status")
 def system_status():
