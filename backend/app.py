@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date as date_cls, datetime, timedelta, timezone
+from pathlib import Path
 from statistics import mean
 from typing import Any
 
@@ -12,7 +15,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
@@ -50,18 +53,31 @@ PROP_MARKETS = {
         "player_total_saves", "player_goal_scorer_anytime",
     ],
 }
-MODEL_REGISTRY = {
-    sport: {
-        "sport": sport,
-        "status": "MARKET_BASELINE_ACTIVE",
-        "version": "baseline-v1",
-        "trained_weights": False,
-        "probability_source": "fresh_de_vigged_consensus_moneyline",
-        "score_source": "consensus_total_plus_spread",
-        "promotion_policy": "Only a calibrated chronological candidate that passes promotion gates may override this baseline.",
-    }
-    for sport in SPORTS
-}
+MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
+
+def _load_model_registry() -> dict[str, dict[str, Any]]:
+    manifest = json.loads(MODEL_BUNDLE_PATH.read_text())
+    root = Path(__file__).resolve().parent.parent
+    registry: dict[str, dict[str, Any]] = {}
+    for sport in SPORTS:
+        entry = manifest["sports"][sport]
+        artifact = root / entry["path"]
+        payload = artifact.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != entry["sha256"]:
+            raise RuntimeError(f"{sport} production baseline artifact hash mismatch")
+        model = json.loads(payload)
+        registry[sport] = {
+            **model,
+            "version": model["model_id"],
+            "artifact_path": entry["path"],
+            "sha256": digest,
+            "probability_source": "fresh_de_vigged_consensus_moneyline",
+            "score_source": "consensus_total_plus_spread",
+        }
+    return registry
+
+MODEL_REGISTRY = _load_model_registry()
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": f"PhilthySports/{APP_VERSION}", "Accept": "application/json"})
