@@ -13,6 +13,11 @@ from statistics import mean
 from typing import Any
 from zoneinfo import ZoneInfo
 from market_validation import parse_props, parse_game_market, utc_time
+from keyless_sportsbook import (
+    draftkings_game_events,
+    draftkings_prop_events,
+    keyless_sportsbook_status,
+)
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
