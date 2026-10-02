@@ -52,6 +52,33 @@ def main() -> None:
 
     for sport in backend.SPORTS:
         assert backend.PROP_MARKETS[sport], f"{sport} prop markets missing"
+        assert backend.PROP_ALTERNATE_MARKETS[sport], f"{sport} alternate prop markets missing"
+        assert backend.PROP_DEFAULT_LIVE_MARKETS[sport], f"{sport} default live prop markets missing"
+
+    assert "batter_first_home_run" in backend.PROP_MARKETS["MLB"]
+    assert "pitcher_record_a_win" in backend.PROP_MARKETS["MLB"]
+    assert "pitcher_outs_alternate" in backend.PROP_ALTERNATE_MARKETS["MLB"]
+    assert "player_first_basket" in backend.PROP_MARKETS["NBA"]
+    assert "player_pass_yds_alternate" in backend.PROP_ALTERNATE_MARKETS["NFL"]
+    assert "player_goal_scorer_first" in backend.PROP_MARKETS["NHL"]
+
+    old_key = backend.os.environ.get("ODDS_API_KEY")
+    old_rotation = backend.os.environ.get("CREDENTIAL_ROTATION_CONFIRMED")
+    try:
+        backend.os.environ["ODDS_API_KEY"] = "ci-placeholder-never-used"
+        backend.os.environ.pop("CREDENTIAL_ROTATION_CONFIRMED", None)
+        gated = backend.props("MLB", "event", odds_event_id="provider-event")
+        assert gated["status"] == "CONTRACT_READY_LIVE_KEY_REQUIRED"
+        assert gated["props"] == []
+    finally:
+        if old_key is None:
+            backend.os.environ.pop("ODDS_API_KEY", None)
+        else:
+            backend.os.environ["ODDS_API_KEY"] = old_key
+        if old_rotation is None:
+            backend.os.environ.pop("CREDENTIAL_ROTATION_CONFIRMED", None)
+        else:
+            backend.os.environ["CREDENTIAL_ROTATION_CONFIRMED"] = old_rotation
 
     original_search = backend._search
     try:
