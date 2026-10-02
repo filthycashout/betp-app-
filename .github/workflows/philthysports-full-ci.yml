@@ -61,6 +61,23 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Generate Android host project
+        run: |
+          flutter create --platforms=android --org com.philthysports --project-name philthysports .
+          rm -f test/widget_test.dart
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          if permission not in s:
+              s = s.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission,
+              )
+              p.write_text(s)
+          PY
+
       - name: Flutter dependencies
         run: flutter pub get
 
