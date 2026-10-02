@@ -8,11 +8,17 @@ def test_health_and_compatibility_aliases():
         assert client.get(path).status_code == 200
     assert client.get('/health').json()['version'] == runtime.APP_VERSION
 
-def test_four_sport_model_baseline():
+def test_four_sport_model_runtime_contract():
     data = client.get('/v1/models/status').json()
     assert set(data) == {'NFL', 'NBA', 'MLB', 'NHL'}
     assert all(len(v['sha256']) == 64 for v in data.values())
-    assert all(v['promotion_gate']['passed'] is False for v in data.values())
+    for sport, row in data.items():
+        passed = row['promotion_gate']['passed'] is True
+        if passed:
+            assert row['promoted_artifact_loaded'] is True
+            assert row['runtime_mode'] == 'PROMOTED_TRAINED_MODEL'
+        else:
+            assert row['runtime_mode'] == 'EVIDENCE_GATED_HYBRID_MARKET_FORM_FALLBACK'
 
 def test_drive_reconstruction_manifest():
     data = client.get('/v1/training/reconstruction').json()
@@ -128,3 +134,72 @@ def test_keyless_four_sport_live_gateway_contracts():
     assert '/v1/live/{sport}/game/{event_id}' in paths
     assert '/api/v1/live/{sport}/scoreboard' in paths
     assert '/api/v1/live/{sport}/game/{event_id}' in paths
+
+
+def test_governed_model_registry_exposes_candidates_without_fake_promotion():
+    response = client.get('/v1/models/registry')
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload['sports']) == {'NFL', 'NBA', 'MLB', 'NHL'}
+    for sport, row in payload['sports'].items():
+        if row['promotion_gate_passed']:
+            assert row['runtime_mode'] == 'PROMOTED_TRAINED_MODEL'
+        else:
+            assert row['runtime_mode'] == 'EVIDENCE_GATED_HYBRID_MARKET_FORM_FALLBACK'
+    assert payload['sports']['NFL']['candidate_roles']
+    assert payload['sports']['MLB']['candidate_roles']
+
+
+def test_game_detail_without_date_resolves_nearby_schedule(monkeypatch):
+    today = runtime._pacific_today()
+    target_date = (today + runtime.timedelta(days=2)).isoformat()
+    calls = []
+
+    def fake_search(q='', sport=None, date=None, include_props=False, props_limit=3):
+        calls.append(date)
+        if date != target_date:
+            return {'games': []}
+        return {
+            'games': [{
+                'event_id': 'target-event',
+                'sport': 'NFL',
+                'home': 'Home',
+                'away': 'Away',
+                'date': target_date,
+                'market': {
+                    'home_probability': None,
+                    'away_probability': None,
+                    'home_spread': None,
+                    'away_spread': None,
+                    'spread_pick': None,
+                    'spread_pick_probability': None,
+                    'total': None,
+                    'total_pick': None,
+                    'total_pick_probability': None,
+                },
+                'projected_score': {'home': 24.0, 'away': 20.0, 'method': 'test'},
+                'predictions': {
+                    'generated': True,
+                    'moneyline': {
+                        'pick': 'Home',
+                        'home_win_probability': 0.6,
+                        'source': 'keyless_recent_form_heuristic',
+                    },
+                    'spread': {},
+                    'total': {'projected_total': 44.0},
+                    'fallback': {
+                        'note': 'completed games before matchup only',
+                    },
+                },
+                'pick': 'Home',
+                'home_win_probability': 0.6,
+                'probability_source': 'keyless_recent_form_heuristic',
+                'prediction_reasoning': 'test fallback',
+            }]
+        }
+
+    monkeypatch.setattr(runtime, '_search', fake_search)
+    game = runtime.game_detail('NFL', 'target-event')
+    assert game['event_id'] == 'target-event'
+    assert game['prediction_status'] == 'GENERATED'
+    assert target_date in calls
