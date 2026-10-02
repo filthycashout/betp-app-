@@ -40,7 +40,11 @@ class GameCard extends StatelessWidget {
       int.parse(match.group(4)!),
       int.parse(match.group(5)!),
     );
-    return '${DateFormat('EEE MMM d • h:mm a').format(wallClock)} PT';
+    final formatted = DateFormat('EEE MMM d • h:mm a')
+        .format(wallClock)
+        .replaceAll('\u202F', ' ')
+        .replaceAll('\u00A0', ' ');
+    return '$formatted PT';
   }
 
   String? _liveSummary(Map<String, dynamic> live) {
