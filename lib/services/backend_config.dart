@@ -31,8 +31,8 @@ class BackendConfig {
   static Future<void> save(String value) async {
     final normalized = normalize(value);
     final uri = Uri.tryParse(normalized);
-    if (uri == null || !uri.hasScheme || !(uri.scheme == 'http' || uri.scheme == 'https') || uri.host.isEmpty) {
-      throw const FormatException('Enter a complete http:// or https:// API URL.');
+    if (uri == null || !uri.hasScheme || uri.scheme != 'https' || uri.host.isEmpty) {
+      throw const FormatException('Enter a complete HTTPS API URL.');
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, normalized);
