@@ -73,10 +73,13 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final parl = List<dynamic>.from(parlays?['parlays'] ?? []);
     final marketPredictions =
         Map<String, dynamic>.from(d['market_predictions'] ?? {});
+    final moneylinePrediction =
+        Map<String, dynamic>.from(marketPredictions['moneyline'] ?? {});
     final spreadPrediction =
         Map<String, dynamic>.from(marketPredictions['spread'] ?? {});
     final totalPrediction =
         Map<String, dynamic>.from(marketPredictions['total'] ?? {});
+    final predictionStatus = d['prediction_status']?.toString();
     final injuryReport = Map<String, dynamic>.from(d['injury_report'] ?? {});
     final homeInjuries = Map<String, dynamic>.from(injuryReport['home'] ?? {});
     final awayInjuries = Map<String, dynamic>.from(injuryReport['away'] ?? {});
@@ -94,7 +97,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
             if (err != null)
               Text(err!, style: const TextStyle(color: Colors.red)),
             Text('ML & final score', style: Theme.of(c).textTheme.headlineSmall),
+            if (predictionStatus != null)
+              Text('Prediction status: $predictionStatus'),
             Text('Pick: ${score['pick'] ?? 'Unavailable'}'),
+            if (moneylinePrediction['home_win_probability'] is num)
+              Text(
+                'Home win estimate: '
+                '${((moneylinePrediction['home_win_probability'] as num) * 100).toStringAsFixed(1)}%',
+              ),
+            if ((moneylinePrediction['source'] ??
+                    moneylinePrediction['probability_source']) !=
+                null)
+              Text(
+                'Source: '
+                '${(moneylinePrediction['source'] ?? moneylinePrediction['probability_source']).toString().replaceAll('_', ' ')}',
+              ),
             Text(
               'Projected: ${score['away'] ?? '—'} - ${score['home'] ?? '—'}',
             ),
@@ -108,19 +125,21 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
             Text('Spread projection', style: Theme.of(c).textTheme.titleMedium),
             Text(
               spreadPrediction['pick'] == null
-                  ? 'Unavailable: no priced two-sided spread lean.'
+                  ? 'Unavailable: no usable spread line.'
                   : '${spreadPrediction['pick']} '
-                      '${spreadPrediction['line'] ?? '—'} • '
-                      '${spreadPrediction['probability'] is num ? ((spreadPrediction['probability'] as num) * 100).toStringAsFixed(1) : '—'}%',
+                      '${spreadPrediction['line'] ?? '—'}'
+                      '${spreadPrediction['probability'] is num ? ' • ${((spreadPrediction['probability'] as num) * 100).toStringAsFixed(1)}%' : ' • generated from score projection vs line'}',
             ),
             const SizedBox(height: 6),
             Text('Over/under projection', style: Theme.of(c).textTheme.titleMedium),
             Text(
               totalPrediction['pick'] == null
-                  ? 'Unavailable: no priced two-sided total lean.'
+                  ? totalPrediction['projected_total'] is num
+                      ? 'Projected total: ${totalPrediction['projected_total']}'
+                      : 'Unavailable: no usable total evidence.'
                   : '${totalPrediction['pick']} '
-                      '${totalPrediction['line'] ?? '—'} • '
-                      '${totalPrediction['probability'] is num ? ((totalPrediction['probability'] as num) * 100).toStringAsFixed(1) : '—'}%',
+                      '${totalPrediction['line'] ?? '—'}'
+                      '${totalPrediction['probability'] is num ? ' • ${((totalPrediction['probability'] as num) * 100).toStringAsFixed(1)}%' : ' • projected total ${totalPrediction['projected_total'] ?? '—'}'}',
             ),
             const Divider(),
             Text('Current injuries', style: Theme.of(c).textTheme.headlineSmall),
