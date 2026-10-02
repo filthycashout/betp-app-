@@ -71,6 +71,12 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
     final propStatus = props?['status']?.toString();
     final propMessage = props?['message']?.toString();
     final parl = List<dynamic>.from(parlays?['parlays'] ?? []);
+    final marketPredictions =
+        Map<String, dynamic>.from(d['market_predictions'] ?? {});
+    final spreadPrediction =
+        Map<String, dynamic>.from(marketPredictions['spread'] ?? {});
+    final totalPrediction =
+        Map<String, dynamic>.from(marketPredictions['total'] ?? {});
     final injuryReport = Map<String, dynamic>.from(d['injury_report'] ?? {});
     final homeInjuries = Map<String, dynamic>.from(injuryReport['home'] ?? {});
     final awayInjuries = Map<String, dynamic>.from(injuryReport['away'] ?? {});
@@ -97,6 +103,24 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
                 leading: const Icon(Icons.insights),
                 title: Text('$r'),
               ),
+            ),
+            const SizedBox(height: 8),
+            Text('Spread projection', style: Theme.of(c).textTheme.titleMedium),
+            Text(
+              spreadPrediction['pick'] == null
+                  ? 'Unavailable: no priced two-sided spread lean.'
+                  : '${spreadPrediction['pick']} '
+                      '${spreadPrediction['line'] ?? '—'} • '
+                      '${spreadPrediction['probability'] is num ? ((spreadPrediction['probability'] as num) * 100).toStringAsFixed(1) : '—'}%',
+            ),
+            const SizedBox(height: 6),
+            Text('Over/under projection', style: Theme.of(c).textTheme.titleMedium),
+            Text(
+              totalPrediction['pick'] == null
+                  ? 'Unavailable: no priced two-sided total lean.'
+                  : '${totalPrediction['pick']} '
+                      '${totalPrediction['line'] ?? '—'} • '
+                      '${totalPrediction['probability'] is num ? ((totalPrediction['probability'] as num) * 100).toStringAsFixed(1) : '—'}%',
             ),
             const Divider(),
             Text('Current injuries', style: Theme.of(c).textTheme.headlineSmall),
