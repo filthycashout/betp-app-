@@ -51,22 +51,25 @@ def main() -> None:
                 f"{sport}: keyless sportsbook board did not expose moneyline markets"
             )
 
-    nfl_props = keyless_prop_events(
-        "NFL",
-        backend.PROP_DEFAULT_LIVE_MARKETS["NFL"],
-    )
-    sportsbook["NFL"]["prop_events"] = len(nfl_props)
-    sportsbook["NFL"]["prop_markets"] = sorted({
-        market.get("key")
-        for event in nfl_props
-        for book in (event.get("bookmakers") or [])
-        for market in (book.get("markets") or [])
-        if market.get("key")
-    })
-    if not nfl_props:
-        raise SystemExit(
-            "NFL: keyless sportsbook player-prop canary returned no mapped events"
+    for sport in backend.SPORTS:
+        prop_events = keyless_prop_events(
+            sport,
+            backend.PROP_DEFAULT_LIVE_MARKETS[sport],
         )
+        sportsbook[sport]["prop_events"] = len(prop_events)
+        sportsbook[sport]["prop_markets"] = sorted({
+            market.get("key")
+            for event in prop_events
+            for book in (event.get("bookmakers") or [])
+            for market in (book.get("markets") or [])
+            if market.get("key")
+        })
+
+    for sport in ("NFL", "NHL"):
+        if sportsbook[sport]["prop_events"] <= 0:
+            raise SystemExit(
+                f"{sport}: keyless sportsbook player-prop canary returned no mapped events"
+            )
 
     print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
 
