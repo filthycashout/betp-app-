@@ -28,13 +28,8 @@ from model_runtime import (
     predict_home_probability,
     promotion_gate as trained_promotion_gate,
 )
-from model_runtime import (
-    load_promoted,
-    predict_home_probability,
-    promotion_gate as promoted_promotion_gate,
-)
 
-APP_VERSION = "1.4.4"
+APP_VERSION = "1.4.5"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -70,26 +65,75 @@ PROP_MARKETS = {
         "player_pass_tds", "player_rush_tds", "player_reception_tds",
         "player_receptions", "player_pass_completions", "player_pass_attempts",
         "player_pass_interceptions", "player_rush_attempts", "player_anytime_td",
+        "player_assists", "player_defensive_interceptions", "player_field_goals",
+        "player_kicking_points", "player_pass_longest_completion",
+        "player_pass_rush_yds", "player_pass_rush_reception_tds",
+        "player_pass_rush_reception_yds", "player_pass_yds_q1", "player_pats",
+        "player_reception_longest", "player_rush_longest",
+        "player_rush_reception_tds", "player_rush_reception_yds",
+        "player_sacks", "player_solo_tackles", "player_tackles_assists",
+        "player_tds_over", "player_tds", "player_1st_td", "player_last_td",
     ],
     "NBA": [
         "player_points", "player_rebounds", "player_assists", "player_threes",
         "player_blocks", "player_steals", "player_turnovers",
         "player_points_rebounds_assists", "player_points_rebounds",
         "player_points_assists", "player_rebounds_assists", "player_double_double",
-        "player_triple_double",
+        "player_triple_double", "player_points_q1", "player_rebounds_q1",
+        "player_assists_q1", "player_blocks_steals", "player_field_goals",
+        "player_frees_made", "player_frees_attempts", "player_first_basket",
+        "player_first_team_basket", "player_method_of_first_basket",
+        "player_fantasy_points",
     ],
     "MLB": [
         "batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis",
         "batter_runs_scored", "batter_hits_runs_rbis", "batter_walks",
         "batter_strikeouts", "batter_stolen_bases", "pitcher_strikeouts",
         "pitcher_hits_allowed", "pitcher_walks", "pitcher_earned_runs", "pitcher_outs",
+        "batter_first_home_run", "batter_singles", "batter_doubles",
+        "batter_triples", "batter_fantasy_score", "pitcher_record_a_win",
     ],
     "NHL": [
         "player_points", "player_power_play_points", "player_assists",
         "player_blocked_shots", "player_shots_on_goal", "player_goals",
         "player_total_saves", "player_goal_scorer_anytime",
+        "player_goal_scorer_first", "player_goal_scorer_last",
     ],
 }
+
+# Default live pulls stay intentionally narrower to protect quota and latency.
+# The complete contract above remains discoverable through /v1/system/props,
+# and callers may request any supported subset explicitly.
+PROP_DEFAULT_LIVE_MARKETS = {
+    "NFL": [
+        "player_pass_yds", "player_rush_yds", "player_reception_yds",
+        "player_pass_tds", "player_receptions", "player_pass_completions",
+        "player_pass_attempts", "player_pass_interceptions", "player_rush_attempts",
+        "player_pass_longest_completion", "player_pass_rush_yds",
+        "player_pass_rush_reception_yds", "player_reception_longest",
+        "player_rush_longest", "player_rush_reception_yds",
+    ],
+    "NBA": [
+        "player_points", "player_rebounds", "player_assists", "player_threes",
+        "player_blocks", "player_steals", "player_turnovers",
+        "player_points_rebounds_assists", "player_points_rebounds",
+        "player_points_assists", "player_rebounds_assists", "player_blocks_steals",
+        "player_field_goals", "player_frees_made", "player_frees_attempts",
+    ],
+    "MLB": [
+        "batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis",
+        "batter_runs_scored", "batter_hits_runs_rbis", "batter_walks",
+        "batter_strikeouts", "batter_stolen_bases", "batter_singles",
+        "batter_doubles", "batter_triples", "pitcher_strikeouts",
+        "pitcher_hits_allowed", "pitcher_walks", "pitcher_earned_runs", "pitcher_outs",
+    ],
+    "NHL": [
+        "player_points", "player_power_play_points", "player_assists",
+        "player_blocked_shots", "player_shots_on_goal", "player_goals",
+        "player_total_saves",
+    ],
+}
+
 MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
 DRIVE_RECONSTRUCTION_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_manifest.json"
 
@@ -116,7 +160,6 @@ def _load_model_registry() -> dict[str, dict[str, Any]]:
     return registry
 
 MODEL_REGISTRY = _load_model_registry()
-PROMOTED_MODELS = {sport: load_promoted(sport) for sport in SPORTS}
 PROMOTED_MODELS = {sport: load_promoted(sport) for sport in SPORTS}
 
 def _load_drive_reconstruction() -> dict[str, Any]:
@@ -794,23 +837,55 @@ def _score(market: dict) -> dict:
     margin = -float(spread) if spread is not None else 0.0
     return {"home": round(max(0, (float(total)+margin)/2), 1), "away": round(max(0, (float(total)-margin)/2), 1), "method": "consensus_total_plus_spread"}
 
-def _prop_payload(sport: str, event_id: str) -> dict:
-    markets = PROP_MARKETS[sport]
-    params = {"apiKey": _odds_key(), "regions": "us", "markets": ",".join(markets), "oddsFormat": "american", "dateFormat": "iso"}
-    raw = _timed(f"{sport}.props", lambda: _json(f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/events/{event_id}/odds", params=params, timeout=12))
+def _requested_prop_markets(sport: str, requested: str | None = None) -> list[str]:
+    supported = PROP_MARKETS[sport]
+    if not requested:
+        return list(PROP_DEFAULT_LIVE_MARKETS[sport])
+    wanted = [item.strip() for item in requested.split(",") if item.strip()]
+    invalid = [item for item in wanted if item not in supported]
+    if invalid:
+        raise ValueError(f"unsupported {sport} prop market(s): {', '.join(invalid)}")
+    # Preserve caller order while removing duplicates.
+    return list(dict.fromkeys(wanted))
+
+
+def _prop_payload(sport: str, event_id: str, requested: str | None = None) -> dict:
+    markets = _requested_prop_markets(sport, requested)
+    params = {
+        "apiKey": _odds_key(),
+        "regions": "us",
+        "markets": ",".join(markets),
+        "oddsFormat": "american",
+        "dateFormat": "iso",
+    }
+    raw = _timed(
+        f"{sport}.props",
+        lambda: _json(
+            f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/events/{event_id}/odds",
+            params=params,
+            timeout=12,
+        ),
+    )
     grouped: dict[tuple[str, str, float], dict[str, list[float]]] = {}
+    discrete: dict[tuple[str, str, str, float | None], list[float]] = {}
     for book in raw.get("bookmakers") or []:
         for market in book.get("markets") or []:
             key = market.get("key")
             if key not in markets:
                 continue
             for o in market.get("outcomes") or []:
-                side = str(o.get("name", "")).lower()
-                if side not in {"over", "under"} or o.get("point") is None or o.get("price") is None:
+                if o.get("price") is None:
                     continue
-                player = o.get("description") or "Unknown"
-                k = (key, player, float(o["point"]))
-                grouped.setdefault(k, {"over": [], "under": []})[side].append(float(o["price"]))
+                side = str(o.get("name", "")).lower()
+                player = str(o.get("description") or o.get("name") or "Unknown")
+                if side in {"over", "under"} and o.get("point") is not None:
+                    k = (key, player, float(o["point"]))
+                    grouped.setdefault(k, {"over": [], "under": []})[side].append(float(o["price"]))
+                    continue
+                point = float(o["point"]) if o.get("point") is not None else None
+                outcome = str(o.get("name") or "")
+                discrete.setdefault((key, player, outcome, point), []).append(float(o["price"]))
+
     props = []
     for (market, player, line), sides in grouped.items():
         op = mean(_american_to_prob(x) for x in sides["over"]) if sides["over"] else None
@@ -820,13 +895,50 @@ def _prop_payload(sport: str, event_id: str) -> dict:
             over, under = _devig(op, up)
             rec, prob = ("OVER", over) if over >= under else ("UNDER", under)
         props.append({
-            "sport": sport, "player": player, "market": market, "line": line,
-            "recommended_side": rec, "market_probability": prob,
-            "reason": f"Fresh two-sided sportsbook market; de-vigged market lean {rec} at {prob:.1%}." if rec else "Fresh market returned but a two-sided de-vigged probability was unavailable.",
+            "sport": sport,
+            "player": player,
+            "market": market,
+            "line": line,
+            "outcome": rec,
+            "recommended_side": rec,
+            "market_probability": prob,
+            "probability_method": "two_sided_devig" if rec else "unavailable",
+            "reason": (
+                f"Fresh two-sided sportsbook market; de-vigged market lean {rec} at {prob:.1%}."
+                if rec
+                else "Fresh market returned but a two-sided de-vigged probability was unavailable."
+            ),
             "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
         })
+
+    for (market, player, outcome, line), prices in discrete.items():
+        implied = mean(_american_to_prob(price) for price in prices)
+        props.append({
+            "sport": sport,
+            "player": player,
+            "market": market,
+            "line": line,
+            "outcome": outcome,
+            "recommended_side": None,
+            "market_probability": implied,
+            "probability_method": "raw_implied_not_devigged",
+            "book_count": len(prices),
+            "reason": (
+                "Fresh sportsbook outcome price is available, but PhilthySports does not "
+                "promote a recommendation without a complementary outcome that can be de-vigged."
+            ),
+            "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
+        })
+
     props.sort(key=lambda x: x.get("market_probability") or 0, reverse=True)
-    return {"sport": sport, "event_id": event_id, "configured_markets": markets, "props": props, "status": "OK"}
+    return {
+        "sport": sport,
+        "event_id": event_id,
+        "configured_markets": PROP_MARKETS[sport],
+        "requested_markets": markets,
+        "props": props,
+        "status": "OK",
+    }
 
 def _search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3) -> dict:
     d = date_cls.fromisoformat(date) if date else _pacific_today()
@@ -1109,12 +1221,21 @@ def training_reconstruction():
 def prop_capabilities():
     configured = bool(os.getenv("ODDS_API_KEY", "").strip())
     rotated = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    enabled = configured and rotated
     return {
         "provider": "The Odds API v4",
         "credential_configured": configured,
         "credential_rotation_confirmed": rotated,
-        "live_player_props_enabled": configured and rotated,
-        "sports": {s: {"supported": True, "markets": PROP_MARKETS[s]} for s in SPORTS},
+        "live_player_props_enabled": enabled,
+        "status": "LIVE" if enabled else "CONTRACT_READY_LIVE_KEY_REQUIRED",
+        "sports": {
+            s: {
+                "supported": True,
+                "markets": PROP_MARKETS[s],
+                "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
+            }
+            for s in SPORTS
+        },
     }
 
 def _team_code(name: str | None) -> str:
@@ -1449,30 +1570,47 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
 @app.get("/api/games/{sport}/{event_id}/props", include_in_schema=False)
 @app.get("/api/v1/games/{sport}/{event_id}/props", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}/props")
-def props(sport: str, event_id: str, odds_event_id: str | None = None):
+def props(
+    sport: str,
+    event_id: str,
+    odds_event_id: str | None = None,
+    markets: str | None = None,
+):
     s = sport.upper()
     if s not in SPORTS:
         raise HTTPException(400, "unsupported sport")
-    if not os.getenv("ODDS_API_KEY", "").strip():
+    configured = bool(os.getenv("ODDS_API_KEY", "").strip())
+    rotated = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    if not configured or not rotated:
         return {
             "sport": s,
             "event_id": event_id,
             "configured_markets": PROP_MARKETS[s],
+            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
             "props": [],
             "status": "CONTRACT_READY_LIVE_KEY_REQUIRED",
-            "message": "Player-prop markets are configured. Fresh sportsbook lines require a newly issued server-side ODDS_API_KEY.",
+            "message": (
+                "Player-prop markets are configured. Fresh sportsbook lines require a "
+                "newly issued server-side ODDS_API_KEY and confirmed provider-side rotation."
+            ),
         }
     if not odds_event_id:
         return {
             "sport": s,
             "event_id": event_id,
             "configured_markets": PROP_MARKETS[s],
+            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
             "props": [],
             "status": "LIVE_KEY_READY_EVENT_MAPPING_REQUIRED",
-            "message": "The live provider key is configured but this schedule event has not yet been mapped to a sportsbook event id.",
+            "message": (
+                "The fresh live provider credential is ready but this schedule event "
+                "has not yet been mapped to a sportsbook event id."
+            ),
         }
     try:
-        return _prop_payload(s, odds_event_id)
+        return _prop_payload(s, odds_event_id, markets)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     except Exception as exc:
         raise HTTPException(502, f"fresh props fetch failed: {type(exc).__name__}: {exc}")
 
