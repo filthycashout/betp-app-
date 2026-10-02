@@ -2885,10 +2885,19 @@ def _multisport_candidates(
                 })
 
             oid = game.get("odds_event_id")
-            if oid and per_sport_prop_events[sport] < 3:
+            if per_sport_prop_events[sport] < 3:
                 per_sport_prop_events[sport] += 1
                 try:
-                    payload = _prop_payload(sport, oid)
+                    matched_for_props = (
+                        {"id": oid}
+                        if oid and _primary_prop_provider_ready()
+                        else None
+                    )
+                    payload = _props_for_game(
+                        sport,
+                        game,
+                        matched_for_props,
+                    )
                     for p in payload.get("props", [])[:8]:
                         if (
                             p.get("recommended_side")
