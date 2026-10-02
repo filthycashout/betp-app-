@@ -2230,12 +2230,19 @@ def prop_capabilities():
     configured = bool(os.getenv("ODDS_API_KEY", "").strip())
     rotated = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
     enabled = configured and rotated
+    keyless = keyless_sportsbook_status()
     return {
-        "provider": "The Odds API v4",
+        "primary_provider": "The Odds API v4",
         "credential_configured": configured,
         "credential_rotation_confirmed": rotated,
-        "live_player_props_enabled": enabled,
-        "status": "CONFIGURED_AWAITING_LIVE_VALIDATION" if enabled else "CONTRACT_READY_LIVE_KEY_REQUIRED",
+        "primary_live_player_props_enabled": enabled,
+        "keyless_fallback": keyless,
+        "keyless_fallback_configured": True,
+        "status": (
+            "PRIMARY_CONFIGURED_WITH_KEYLESS_FALLBACK"
+            if enabled
+            else "KEYLESS_FALLBACK_CONFIGURED_PRIMARY_KEY_NOT_REQUIRED"
+        ),
         "sports": {
             s: {
                 "supported": True,
