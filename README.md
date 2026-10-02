@@ -1,7 +1,7 @@
 # PhilthyParleys
 
 PhilthyParleys is the renamed PhilthySports Android client for NFL, NBA, MLB and NHL.
-Version **1.5.0+17** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
+Version **1.5.1+18** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
 
 - Search matchups, review available moneyline/spread/total markets and player props, and build 7/10/14-leg manual-review parlay cards when sufficient eligible markets exist.
 - The client validates a candidate HTTPS backend before saving it, checks service identity, and retries temporary gateway/network failures with a finite budget.
