@@ -97,9 +97,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 for (final leg in selected)
                   Card(
                     child: ListTile(
-                      title: Text('${leg['sport']} • ${leg['label']}'),
+                      title: Text(
+                        '${leg['sport']} • ${leg['type'] ?? 'pick'} • ${leg['label']}',
+                      ),
                       subtitle: Text(
-                        '${leg['matchup'] ?? ''}\n${leg['reason'] ?? ''}',
+                        '${leg['matchup'] ?? ''}'
+                        '${leg['event_time_pacific'] != null ? ' • ${leg['event_time_pacific']} PT' : ''}\n'
+                        'Probability: ${leg['probability'] != null ? ((leg['probability'] as num) * 100).toStringAsFixed(1) : '—'}%\n'
+                        '${leg['reason'] ?? ''}',
                       ),
                     ),
                   ),
