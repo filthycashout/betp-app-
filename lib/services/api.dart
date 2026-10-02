@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -6,25 +7,64 @@ import '../models/game.dart';
 import 'backend_config.dart';
 
 class PhilthyApi {
-  Future<Map<String, dynamic>> _get(String path) async {
+  static const _transientStatuses = {429, 502, 503, 504};
+
+  Future<Map<String, dynamic>> _get(
+    String path, {
+    int attempts = 2,
+    Duration timeout = const Duration(seconds: 20),
+    Duration retryBaseDelay = const Duration(milliseconds: 750),
+  }) async {
     final base = await BackendConfig.baseUrl();
     final uri = Uri.parse('$base$path');
-    final r = await http
-        .get(uri, headers: {'Accept': 'application/json'})
-        .timeout(const Duration(seconds: 20));
+    Object? lastError;
 
-    if (r.statusCode < 200 || r.statusCode >= 300) {
-      throw Exception('API ${r.statusCode} for ${uri.path}');
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        final r = await http
+            .get(uri, headers: {'Accept': 'application/json'})
+            .timeout(timeout);
+
+        if (r.statusCode >= 200 && r.statusCode < 300) {
+          final decoded = jsonDecode(r.body);
+          if (decoded is! Map) {
+            throw const FormatException(
+              'Backend returned a non-object JSON response.',
+            );
+          }
+          return Map<String, dynamic>.from(decoded);
+        }
+
+        final error = Exception('API ${r.statusCode} for ${uri.path}');
+        if (_transientStatuses.contains(r.statusCode) &&
+            attempt + 1 < attempts) {
+          lastError = error;
+          await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+          continue;
+        }
+        throw error;
+      } on TimeoutException catch (e) {
+        lastError = e;
+        if (attempt + 1 >= attempts) rethrow;
+        await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+      } on http.ClientException catch (e) {
+        lastError = e;
+        if (attempt + 1 >= attempts) rethrow;
+        await Future<void>.delayed(retryBaseDelay * (attempt + 1));
+      }
     }
 
-    final decoded = jsonDecode(r.body);
-    if (decoded is! Map) {
-      throw const FormatException('Backend returned a non-object JSON response.');
-    }
-    return Map<String, dynamic>.from(decoded);
+    throw Exception(
+      'Backend unavailable after $attempts attempts for ${uri.path}: $lastError',
+    );
   }
 
-  Future<Map<String, dynamic>> health() => _get('/health');
+  Future<Map<String, dynamic>> health() => _get(
+        '/health',
+        attempts: 5,
+        timeout: const Duration(seconds: 25),
+        retryBaseDelay: const Duration(seconds: 2),
+      );
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
   Future<Map<String, dynamic>> propCapabilities() => _get('/v1/system/props');
@@ -59,9 +99,20 @@ class PhilthyApi {
         '/v1/games/${g.sport}/${g.eventId}?date=${Uri.encodeQueryComponent(g.date)}',
       );
 
-  Future<Map<String, dynamic>> props(GameSummary g) => _get(
-        '/v1/games/${g.sport}/${g.eventId}/props?odds_event_id=${Uri.encodeQueryComponent(g.oddsEventId ?? '')}',
-      );
+  Future<Map<String, dynamic>> props(
+    GameSummary g, {
+    List<String>? markets,
+  }) {
+    final params = {
+      'odds_event_id': g.oddsEventId ?? '',
+      if (markets != null && markets.isNotEmpty) 'markets': markets.join(','),
+    };
+    final uri = Uri(
+      path: '/v1/games/${g.sport}/${g.eventId}/props',
+      queryParameters: params,
+    );
+    return _get(uri.toString());
+  }
 
   Future<Map<String, dynamic>> parlays(GameSummary g) => _get(
         '/v1/games/${g.sport}/${g.eventId}/parlays?date=${Uri.encodeQueryComponent(g.date)}',
