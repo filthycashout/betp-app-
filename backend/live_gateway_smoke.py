@@ -73,6 +73,36 @@ def main() -> None:
 
     print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
 
+    parlay_canary = {}
+    for legs in (7, 10, 14):
+        card = backend._build_multisport_parlay(
+            legs,
+            backend._pacific_today().isoformat(),
+        )
+        parlay_canary[str(legs)] = {
+            "status": card.get("status"),
+            "actual_legs": card.get("actual_legs"),
+            "player_prop_legs": card.get("player_prop_legs"),
+            "sports_included": card.get("sports_included"),
+            "dependency_method": card.get("dependency_method"),
+        }
+        if card.get("actual_legs") != legs:
+            raise SystemExit(
+                f"{legs}-leg live parlay canary returned {card.get('actual_legs')} legs"
+            )
+        if card.get("multisport") is not True:
+            raise SystemExit(f"{legs}-leg live parlay canary is not multisport")
+        if int(card.get("player_prop_legs") or 0) <= 0:
+            raise SystemExit(
+                f"{legs}-leg live parlay canary did not include a player prop"
+            )
+        if not card.get("reasoning"):
+            raise SystemExit(f"{legs}-leg live parlay has no overall reasoning")
+        if not all(leg.get("reason") for leg in card.get("legs") or []):
+            raise SystemExit(f"{legs}-leg live parlay has a leg without reasoning")
+
+    print(json.dumps({"live_parlays": parlay_canary}, indent=2, sort_keys=True))
+
 
 if __name__ == "__main__":
     main()
