@@ -1,14 +1,15 @@
-# PhilthySports Android Build
+# PhilthySports
 
-PhilthySports is a Flutter Android client for the NFL, NBA, MLB, and NHL matchup-search backend.
+Flutter Android client plus deployable Python runtime backend for NFL, NBA, MLB, and NHL.
 
-## Security and freshness rules
+## Runtime behavior
 
-- Provider credentials remain server-side. Do not add them to Flutter, Android resources, assets, or GitHub.
-- The client stores only the backend URL locally.
-- Schedules, odds, props, and predictions are fetched fresh from the Python API.
-- API failures do not echo raw backend/provider response bodies into the UI.
-- The shield icon reads backend health, production-gate status, and model-governance status so a launchable APK is never confused with a production-cleared system.
-- Portable on-device model activation remains disabled until promoted artifacts, preprocessing contracts, parity tests, and checksummed/signed manifests exist.
+- Homepage starts with **Search team, matchup, date, or sport**.
+- Separate NFL, NBA, MLB, and NHL sections show today's schedule.
+- Every sport has a player-prop contract. Live sportsbook prices require a rotated server-side `ODDS_API_KEY`.
+- The backend exposes a portable `MARKET_BASELINE_ACTIVE` model for all four sports. It is not mislabeled as trained weights.
+- Chronologically promoted calibrated models may override the market baseline only after the model-governance gates pass.
+- Provider credentials stay server-side. Never add them to Flutter, Android resources, assets, or GitHub.
+- Execution remains analytics/manual-review only.
 
-Current client version: **1.2.3+6**.
+Current client version: **1.3.0+7**.
