@@ -15,7 +15,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
@@ -78,6 +78,54 @@ def _load_model_registry() -> dict[str, dict[str, Any]]:
     return registry
 
 MODEL_REGISTRY = _load_model_registry()
+
+PROMOTION_ECE_MAX = 0.01
+
+def _promotion_gate_for(sport: str) -> dict[str, Any]:
+    model = MODEL_REGISTRY[sport]
+    evidence = model.get("promotion_evidence") or {}
+    chronology = evidence.get("chronology") or {}
+    calibration = evidence.get("calibration") or {}
+    holdout = evidence.get("holdout") or {}
+    provenance = evidence.get("provenance") or {}
+    leakage = evidence.get("leakage_audit") or {}
+    baseline = evidence.get("market_baseline_comparison") or {}
+
+    ece = calibration.get("ece")
+    checks = {
+        "canonical_dataset": bool(provenance.get("dataset_sha256")),
+        "feature_schema": bool(provenance.get("feature_schema_sha256")),
+        "chronology_as_of_before_event": chronology.get("as_of_lt_event_time") is True,
+        "walk_forward_oof": chronology.get("walk_forward_oof") is True,
+        "calibration_oof_only": calibration.get("oof_only") is True,
+        "calibration_metrics": (
+            isinstance(calibration.get("brier"), (int, float))
+            and isinstance(calibration.get("log_loss"), (int, float))
+            and isinstance(ece, (int, float))
+        ),
+        "ece_threshold": isinstance(ece, (int, float)) and float(ece) <= PROMOTION_ECE_MAX,
+        "separate_holdout": holdout.get("separate_from_calibration") is True and int(holdout.get("resolved_games") or 0) > 0,
+        "leakage_audit": leakage.get("passed") is True,
+        "provenance_hashes": bool(provenance.get("source_manifest_sha256")) and bool(provenance.get("model_sha256")),
+        "beats_active_market_baseline": baseline.get("passed") is True,
+        "trained_weights": model.get("trained_weights") is True,
+        "explicit_promotion": model.get("status") == "PROMOTED_TRAINED_MODEL",
+    }
+    passed = all(checks.values())
+    return {
+        "sport": sport,
+        "passed": passed,
+        "checks": checks,
+        "ece_max": PROMOTION_ECE_MAX,
+        "evidence": evidence,
+        "runtime_role": "PROMOTED_TRAINED_MODEL" if passed else "BASELINE_FALLBACK",
+    }
+
+def _all_model_gates() -> dict[str, dict[str, Any]]:
+    return {sport: _promotion_gate_for(sport) for sport in SPORTS}
+
+def _runtime_mode_for(sport: str) -> str:
+    return "PROMOTED_TRAINED_MODEL" if _promotion_gate_for(sport)["passed"] else "EVIDENCE_GATED_ENSEMBLE_BASELINE_FALLBACK"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": f"PhilthySports/{APP_VERSION}", "Accept": "application/json"})
@@ -323,7 +371,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                     "odds_event_id": oe.get("id") if oe else None,
                     "market": market, "projected_score": score,
                     "pick": (game.get("home") if hp >= .5 else game.get("away")) if hp is not None else None,
-                    "model_status": MODEL_REGISTRY[s]["status"], "model_metadata": MODEL_REGISTRY[s],
+                    "model_status": _runtime_mode_for(s), "model_metadata": {**MODEL_REGISTRY[s], "promotion_gate": _promotion_gate_for(s)},
                     "props_to_watch": [],
                 }
                 if include_props and item["odds_event_id"]:
@@ -342,22 +390,59 @@ def health():
 def system_status():
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").lower() == "true"
     odds_key = bool(os.getenv("ODDS_API_KEY", "").strip())
+    gates = _all_model_gates()
+    chronology_pass = all(
+        g["checks"]["chronology_as_of_before_event"] and g["checks"]["walk_forward_oof"]
+        for g in gates.values()
+    )
+    calibration_pass = all(
+        g["checks"]["calibration_oof_only"] and g["checks"]["calibration_metrics"] and g["checks"]["ece_threshold"] and g["checks"]["separate_holdout"]
+        for g in gates.values()
+    )
+    leakage_pass = all(g["checks"]["leakage_audit"] for g in gates.values())
+    provenance_pass = all(
+        g["checks"]["canonical_dataset"] and g["checks"]["feature_schema"] and g["checks"]["provenance_hashes"]
+        for g in gates.values()
+    )
+    promotion_pass = all(g["passed"] for g in gates.values())
+
     remaining = ["stable Android release signing and real-device E2E smoke"]
-    if not rotation:
-        remaining.insert(0, "provider credential rotation/canary evidence")
+    if not rotation or not odds_key:
+        remaining.insert(0, "fresh legitimately issued live odds/props credential plus provider-side rotation evidence")
+    if not promotion_pass:
+        remaining.insert(0, "four sport trained model promotion evidence")
+
     return {
         "api_version": APP_VERSION,
         "execution_mode": "MANUAL_REVIEW_ONLY",
-        "production_baseline": {"four_sport_runtime": True, "trained_weights_required_for_runtime": False},
-        "credential_gate": {"rotation_confirmed": rotation, "odds_api_key_configured": odds_key, "odds_props_live_allowed": rotation and odds_key},
-        "production_ready": False,
+        "model_policy": "EVIDENCE_GATED_ENSEMBLE",
+        "runtime_behavior": "promoted trained model when its evidence gate passes; governed baseline fallback otherwise",
+        "gates": {
+            "chronology": "PASS" if chronology_pass else "BLOCKED_EVIDENCE",
+            "calibration": "PASS" if calibration_pass else "BLOCKED_EVIDENCE",
+            "leakage": "PASS" if leakage_pass else "BLOCKED_EVIDENCE",
+            "provenance": "PASS" if provenance_pass else "BLOCKED_EVIDENCE",
+            "four_sport_model_promotion": "PASS" if promotion_pass else "BLOCKED_EVIDENCE",
+            "credential_core_keyless": "PASS",
+            "credential_live_odds_props": "PASS" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+        },
+        "credential_gate": {
+            "core_runtime_requires_secret": False,
+            "rotation_confirmed": rotation,
+            "odds_api_key_configured": odds_key,
+            "odds_props_live_allowed": rotation and odds_key,
+        },
+        "production_ready": bool(promotion_pass and rotation and odds_key),
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
     }
 
 @app.get("/v1/models/status")
 def model_status():
-    return MODEL_REGISTRY
+    return {
+        sport: {**MODEL_REGISTRY[sport], "promotion_gate": _promotion_gate_for(sport), "runtime_mode": _runtime_mode_for(sport)}
+        for sport in SPORTS
+    }
 
 @app.get("/v1/system/props")
 def prop_capabilities():
@@ -442,4 +527,111 @@ def parlays(sport: str, event_id: str, date: str | None = None):
             combos.append({"legs": chunk, "estimated_joint_probability": None, "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL"})
         if len(combos) == 4:
             break
+    for combo in combos:
+        combo["reasoning"] = [
+            "Every leg comes from a fresh event-level moneyline or player-prop market returned by the configured provider.",
+            "No correlation bonus is invented. Joint probability remains unscored until a measured dependency model passes governance.",
+            "Manual review is required before any wagering action.",
+        ]
     return {"sport": sport.upper(), "event_id": event_id, "parlays": combos, "status": "OK" if combos else "INSUFFICIENT_ELIGIBLE_LEGS"}
+
+def _multisport_candidates(d: date_cls) -> list[dict[str, Any]]:
+    result = _search(date=d.isoformat(), include_props=False)
+    candidates: list[dict[str, Any]] = []
+
+    per_sport_prop_events: dict[str, int] = {s: 0 for s in SPORTS}
+    for game in result["games"]:
+        sport = game["sport"]
+        market = game.get("market") or {}
+        hp = market.get("home_probability")
+        if hp is not None and game.get("pick"):
+            picked_home = game["pick"] == game.get("home")
+            probability = float(hp) if picked_home else 1.0 - float(hp)
+            candidates.append({
+                "sport": sport,
+                "event_id": game["event_id"],
+                "event_time": game.get("event_time"),
+                "matchup": game.get("matchup"),
+                "type": "moneyline",
+                "label": f"{game['pick']} moneyline",
+                "probability": round(probability, 6),
+                "reason": f"Fresh de-vigged consensus market gives this side {probability:.1%} implied probability across {len(market.get('books_used') or [])} contributing books.",
+                "model_state": _runtime_mode_for(sport),
+            })
+
+        oid = game.get("odds_event_id")
+        if oid and per_sport_prop_events[sport] < 2:
+            per_sport_prop_events[sport] += 1
+            try:
+                payload = _prop_payload(sport, oid)
+                for p in payload.get("props", [])[:4]:
+                    if p.get("recommended_side") and p.get("market_probability") is not None:
+                        candidates.append({
+                            "sport": sport,
+                            "event_id": game["event_id"],
+                            "event_time": game.get("event_time"),
+                            "matchup": game.get("matchup"),
+                            "type": "player_prop",
+                            "label": f"{p['player']} {p['recommended_side']} {p['line']} {p['market']}",
+                            "probability": round(float(p["market_probability"]), 6),
+                            "reason": p.get("reason"),
+                            "model_state": p.get("model_state"),
+                        })
+            except Exception:
+                pass
+
+    candidates.sort(key=lambda x: x.get("probability") or 0.0, reverse=True)
+    return candidates
+
+def _build_multisport_parlay(leg_count: int, date: str | None = None) -> dict[str, Any]:
+    if leg_count not in {7, 10, 14}:
+        raise ValueError("leg_count must be one of 7, 10, or 14")
+    d = date_cls.fromisoformat(date) if date else date_cls.today()
+    candidates = _multisport_candidates(d)
+
+    by_sport = {sport: [x for x in candidates if x["sport"] == sport] for sport in SPORTS}
+    selected: list[dict[str, Any]] = []
+    seen_events: set[tuple[str, str, str]] = set()
+
+    while len(selected) < leg_count:
+        added = False
+        for sport in SPORTS:
+            while by_sport[sport]:
+                leg = by_sport[sport].pop(0)
+                dedupe = (leg["sport"], leg["event_id"], leg["label"])
+                if dedupe in seen_events:
+                    continue
+                selected.append(leg)
+                seen_events.add(dedupe)
+                added = True
+                break
+            if len(selected) >= leg_count:
+                break
+        if not added:
+            break
+
+    return {
+        "date": d.isoformat(),
+        "requested_legs": leg_count,
+        "actual_legs": len(selected),
+        "multisport": len({x["sport"] for x in selected}) > 1,
+        "sports_included": sorted({x["sport"] for x in selected}),
+        "legs": selected,
+        "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL",
+        "estimated_joint_probability": None,
+        "reasoning": [
+            "Legs are ranked from fresh de-vigged event markets and available player-prop markets, then round-robin selected across NFL, NBA, MLB, and NHL to encourage multisport coverage.",
+            "The system does not multiply leg probabilities or add a correlation boost because measured cross-leg dependency has not passed governance.",
+            "A leg is omitted rather than fabricated when a fresh probability or mapped live prop market is unavailable.",
+            "Manual review is required before any wagering action.",
+        ],
+        "status": "OK" if len(selected) == leg_count else "INSUFFICIENT_FRESH_ELIGIBLE_LEGS",
+    }
+
+@app.get("/v1/parlays/multisport")
+def multisport_parlays(legs: int = Query(7), date: str | None = None):
+    try:
+        return _build_multisport_parlay(int(legs), date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
