@@ -14,6 +14,7 @@ void main() {
       'pick': 'Home',
       'market': {'home_ml': -120, 'away_ml': 105},
       'projected_score': {'home': 24.5, 'away': 21.0},
+      'live': {'status': 'In Progress', 'away_score': 17, 'home_score': 21},
       'props_to_watch': [
         {'player': 'Example', 'market': 'player_pass_yds'}
       ],
@@ -22,6 +23,8 @@ void main() {
     expect(game.home, 'Home');
     expect(game.oddsEventId, 'odds-1');
     expect(game.market['home_ml'], -120);
+    expect(game.live['status'], 'In Progress');
+    expect(game.live['home_score'], 21);
     expect(game.propsToWatch, hasLength(1));
   });
 }
