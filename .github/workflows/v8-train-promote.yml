@@ -1,0 +1,188 @@
+name: PhilthySports v8 Train and Promote
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/v8-train-promote.yml"
+      - "backend/training/**"
+      - "backend/model_runtime.py"
+      - "backend/ci_security.py"
+  schedule:
+    - cron: "43 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: philthysports-v8-train-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch canonical evidence branch
+        id: evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/evidence
+          if ! git ls-remote --exit-code --heads origin evidence-snapshots >/dev/null 2>&1; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin evidence-snapshots
+          for sport in nfl nba mlb nhl; do
+            git show "origin/evidence-snapshots:evidence/canonical/${sport}.csv" > "/tmp/evidence/${sport}.csv"
+            git show "origin/evidence-snapshots:evidence/canonical/${sport}_source_manifest.json" > "/tmp/evidence/${sport}_source_manifest.json"
+          done
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check v8 sample sufficiency before installing training stack
+        id: readiness
+        if: steps.evidence.outputs.available == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json, os
+          from pathlib import Path
+
+          policy=json.loads(Path("backend/training/policy.json").read_text())
+          ready=[]
+          counts={}
+          for sport in ("NFL","NBA","MLB","NHL"):
+              path=Path("/tmp/evidence")/f"{sport.lower()}.csv"
+              with path.open(newline="", encoding="utf-8") as f:
+                  rows=sum(1 for _ in csv.DictReader(f))
+              counts[sport]=rows
+              if rows >= int(policy["sample_policy"][sport]["minimum_total_rows"]):
+                  ready.append(sport)
+          Path("/tmp/ready_sports.txt").write_text("\n".join(ready))
+          Path("/tmp/sample_counts.json").write_text(json.dumps(counts, indent=2, sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"ready={'true' if ready else 'false'}\n")
+              out.write(f"sports={','.join(ready)}\n")
+          print(json.dumps({"counts": counts, "ready": ready}, indent=2))
+          PY
+
+      - name: Install governed training dependencies
+        if: steps.readiness.outputs.ready == 'true'
+        run: pip install -r backend/training/requirements.txt
+
+      - name: Strict train, evaluate, parity-test, and sign eligible sports
+        if: steps.readiness.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/promotions backend/models/promoted assets/models/promoted
+          promoted=""
+
+          while IFS= read -r SPORT; do
+            test -n "$SPORT" || continue
+            lower="$(echo "$SPORT" | tr '[:upper:]' '[:lower:]')"
+            out="/tmp/promotions/$SPORT"
+            mkdir -p "$out"
+
+            set +e
+            python backend/training/strict_promote.py               --sport "$SPORT"               --input "/tmp/evidence/${lower}.csv"               --output-dir "$out"               --source-manifest "/tmp/evidence/${lower}_source_manifest.json"               --features "consensus_de_vig_home_probability,home_spread,consensus_total"
+            rc=$?
+            set -e
+
+            if [ "$rc" -eq 2 ]; then
+              echo "$SPORT did not pass strict v8 promotion. Keeping fallback."
+              continue
+            elif [ "$rc" -ne 0 ]; then
+              echo "$SPORT training failed unexpectedly with code $rc."
+              exit "$rc"
+            fi
+
+            artifact="$out/${lower}_mobile_model.json"
+            python backend/training/sign_promoted.py --artifact "$artifact"
+
+            cp "$artifact" "backend/models/promoted/${lower}.json"
+            cp "$artifact" "assets/models/promoted/${lower}.json"
+
+            PYTHONPATH=backend python - "$SPORT" "backend/models/promoted/${lower}.json" <<'PY'
+          import json, sys
+          from model_runtime import promotion_gate
+
+          sport=sys.argv[1]
+          path=sys.argv[2]
+          artifact=json.load(open(path, encoding="utf-8"))
+          gate=promotion_gate(artifact, sport)
+          if not gate["passed"]:
+              failed=[k for k,v in gate["checks"].items() if not v]
+              raise SystemExit(f"runtime gate rejected signed {sport} artifact: {failed}")
+          print(json.dumps({"sport": sport, "runtime_gate": "PASS", "security": gate["security"]}, indent=2))
+          PY
+
+            promoted="$promoted $SPORT"
+          done < /tmp/ready_sports.txt
+
+          echo "$promoted" | xargs > /tmp/promoted_sports.txt
+
+      - name: Update portable mobile model manifest
+        if: steps.readiness.outputs.ready == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path=Path("assets/models/model_manifest.json")
+          data=json.loads(path.read_text())
+          promoted=set(Path("/tmp/promoted_sports.txt").read_text().split())
+          for sport in ("NFL","NBA","MLB","NHL"):
+              if (Path("assets/models/promoted")/f"{sport.lower()}.json").exists():
+                  promoted.add(sport)
+          data["promoted_sports"]=sorted(promoted)
+          data["portable_mobile_artifacts_ready"]=bool(promoted)
+          data["production_on_device_ready"]=False
+          data["runtime_location"]="server_with_signed_portable_mobile_artifacts"
+          data["reason"]=(
+              "Server inference is authoritative. Any promoted portable artifacts "
+              "were signed only after strict v8 chronology, OOF calibration, metric, "
+              "leakage, provenance, checksum, sample, and parity gates passed."
+          )
+          for sport in promoted:
+              data.setdefault("sports", {})[sport]="PROMOTED_TRAINED_MODEL"
+          path.write_text(json.dumps(data, indent=2, sort_keys=True)+"\n")
+          PY
+
+      - name: Commit newly promoted signed artifacts
+        if: steps.readiness.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add backend/models/promoted assets/models/promoted assets/models/model_manifest.json
+          if git diff --cached --quiet; then
+            echo "No newly promoted artifacts."
+            exit 0
+          fi
+          git config user.name "philthysports-v8-promoter"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Promote signed v8 sport models after strict evidence gates"
+          git push origin main
+
+      - name: Promotion status summary
+        shell: bash
+        run: |
+          echo "Evidence branch available: ${{ steps.evidence.outputs.available }}"
+          echo "Ready by row count: ${{ steps.readiness.outputs.sports }}"
+          if [ -f /tmp/sample_counts.json ]; then cat /tmp/sample_counts.json; fi
+          if [ -f /tmp/promoted_sports.txt ]; then
+            echo "Promoted this run: $(cat /tmp/promoted_sports.txt)"
+          else
+            echo "Promoted this run: none"
+          fi
