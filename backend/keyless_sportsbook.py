@@ -270,10 +270,17 @@ _PROP_MAP: dict[str, list[tuple[str, str]]] = {
 
 def _prop_key(sport: str, *names: str) -> str | None:
     combined = _norm(" ".join(names))
-    # Correct a common spelling split while retaining normalized matching.
+    # Category labels commonly insert generic words between the player role and
+    # the actual statistic (for example "Pitcher Props" + "Strikeouts O/U").
+    # Remove only structural labels; never rewrite the statistic itself.
+    for structural in ("playerprops", "pitcherprops", "batterprops", "props", "overunder", "ou"):
+        combined = combined.replace(structural, "")
     candidates = _PROP_MAP.get(sport, [])
     for needle, key in candidates:
-        if _norm(needle) in combined:
+        normalized = _norm(needle)
+        for structural in ("playerprops", "pitcherprops", "batterprops", "props", "overunder", "ou"):
+            normalized = normalized.replace(structural, "")
+        if normalized and normalized in combined:
             return key
     return None
 
