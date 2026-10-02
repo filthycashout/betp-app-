@@ -1,0 +1,12 @@
+pandas>=2.2,<3
+numpy>=2.0,<3
+scikit-learn>=1.5,<2
+pyarrow>=17,<20
+cryptography>=43,<47
+joblib>=1.4,<2
+nflreadpy>=0.1.5,<0.2
+nba_api>=1.11.4,<2
+python-mlb-statsapi>=1.1.2,<2
+pybaseball==2.2.7
+nhl-api-py>=3.3.0,<4
+requests>=2.32,<3
