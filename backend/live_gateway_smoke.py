@@ -92,6 +92,11 @@ def main() -> None:
             )
         if card.get("multisport") is not True:
             raise SystemExit(f"{legs}-leg live parlay canary is not multisport")
+        if set(card.get("sports_included") or []) != set(backend.SPORTS):
+            raise SystemExit(
+                f"{legs}-leg live parlay did not cover all available sports: "
+                f"{card.get('sports_included')}"
+            )
         if int(card.get("player_prop_legs") or 0) <= 0:
             raise SystemExit(
                 f"{legs}-leg live parlay canary did not include a player prop"
