@@ -392,12 +392,28 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
     return game
 
 @app.get("/v1/games/{sport}/{event_id}/props")
-def props(sport: str, event_id: str, odds_event_id: str = Query(...)):
+def props(sport: str, event_id: str, odds_event_id: str | None = None):
     s = sport.upper()
     if s not in SPORTS:
         raise HTTPException(400, "unsupported sport")
     if not os.getenv("ODDS_API_KEY", "").strip():
-        raise HTTPException(503, "live sportsbook props require a rotated server-side ODDS_API_KEY")
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "configured_markets": PROP_MARKETS[s],
+            "props": [],
+            "status": "CONTRACT_READY_LIVE_KEY_REQUIRED",
+            "message": "Player-prop markets are configured. Fresh sportsbook lines require a newly issued server-side ODDS_API_KEY.",
+        }
+    if not odds_event_id:
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "configured_markets": PROP_MARKETS[s],
+            "props": [],
+            "status": "LIVE_KEY_READY_EVENT_MAPPING_REQUIRED",
+            "message": "The live provider key is configured but this schedule event has not yet been mapped to a sportsbook event id.",
+        }
     try:
         return _prop_payload(s, odds_event_id)
     except Exception as exc:
