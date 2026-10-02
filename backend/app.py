@@ -2698,46 +2698,45 @@ def props(
     event_id: str,
     odds_event_id: str | None = None,
     markets: str | None = None,
+    date: str | None = None,
 ):
     s = sport.upper()
     if s not in SPORTS:
         raise HTTPException(400, "unsupported sport")
-    configured = bool(os.getenv("ODDS_API_KEY", "").strip())
-    rotated = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
-    if not configured or not rotated:
-        return {
-            "sport": s,
-            "event_id": event_id,
-            "configured_markets": PROP_MARKETS[s],
-            "alternate_markets": PROP_ALTERNATE_MARKETS[s],
-            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
-            "props": [],
-            "status": "CONTRACT_READY_LIVE_KEY_REQUIRED",
-            "message": (
-                "Player-prop markets are configured. Fresh sportsbook lines require a "
-                "newly issued server-side ODDS_API_KEY and confirmed provider-side rotation."
-            ),
-        }
-    if not odds_event_id:
-        return {
-            "sport": s,
-            "event_id": event_id,
-            "configured_markets": PROP_MARKETS[s],
-            "alternate_markets": PROP_ALTERNATE_MARKETS[s],
-            "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[s],
-            "props": [],
-            "status": "LIVE_KEY_READY_EVENT_MAPPING_REQUIRED",
-            "message": (
-                "A provider key is configured, but this schedule event "
-                "has not yet been mapped to a sportsbook event id."
-            ),
-        }
     try:
-        return _prop_payload(s, odds_event_id, markets)
+        game = game_detail(s, event_id, date)
+        game_date = date_cls.fromisoformat(str(game.get("date") or _pacific_today()))
+        matched = None
+        try:
+            matched = _match_odds(game, _odds(s, game_date))
+        except Exception:
+            matched = None
+        # Preserve an explicitly mapped primary-provider event id when supplied.
+        if (
+            matched is None
+            and odds_event_id
+            and _primary_prop_provider_ready()
+        ):
+            matched = {
+                "id": odds_event_id,
+                "market_source": "THE_ODDS_API_V4",
+                "home_team": game.get("home"),
+                "away_team": game.get("away"),
+                "commence_time": game.get("event_time"),
+            }
+        return _props_for_game(s, game, matched, markets)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from None
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(502, "Player-prop provider unavailable. Retry shortly; server credentials and provider access may need verification.") from None
+        raise HTTPException(
+            502,
+            (
+                "Player-prop providers are unavailable after primary and keyless "
+                f"fallback checks ({type(exc).__name__})."
+            ),
+        ) from None
 
 @app.get("/api/games/{sport}/{event_id}/parlays", include_in_schema=False)
 @app.get("/api/v1/games/{sport}/{event_id}/parlays", include_in_schema=False)
