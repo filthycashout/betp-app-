@@ -118,6 +118,7 @@ class PhilthyApi {
   }
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
+  Future<Map<String, dynamic>> modelRegistry() => _get('/v1/models/registry');
   Future<Map<String, dynamic>> propCapabilities() => _get('/v1/system/props');
   Future<Map<String, dynamic>> liveSources() => _get('/v1/live/sources');
 
