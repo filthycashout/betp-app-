@@ -24,7 +24,7 @@ from ci_security import (
     verify_github_oidc,
 )
 
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.4"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -424,41 +424,137 @@ def _devig(a: float, b: float) -> tuple[float, float]:
     return (a/s, b/s) if s else (.5, .5)
 
 def _market(event: dict | None) -> dict:
+    empty = {
+        "home_probability": None,
+        "away_probability": None,
+        "home_spread": None,
+        "away_spread": None,
+        "spread_home_probability": None,
+        "spread_away_probability": None,
+        "spread_pick": None,
+        "spread_pick_probability": None,
+        "total": None,
+        "over_probability": None,
+        "under_probability": None,
+        "total_pick": None,
+        "total_pick_probability": None,
+        "books_used": [],
+    }
     if not event:
-        return {"home_probability": None, "away_probability": None, "home_spread": None, "total": None, "books_used": []}
+        return empty
+
     home, away = event.get("home_team"), event.get("away_team")
     h2h = {home: [], away: []}
-    spreads, totals, books = [], [], set()
+    home_spreads: list[float] = []
+    spread_home_probs: list[float] = []
+    spread_away_probs: list[float] = []
+    totals: list[float] = []
+    over_probs: list[float] = []
+    under_probs: list[float] = []
+    books: set[str] = set()
+
     for book in event.get("bookmakers") or []:
         used = False
         for m in book.get("markets") or []:
-            if m.get("key") == "h2h":
-                for o in m.get("outcomes") or []:
+            key = m.get("key")
+            outcomes = m.get("outcomes") or []
+
+            if key == "h2h":
+                for o in outcomes:
                     if o.get("name") in h2h and o.get("price") is not None:
                         h2h[o["name"]].append(float(o["price"]))
                         used = True
-            elif m.get("key") == "spreads":
-                for o in m.get("outcomes") or []:
-                    if o.get("name") == home and o.get("point") is not None:
-                        spreads.append(float(o["point"]))
-                        used = True
-            elif m.get("key") == "totals":
-                for o in m.get("outcomes") or []:
-                    if o.get("point") is not None:
-                        totals.append(float(o["point"]))
-                        used = True
+
+            elif key == "spreads":
+                home_o = next((o for o in outcomes if o.get("name") == home), None)
+                away_o = next((o for o in outcomes if o.get("name") == away), None)
+                if home_o and home_o.get("point") is not None:
+                    home_spreads.append(float(home_o["point"]))
+                    used = True
+                if (
+                    home_o
+                    and away_o
+                    and home_o.get("price") is not None
+                    and away_o.get("price") is not None
+                ):
+                    hp = _american_to_prob(float(home_o["price"]))
+                    ap = _american_to_prob(float(away_o["price"]))
+                    home_p, away_p = _devig(hp, ap)
+                    spread_home_probs.append(home_p)
+                    spread_away_probs.append(away_p)
+                    used = True
+
+            elif key == "totals":
+                over_o = next(
+                    (o for o in outcomes if str(o.get("name") or "").lower() == "over"),
+                    None,
+                )
+                under_o = next(
+                    (o for o in outcomes if str(o.get("name") or "").lower() == "under"),
+                    None,
+                )
+                point = None
+                if over_o and over_o.get("point") is not None:
+                    point = float(over_o["point"])
+                elif under_o and under_o.get("point") is not None:
+                    point = float(under_o["point"])
+                if point is not None:
+                    totals.append(point)
+                    used = True
+                if (
+                    over_o
+                    and under_o
+                    and over_o.get("price") is not None
+                    and under_o.get("price") is not None
+                ):
+                    op = _american_to_prob(float(over_o["price"]))
+                    up = _american_to_prob(float(under_o["price"]))
+                    over_p, under_p = _devig(op, up)
+                    over_probs.append(over_p)
+                    under_probs.append(under_p)
+                    used = True
+
         if used:
             books.add(book.get("key") or "unknown")
-    out = {
-        "home_probability": None, "away_probability": None,
-        "home_spread": round(mean(spreads), 2) if spreads else None,
-        "total": round(mean(totals), 2) if totals else None,
-        "books_used": sorted(books),
-    }
+
+    out = {**empty, "books_used": sorted(books)}
+
     if home and away and h2h.get(home) and h2h.get(away):
         hp = mean(_american_to_prob(x) for x in h2h[home])
         ap = mean(_american_to_prob(x) for x in h2h[away])
         out["home_probability"], out["away_probability"] = _devig(hp, ap)
+
+    if home_spreads:
+        out["home_spread"] = round(mean(home_spreads), 2)
+        out["away_spread"] = round(-float(out["home_spread"]), 2)
+
+    if spread_home_probs and spread_away_probs:
+        home_p = mean(spread_home_probs)
+        away_p = mean(spread_away_probs)
+        out["spread_home_probability"], out["spread_away_probability"] = _devig(
+            home_p, away_p
+        )
+        if out["spread_home_probability"] >= out["spread_away_probability"]:
+            out["spread_pick"] = home
+            out["spread_pick_probability"] = out["spread_home_probability"]
+        else:
+            out["spread_pick"] = away
+            out["spread_pick_probability"] = out["spread_away_probability"]
+
+    if totals:
+        out["total"] = round(mean(totals), 2)
+
+    if over_probs and under_probs:
+        over_p = mean(over_probs)
+        under_p = mean(under_probs)
+        out["over_probability"], out["under_probability"] = _devig(over_p, under_p)
+        if out["over_probability"] >= out["under_probability"]:
+            out["total_pick"] = "OVER"
+            out["total_pick_probability"] = out["over_probability"]
+        else:
+            out["total_pick"] = "UNDER"
+            out["total_pick_probability"] = out["under_probability"]
+
     return out
 
 def _score(market: dict) -> dict:
@@ -1045,13 +1141,23 @@ def parlays(sport: str, event_id: str, date: str | None = None):
 def _multisport_candidates(
     start_date: date_cls,
     *,
-    target_count: int = 28,
+    target_count: int = 40,
     horizon_days: int = 4,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     candidates: list[dict[str, Any]] = []
     dates_considered: list[str] = []
     per_sport_prop_events: dict[str, int] = {s: 0 for s in SPORTS}
     seen: set[tuple[str, str, str]] = set()
+
+    def append_candidate(candidate: dict[str, Any]) -> None:
+        key = (
+            str(candidate["sport"]),
+            str(candidate["event_id"]),
+            str(candidate["label"]),
+        )
+        if key not in seen:
+            candidates.append(candidate)
+            seen.add(key)
 
     for offset in range(max(1, min(int(horizon_days), 7))):
         d = start_date + timedelta(days=offset)
@@ -1061,49 +1167,89 @@ def _multisport_candidates(
         for game in result["games"]:
             sport = game["sport"]
             market = game.get("market") or {}
+            common = {
+                "sport": sport,
+                "event_id": game["event_id"],
+                "event_time": game.get("event_time"),
+                "event_time_pacific": game.get("event_time_pacific"),
+                "date": d.isoformat(),
+                "matchup": game.get("matchup"),
+                "model_state": _runtime_mode_for(sport),
+            }
+
             hp = market.get("home_probability")
             if hp is not None and game.get("pick"):
                 picked_home = game["pick"] == game.get("home")
                 probability = float(hp) if picked_home else 1.0 - float(hp)
-                candidate = {
-                    "sport": sport,
-                    "event_id": game["event_id"],
-                    "event_time": game.get("event_time"),
-                    "event_time_pacific": game.get("event_time_pacific"),
-                    "date": d.isoformat(),
-                    "matchup": game.get("matchup"),
+                append_candidate({
+                    **common,
                     "type": "moneyline",
                     "label": f"{game['pick']} moneyline",
                     "probability": round(probability, 6),
                     "reason": (
-                        f"Fresh de-vigged consensus market gives this side "
+                        f"Fresh de-vigged consensus moneyline gives this side "
                         f"{probability:.1%} implied probability across "
                         f"{len(market.get('books_used') or [])} contributing books."
                     ),
-                    "model_state": _runtime_mode_for(sport),
-                }
-                key = (sport, str(game["event_id"]), candidate["label"])
-                if key not in seen:
-                    candidates.append(candidate)
-                    seen.add(key)
+                })
+
+            spread_pick = market.get("spread_pick")
+            spread_prob = market.get("spread_pick_probability")
+            home_spread = market.get("home_spread")
+            if (
+                spread_pick
+                and spread_prob is not None
+                and home_spread is not None
+            ):
+                point = (
+                    float(home_spread)
+                    if spread_pick == game.get("home")
+                    else -float(home_spread)
+                )
+                append_candidate({
+                    **common,
+                    "type": "spread",
+                    "label": f"{spread_pick} {point:+g}",
+                    "probability": round(float(spread_prob), 6),
+                    "reason": (
+                        f"Fresh two-sided spread prices de-vig to "
+                        f"{float(spread_prob):.1%} for {spread_pick} {point:+g}; "
+                        "the line is taken directly from the current sportsbook consensus."
+                    ),
+                })
+
+            total_pick = market.get("total_pick")
+            total_prob = market.get("total_pick_probability")
+            total_line = market.get("total")
+            if (
+                total_pick
+                and total_prob is not None
+                and total_line is not None
+            ):
+                append_candidate({
+                    **common,
+                    "type": "total",
+                    "label": f"{total_pick} {float(total_line):g}",
+                    "probability": round(float(total_prob), 6),
+                    "reason": (
+                        f"Fresh two-sided total prices de-vig to "
+                        f"{float(total_prob):.1%} for {total_pick} "
+                        f"{float(total_line):g}; no synthetic total is inserted."
+                    ),
+                })
 
             oid = game.get("odds_event_id")
-            if oid and per_sport_prop_events[sport] < 2:
+            if oid and per_sport_prop_events[sport] < 3:
                 per_sport_prop_events[sport] += 1
                 try:
                     payload = _prop_payload(sport, oid)
-                    for p in payload.get("props", [])[:6]:
+                    for p in payload.get("props", [])[:8]:
                         if (
                             p.get("recommended_side")
                             and p.get("market_probability") is not None
                         ):
-                            candidate = {
-                                "sport": sport,
-                                "event_id": game["event_id"],
-                                "event_time": game.get("event_time"),
-                                "event_time_pacific": game.get("event_time_pacific"),
-                                "date": d.isoformat(),
-                                "matchup": game.get("matchup"),
+                            append_candidate({
+                                **common,
                                 "type": "player_prop",
                                 "label": (
                                     f"{p['player']} {p['recommended_side']} "
@@ -1114,15 +1260,7 @@ def _multisport_candidates(
                                 ),
                                 "reason": p.get("reason"),
                                 "model_state": p.get("model_state"),
-                            }
-                            key = (
-                                sport,
-                                str(game["event_id"]),
-                                candidate["label"],
-                            )
-                            if key not in seen:
-                                candidates.append(candidate)
-                                seen.add(key)
+                            })
                 except Exception:
                     pass
 
@@ -1133,6 +1271,7 @@ def _multisport_candidates(
         key=lambda x: (
             float(x.get("probability") or 0.0),
             1 if x.get("type") == "player_prop" else 0,
+            1 if x.get("type") == "moneyline" else 0,
         ),
         reverse=True,
     )
