@@ -377,6 +377,119 @@ def _schedule(sport: str, d: date_cls) -> list[dict]:
         return _timed("NHL.schedule", lambda: _nhl_schedule(d.isoformat()))
     return _timed(f"{sport}.schedule", lambda: _espn_schedule(sport, d.strftime("%Y%m%d")))
 
+_INJURY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_INJURY_TTL_SECONDS = 300
+
+
+def _injury_aliases(team: dict[str, Any]) -> list[str]:
+    values = []
+    for key in ("displayName", "name", "shortDisplayName", "location", "abbreviation"):
+        value = team.get(key)
+        if value:
+            values.append(str(value))
+    return [x for x in {_norm(v) for v in values} if x]
+
+
+def _espn_injury_feed(sport: str) -> dict[str, Any]:
+    cached = _INJURY_CACHE.get(sport)
+    now = time.time()
+    if cached and now - cached[0] <= _INJURY_TTL_SECONDS:
+        return cached[1]
+
+    a, b = ESPN[sport]
+    raw = _json(
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/injuries",
+        timeout=12,
+    )
+    teams: dict[str, dict[str, Any]] = {}
+    for group in raw.get("injuries") or []:
+        if not isinstance(group, dict):
+            continue
+        team = group.get("team") if isinstance(group.get("team"), dict) else {}
+        rows = []
+        for injury in group.get("injuries") or []:
+            if not isinstance(injury, dict):
+                continue
+            athlete = (
+                injury.get("athlete")
+                if isinstance(injury.get("athlete"), dict)
+                else {}
+            )
+            injury_type = injury.get("type")
+            if isinstance(injury_type, dict):
+                injury_type = (
+                    injury_type.get("description")
+                    or injury_type.get("name")
+                    or injury_type.get("abbreviation")
+                )
+            details = injury.get("details")
+            if not isinstance(details, dict):
+                details = {}
+            status = injury.get("status")
+            if isinstance(status, dict):
+                status = (
+                    status.get("name")
+                    or status.get("description")
+                    or status.get("abbreviation")
+                )
+            rows.append({
+                "player": athlete.get("fullName") or athlete.get("displayName"),
+                "position": (
+                    (athlete.get("position") or {}).get("abbreviation")
+                    if isinstance(athlete.get("position"), dict)
+                    else None
+                ),
+                "status": status or details.get("type") or details.get("status"),
+                "injury": injury_type or details.get("detail") or details.get("type"),
+                "return_date": details.get("returnDate"),
+                "source": "ESPN",
+            })
+        payload = {
+            "team": (
+                team.get("displayName")
+                or team.get("name")
+                or team.get("abbreviation")
+            ),
+            "injuries": rows,
+        }
+        for alias in _injury_aliases(team):
+            teams[alias] = payload
+
+    result = {
+        "available": True,
+        "source": "ESPN league injury feed",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "teams": teams,
+    }
+    _INJURY_CACHE[sport] = (now, result)
+    return result
+
+
+def _injury_summary(feed: dict[str, Any], team_name: str | None) -> dict[str, Any]:
+    if not feed.get("available"):
+        return {
+            "available": False,
+            "source": feed.get("source") or "ESPN league injury feed",
+            "injuries": [],
+            "count": None,
+        }
+    wanted = _norm(team_name)
+    teams = feed.get("teams") or {}
+    match = teams.get(wanted)
+    if match is None:
+        for alias, payload in teams.items():
+            if wanted and alias and (wanted in alias or alias in wanted):
+                match = payload
+                break
+    injuries = list((match or {}).get("injuries") or [])
+    return {
+        "available": True,
+        "source": feed.get("source") or "ESPN league injury feed",
+        "injuries": injuries,
+        "count": len(injuries),
+    }
+
+
 def _odds_key() -> str:
     key = os.getenv("ODDS_API_KEY", "").strip()
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
@@ -726,6 +839,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
     with ThreadPoolExecutor(max_workers=8) as pool:
         schedules = {s: pool.submit(_schedule, s, d) for s in selected}
         odds = {s: pool.submit(_odds, s, d) for s in selected}
+        injuries = {s: pool.submit(_espn_injury_feed, s) for s in selected}
         for s in selected:
             try:
                 sched = schedules[s].result()
@@ -735,6 +849,14 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 odd_events = odds[s].result()
             except Exception:
                 odd_events = []
+            try:
+                injury_feed = injuries[s].result()
+            except Exception as exc:
+                injury_feed = {
+                    "available": False,
+                    "source": "ESPN league injury feed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
             for game in sched:
                 if qn and qn not in _norm(game.get("home")) and qn not in _norm(game.get("away")) and qn not in _norm(s):
                     continue
@@ -796,6 +918,15 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                         ),
                         "promoted_artifact_loaded": promoted is not None,
                         "promotion_gate": gate,
+                    },
+                    "injury_report": {
+                        "home": _injury_summary(injury_feed, game.get("home")),
+                        "away": _injury_summary(injury_feed, game.get("away")),
+                        "analytics_note": (
+                            "Current injuries are displayed as live context. They are not "
+                            "silently injected into a model unless the promoted artifact "
+                            "declares compatible injury features in its signed schema."
+                        ),
                     },
                     "props_to_watch": [],
                 }
