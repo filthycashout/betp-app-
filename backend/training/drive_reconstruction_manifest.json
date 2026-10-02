@@ -1,0 +1,248 @@
+{
+  "manifest_version": "1.0",
+  "prepared": "2026-10-02",
+  "scope": "All accessible Google Drive plus targeted traversal of Allspice, NFL models, NHL models/NHL_AI, feature-store, training, historical-result, and model folders.",
+  "security": "Secret-bearing .env/Keys/credential files are excluded. Serialized pickle/joblib artifacts are hashed only and never deserialized.",
+  "protocol_constraints": {
+    "canonical_row": "stable event id + event_time + as_of < event_time + provenance; no live/postgame/future leakage",
+    "promotion": "chronological walk-forward OOF; in-fold preprocessing; Brier/log-loss/ECE; OOF-only calibration; ECE <= 0.01; holdout separation; leakage audit; provenance/model/schema hashes; market-baseline improvement"
+  },
+  "sports": {
+    "MLB": {
+      "status": "PARTIALLY_RECONSTRUCTABLE_NOT_PROMOTION_READY",
+      "canonical_training_dataset": false,
+      "reasons": [
+        "Feature snapshot/schema, feature dictionary, experiment summary, settled-result CSV, and tracking JSON are recoverable with checksums.",
+        "Parquet is a small mixed MLB/soccer snapshot, not a canonical multi-season training corpus.",
+        "Settled CSV has no probability column, so Brier/log-loss/ECE cannot be reconstructed from it alone.",
+        "Tracked sheets mix PRE-GAME and LIVE-adjusted rows; LIVE rows must be excluded."
+      ],
+      "recovered_feature_schema": {
+        "source": "daily_features_2026-07-02.parquet",
+        "schema_sha256": "abefefd48edfbc384e6dc1cd1d320bd4f7444cb613d67b6a1bfb5652b484ec3a",
+        "columns": [
+          [
+            "game_id",
+            "string"
+          ],
+          [
+            "date",
+            "datetime64[ns, UTC]"
+          ],
+          [
+            "sport",
+            "string"
+          ],
+          [
+            "name",
+            "string"
+          ],
+          [
+            "status",
+            "string"
+          ],
+          [
+            "home",
+            "string"
+          ],
+          [
+            "away",
+            "string"
+          ],
+          [
+            "home_score",
+            "string"
+          ],
+          [
+            "away_score",
+            "string"
+          ],
+          [
+            "ingested_at",
+            "string"
+          ],
+          [
+            "injury_flag",
+            "int64"
+          ],
+          [
+            "injury_impact_score",
+            "float64"
+          ],
+          [
+            "odds_available",
+            "bool"
+          ],
+          [
+            "live_game",
+            "bool"
+          ]
+        ]
+      },
+      "settled_evaluation": {
+        "source": "PREDICTED_VS_ACTUAL_RESULTS_2026-07-02.csv",
+        "resolved_games": 7,
+        "moneyline_accuracy": 0.8571428571428571,
+        "spread_accuracy": 0.7142857142857143,
+        "total_accuracy": 0.5714285714285714,
+        "combined_outcome_accuracy": 0.5714285714285714,
+        "probabilistic_metrics_status": "NOT_RECONSTRUCTABLE_FROM_THIS_CSV",
+        "metrics_sha256": "4176c1e6fa0e0cb42456aef6fb97c52e79c9ae31d9fe369dfeff28230783b683"
+      },
+      "sources": [
+        {
+          "title": "daily_features_2026-07-02.parquet",
+          "drive_id": "1V3C-NmTnqtNP0FeT46bkH8Awvl9r0Gax",
+          "sha256": "87324c0b0086465f30769a48858da6e53f8c5073e722ef943356618c50e3a958",
+          "size_bytes": 9055,
+          "role": "feature_snapshot"
+        },
+        {
+          "title": "betp_v3_mlb_latest.joblib",
+          "drive_id": "1praPyhAs4zMnXcawTmQNx-BI49V6gji1",
+          "sha256": "d1d56175cb1ee80efe6ce4850849065afb897a4a9ac62598ebb5bd435926b777",
+          "size_bytes": 163065,
+          "role": "quarantined_serialized_model",
+          "execute": false
+        },
+        {
+          "title": "PREDICTED_VS_ACTUAL_RESULTS_2026-07-02.csv",
+          "drive_id": "1e7Nx8T6yZ5u5z4GzHkzp481mH9uMQTKR",
+          "sha256": "96fc84fc470d46cc0486a8e6c091fe18833c2b0405cd8c77f38c9312b236c512",
+          "size_bytes": 765,
+          "role": "settled_evaluation"
+        },
+        {
+          "title": "FINAL_TRACKING_REPORT_2026-07-02.json",
+          "drive_id": "1MVH9M6Jx0FlckLA6BPiqwPrbxixV4muW",
+          "sha256": "f5a99d5be64c7257ec9e5bf7a17d0bbea81b4c250d545dcdd69d538a9540365b",
+          "size_bytes": 1660,
+          "role": "tracking_metadata"
+        },
+        {
+          "title": "MLB_Feature_Dictionary_v2.docx",
+          "drive_id": "16YOnzVWPw6dF8hmpIBG705Sdox7pqozK",
+          "sha256": "a9ba6cf5c955573d4b5a2d896e331fc9e1a46c7aa47c5b1da6e7d6854aaaa622",
+          "role": "feature_dictionary"
+        },
+        {
+          "title": "2026-06-26_MLB_Experiment_Summary.docx",
+          "drive_id": "1vGIq_dF0moQZTZWvtOlX1dziHbzwjt8q",
+          "sha256": "8d1970f08106444893c1e5d909e7f2e13742ff4a531a7e0ecbae7d74b1804f01",
+          "role": "experiment_summary"
+        }
+      ]
+    },
+    "NFL": {
+      "status": "ARTIFACT_AND_SCHEMA_RECONSTRUCTABLE_TRAINING_ROWS_MISSING",
+      "canonical_training_dataset": false,
+      "reasons": [
+        "Multiple player-prop model/scaler artifacts and provider XSD schemas are recoverable and checksummed.",
+        "nfl_analysis_results.json contains predictions but no settled OOF calibration/evaluation evidence.",
+        "No canonical immutable pregame training row corpus with as_of/event_time/provenance was proven.",
+        "Joblib files remain quarantined and are never deserialized solely to infer missing provenance."
+      ],
+      "sources": [
+        {
+          "title": "nfl_model_passing_yards.joblib",
+          "drive_id": "1SdSg9FSAfxGYtEF1DAab6VYO-9MiY_Jk",
+          "sha256": "f0200aafd3cda4a558702b73982e852ebd10a4653cefbbb18a1d7dab2974bd29",
+          "role": "quarantined_prop_model",
+          "execute": false
+        },
+        {
+          "title": "nfl_scaler_passing_yards.joblib",
+          "drive_id": "1My_naah5QJfcI1YwmVvmU8gi_jYUb_4N",
+          "sha256": "db8cdf876bf958880da34052f365881be63a16d2322abcc02119b93a67f9bc16",
+          "role": "quarantined_preprocessor",
+          "execute": false
+        },
+        {
+          "title": "nfl_model_rushing_yards.joblib",
+          "drive_id": "1k-ooAL4X3ty4JWEjE-MzqnQ4i9kpPu-c",
+          "sha256": "a701b544d96b328b2187d477e8be72a1eb00770b53bbe4bea110cd3395bd2af1",
+          "role": "quarantined_prop_model",
+          "execute": false
+        },
+        {
+          "title": "nfl_model_receiving_yards.joblib",
+          "drive_id": "1qTsplqmr68cwGomPkm4umWKx1gpY8Ksa",
+          "sha256": "e1dc3e786f9240046a322306f1f817ec267dd9024f7f327d0dc7b4ac70facce5",
+          "role": "quarantined_prop_model",
+          "execute": false
+        },
+        {
+          "title": "nfl_analysis_results.json",
+          "drive_id": "1D3-xUlzgjR32M38Qx-KAUII3vrnVdsGo",
+          "sha256": "1222a0b8cbb3cf5c776041b8e6328d248a31259fd1b32db282e41575e69322ce",
+          "role": "prediction_output_not_settled_metrics"
+        },
+        {
+          "title": "statistics-v7.0.xsd",
+          "drive_id": "19qrZKbASO7a-rf6d1xRX3Vtyb-aBasN-",
+          "sha256": "12c44de012869b94a406b1af84ff0ce8e1c9985198921f71cfb54337ff9012ff",
+          "role": "provider_schema"
+        },
+        {
+          "title": "common-statistics-v7.0.xsd",
+          "drive_id": "1jLO_udlmKKN-HWElxz3m1o4ICI1KJY_A",
+          "sha256": "20bf6bfe857fe823052fd6bbd708d643b17a31b4316946a147899177e28c3a71",
+          "role": "provider_schema"
+        },
+        {
+          "title": "schedule-v7.0.xsd",
+          "drive_id": "1YlIUH2vapNuEbpQ5FBYYc9EYq1ZA8_J9",
+          "sha256": "32c3f988279e15b421e3165a27b49dc85ad10c3cf3eb544390f5071dc5e3f0e6",
+          "role": "provider_schema"
+        },
+        {
+          "title": "pbp-v7.0.xsd",
+          "drive_id": "1t5vNxUw0odiEKHtToj4Q1eew3DXP9w2F",
+          "sha256": "1dbec70fa134bbac439c835dacb38e58a6c1c66e4f6216ebf7a089f11fe59051",
+          "role": "provider_schema"
+        },
+        {
+          "title": "boxscore-v7.0.xsd",
+          "drive_id": "1X_gqSFxSucI7CNOghGAn4XealjTadiDO",
+          "sha256": "b2a12b911ece30588ad7d1073c1a45187dc15578490088acb9ebaa1df8ed1c9e",
+          "role": "provider_schema"
+        }
+      ]
+    },
+    "NBA": {
+      "status": "FRAMEWORK_ONLY_NO_RECONSTRUCTABLE_TRAINING_BUNDLE",
+      "canonical_training_dataset": false,
+      "reasons": [
+        "Drive-wide NBA searches found general framework/docs but no sport-specific dataset/model/evaluation bundle."
+      ],
+      "sources": []
+    },
+    "NHL": {
+      "status": "SCAFFOLD_ONLY_NO_RECONSTRUCTABLE_TRAINING_BUNDLE",
+      "canonical_training_dataset": false,
+      "reasons": [
+        "NHL models folder contains only misc.md.",
+        "NHL_AI/models, data, exports, and logs are empty."
+      ],
+      "sources": []
+    }
+  },
+  "excluded_placeholder_folders": [
+    {
+      "title": "Combined_Daily_Features",
+      "status": "EMPTY"
+    },
+    {
+      "title": "Training_Pipelines",
+      "status": "EMPTY"
+    },
+    {
+      "title": "Historical_Results",
+      "status": "EMPTY"
+    },
+    {
+      "title": "Models",
+      "status": "EMPTY"
+    }
+  ]
+}

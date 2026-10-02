@@ -15,7 +15,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
@@ -56,6 +56,7 @@ PROP_MARKETS = {
     ],
 }
 MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
+DRIVE_RECONSTRUCTION_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_manifest.json"
 
 def _load_model_registry() -> dict[str, dict[str, Any]]:
     manifest = json.loads(MODEL_BUNDLE_PATH.read_text())
@@ -80,6 +81,13 @@ def _load_model_registry() -> dict[str, dict[str, Any]]:
     return registry
 
 MODEL_REGISTRY = _load_model_registry()
+
+def _load_drive_reconstruction() -> dict[str, Any]:
+    if not DRIVE_RECONSTRUCTION_PATH.exists():
+        return {"status": "MISSING", "sports": {}}
+    return json.loads(DRIVE_RECONSTRUCTION_PATH.read_text())
+
+DRIVE_RECONSTRUCTION = _load_drive_reconstruction()
 
 PROMOTION_ECE_MAX = 0.01
 
@@ -525,6 +533,8 @@ def root():
 def root_head():
     return None
 
+@app.get("/api/health", include_in_schema=False)
+@app.get("/v1/health", include_in_schema=False)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION}
@@ -541,6 +551,8 @@ def ready():
         "baseline_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
     }
 
+@app.get("/api/system/status", include_in_schema=False)
+@app.get("/api/v1/system/status", include_in_schema=False)
 @app.get("/v1/system/status")
 def system_status():
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").lower() == "true"
@@ -587,17 +599,29 @@ def system_status():
             "odds_api_key_configured": odds_key,
             "odds_props_live_allowed": rotation and odds_key,
         },
-        "production_ready": bool(promotion_pass and rotation and odds_key),
+        "production_ready": False,
+        "production_ready_reason": "Drive reconstruction evidence is incorporated, but canonical four-sport training, promoted walk-forward models, credential canaries, durable persistence/observability, stable signing, and physical-device smoke remain gated.",
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
+        "drive_reconstruction": {sport: (DRIVE_RECONSTRUCTION.get("sports") or {}).get(sport, {}).get("status", "NO_EVIDENCE") for sport in SPORTS},
     }
 
+@app.get("/api/models/status", include_in_schema=False)
+@app.get("/api/v1/models/status", include_in_schema=False)
 @app.get("/v1/models/status")
 def model_status():
     return {
         sport: {**MODEL_REGISTRY[sport], "promotion_gate": _promotion_gate_for(sport), "runtime_mode": _runtime_mode_for(sport)}
         for sport in SPORTS
     }
+
+@app.get("/api/system/props", include_in_schema=False)
+@app.get("/api/v1/system/props", include_in_schema=False)
+@app.get("/api/training/reconstruction", include_in_schema=False)
+@app.get("/api/v1/training/reconstruction", include_in_schema=False)
+@app.get("/v1/training/reconstruction")
+def training_reconstruction():
+    return DRIVE_RECONSTRUCTION
 
 @app.get("/v1/system/props")
 def prop_capabilities():
@@ -807,10 +831,14 @@ def legacy_runs_latest():
         "note": "Current runtime does not fabricate a persisted run when no durable run ledger has been written.",
     }
 
+@app.get("/api/today", include_in_schema=False)
+@app.get("/api/v1/today", include_in_schema=False)
 @app.get("/v1/today")
 def today(include_props: bool = True, props_limit: int = 3):
     return _search(include_props=include_props, props_limit=props_limit)
 
+@app.get("/api/search", include_in_schema=False)
+@app.get("/api/v1/search", include_in_schema=False)
 @app.get("/v1/search")
 def search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3):
     try:

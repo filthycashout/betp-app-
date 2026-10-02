@@ -1,0 +1,68 @@
+{
+  "source_drive_id": "1V3C-NmTnqtNP0FeT46bkH8Awvl9r0Gax",
+  "source_sha256": "87324c0b0086465f30769a48858da6e53f8c5073e722ef943356618c50e3a958",
+  "schema_sha256": "abefefd48edfbc384e6dc1cd1d320bd4f7444cb613d67b6a1bfb5652b484ec3a",
+  "creator": {
+    "library": "pyarrow",
+    "version": "24.0.0",
+    "pandas_version": "2.2.3"
+  },
+  "columns": [
+    [
+      "game_id",
+      "string"
+    ],
+    [
+      "date",
+      "datetime64[ns, UTC]"
+    ],
+    [
+      "sport",
+      "string"
+    ],
+    [
+      "name",
+      "string"
+    ],
+    [
+      "status",
+      "string"
+    ],
+    [
+      "home",
+      "string"
+    ],
+    [
+      "away",
+      "string"
+    ],
+    [
+      "home_score",
+      "string"
+    ],
+    [
+      "away_score",
+      "string"
+    ],
+    [
+      "ingested_at",
+      "string"
+    ],
+    [
+      "injury_flag",
+      "int64"
+    ],
+    [
+      "injury_impact_score",
+      "float64"
+    ],
+    [
+      "odds_available",
+      "bool"
+    ],
+    [
+      "live_game",
+      "bool"
+    ]
+  ]
+}

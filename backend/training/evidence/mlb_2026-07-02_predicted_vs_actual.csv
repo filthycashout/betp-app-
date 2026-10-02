@@ -1,0 +1,8 @@
+Game,Status,Pred_ML,Actual_ML,ML_Correct,Pred_Spread,Actual_Winner,Spread_Correct,Pred_Total,Actual_Total_Runs,Total_Correct,Pred_Outcome,Actual_Outcome,Outcome_Correct
+STL @ ATL,FINAL,AWAY,AWAY,True,STL +2.5,STL,True,OVER,16,True,STL OVER,STL OVER,True
+MIA @ COL,FINAL,HOME,HOME,True,COL -2.5,COL,True,OVER,18,True,COL OVER,COL OVER,True
+TB @ KC,FINAL,AWAY,AWAY,True,TB +2.5,TB,True,OVER,7,False,TB OVER,TB UNDER,False
+SD @ LAD,FINAL,HOME,HOME,True,SD +2.5,LAD,False,OVER,16,True,LAD OVER,LAD OVER,True
+CIN @ MIL,FINAL,AWAY,AWAY,True,CIN +2.5,CIN,True,OVER,9,False,CIN OVER,CIN UNDER,False
+PIT @ PHI,FINAL,HOME,AWAY,False,PHI -2.5,PIT,False,OVER,7,False,PHI OVER,PIT UNDER,False
+DET @ TEX,FINAL,HOME,HOME,True,TEX -2.5,TEX,True,OVER,14,True,TEX OVER,TEX OVER,True
