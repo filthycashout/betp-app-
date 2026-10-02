@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: philthysports-full-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Let the active signed APK finish; newer commits share the pending slot.
+  cancel-in-progress: false
 
 jobs:
   backend:
