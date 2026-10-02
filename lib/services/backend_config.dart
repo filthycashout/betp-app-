@@ -62,7 +62,8 @@ class BackendConfig {
         }
       }
     }
-    final normalized = uri.replace(path: path == '/' ? '' : path, query: null, fragment: null).toString();
+    final cleanUri = Uri(scheme: uri.scheme, host: uri.host, port: uri.hasPort ? uri.port : null, path: path == '/' ? '' : path);
+    final normalized = cleanUri.toString();
     return normalized.endsWith('/') ? normalized.substring(0, normalized.length - 1) : normalized;
   }
 }
