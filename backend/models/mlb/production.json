@@ -1,0 +1,37 @@
+{
+  "calibration": "bookmaker consensus overround removal",
+  "manual_review_only": true,
+  "model_id": "mlb-market-baseline-v1",
+  "model_type": "de_vigged_market_consensus",
+  "portable": true,
+  "probability": {
+    "features": [
+      "consensus_de_vig_home_probability"
+    ],
+    "intercept": 0.0,
+    "output": "home_win_probability",
+    "weights": {
+      "consensus_de_vig_home_probability": 1.0
+    }
+  },
+  "promotion_policy": "A sport-specific trained candidate may replace this baseline only after chronological walk-forward, separated calibration/holdout evaluation, provenance hashing, and promotion tests pass.",
+  "schema_version": 1,
+  "score": {
+    "away_weights": {
+      "consensus_total": 0.5,
+      "home_spread": 0.5
+    },
+    "features": [
+      "consensus_total",
+      "home_spread"
+    ],
+    "home_weights": {
+      "consensus_total": 0.5,
+      "home_spread": -0.5
+    },
+    "intercept": 0.0
+  },
+  "sport": "MLB",
+  "status": "PRODUCTION_BASELINE",
+  "trained_weights": false
+}
