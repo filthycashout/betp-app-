@@ -1040,7 +1040,10 @@ def system_status():
     )
     promotion_pass = all(g["passed"] for g in gates.values())
 
-    remaining = ["stable Android release signing and real-device E2E smoke"]
+    remaining = [
+        "physical Android-device end-to-end smoke testing",
+        "durable runtime prediction ledger plus rollback/alert validation",
+    ]
     if not rotation or not odds_key:
         remaining.insert(0, "fresh legitimately issued live odds/props credential plus provider-side rotation evidence")
     if not promotion_pass:
@@ -1059,6 +1062,8 @@ def system_status():
             "four_sport_model_promotion": "PASS" if promotion_pass else "BLOCKED_EVIDENCE",
             "credential_core_keyless": "PASS",
             "credential_live_odds_props": "PASS" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+            "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE",
+            "immutable_pregame_evidence_capture": "PASS_AUTOMATED_GITHUB_HISTORY",
         },
         "credential_gate": {
             "core_runtime_requires_secret": False,
@@ -1067,7 +1072,7 @@ def system_status():
             "odds_props_live_allowed": rotation and odds_key,
         },
         "production_ready": False,
-        "production_ready_reason": "Drive reconstruction evidence is incorporated, but canonical four-sport training, promoted walk-forward models, credential canaries, durable persistence/observability, stable signing, and physical-device smoke remain gated.",
+        "production_ready_reason": "The HTTPS backend, pinned Android signing, four-sport live adapters, and immutable pregame evidence capture are operational. Production-ready remains blocked until four sport-specific trained models pass every v8 promotion gate, fresh live odds/props credentials pass canaries, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
         "drive_reconstruction": {sport: (DRIVE_RECONSTRUCTION.get("sports") or {}).get(sport, {}).get("status", "NO_EVIDENCE") for sport in SPORTS},
