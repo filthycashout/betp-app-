@@ -1,0 +1,56 @@
+{
+  "prepared": "2026-10-02",
+  "purpose": "Additional Google Drive evidence inspected during the PhilthyParleys 1.5.1 recovery pass.",
+  "security": "No secret-bearing files are included. Legacy serialized models remain quarantined.",
+  "MLB": {
+    "status": "ADDITIONAL_EVIDENCE_RECOVERED_NOT_PROMOTION_READY",
+    "sources": [
+      {
+        "title": "GOOGLE_SHEETS_READY_2026-07-02_RICH.csv",
+        "sha256": "3ee5f81c5411a71d1d1e98180b7e8773bf6e5b9dedfc95a08162be7cc396d854",
+        "role": "pregame-looking prediction table",
+        "usable": "candidate reconstruction only",
+        "limit": "Contains probabilities and market-style recommendations but no verifiable per-row capture timestamp proving as_of < event_time."
+      },
+      {
+        "title": "FINAL_TRACKED_OUTCOMES_2026-07-02.csv",
+        "sha256": "600d2288d91ebb9c28f3f974716b58b1abd9c0d806b8942061cd8cafedb59604",
+        "role": "prediction/outcome tracking",
+        "usable": "PRE-GAME rows only as candidate evidence",
+        "limit": "Contains explicit LIVE-adjusted rows which are excluded from pregame training; remaining rows still lack verifiable point-in-time capture timestamps."
+      },
+      {
+        "title": "TRACKED_RESULTS_ALL_PULLS_2026-07-02.csv",
+        "sha256": "a306aebb56b1a592e9666ebdcc9c9e94e8bcc69a8b23610a76da726197678e68",
+        "role": "prediction/outcome tracking",
+        "usable": "PRE-GAME rows only as candidate evidence",
+        "limit": "LIVE rows are leakage-ineligible. Pregame rows do not independently prove their capture time."
+      },
+      {
+        "title": "TRACKING_SUMMARY_2026-07-02.json",
+        "sha256": "1e83412ed97cd1c431c4b5558f313850eccc941e95e8182c003d45fa3d775e7b",
+        "role": "tracking summary",
+        "usable": "provenance/supporting metadata",
+        "limit": "Summary records three live-tracked games and cannot establish OOF calibration or canonical chronology."
+      },
+      {
+        "title": "RAW_UPCOMING_2026-07-05.csv",
+        "sha256": "27c1005242fd224b34f0395d419bc7fd7f7009f7d554ae2c5639e5282c1ac10d",
+        "role": "scheduled-game snapshot",
+        "usable": "schedule/team-record reconstruction",
+        "limit": "No model probabilities or settled labels; cannot support promotion metrics alone."
+      }
+    ],
+    "promotion_effect": "No v8 promotion gate is relaxed. This evidence improves reconstruction inventory but cannot supply a trustworthy as_of timestamp, sufficient multi-season samples, walk-forward OOF calibration, or a clean untouched holdout by itself."
+  },
+  "NFL": {
+    "status": "UNCHANGED",
+    "promotion_effect": "Recovered serialized artifacts remain player-prop/preprocessor candidates rather than a verified matchup-classifier bundle."
+  },
+  "NBA": {
+    "status": "UNCHANGED_FRAMEWORK_ONLY"
+  },
+  "NHL": {
+    "status": "UNCHANGED_SCAFFOLD_ONLY"
+  }
+}
