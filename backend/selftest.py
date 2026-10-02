@@ -24,7 +24,12 @@ def _fake_games() -> dict:
                     "home_probability": home_probability,
                     "away_probability": 1.0 - home_probability,
                     "home_spread": -2.5,
+                    "away_spread": 2.5,
+                    "spread_pick": home,
+                    "spread_pick_probability": 0.56,
                     "total": 45.0,
+                    "total_pick": "OVER" if index % 2 == 0 else "UNDER",
+                    "total_pick_probability": 0.54,
                     "books_used": ["fixture_a", "fixture_b"],
                 },
                 "pick": home,
@@ -60,6 +65,12 @@ def main() -> None:
         assert p14["estimated_joint_probability"] is None
         assert p14["dependency_method"] == "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL"
         assert all(leg.get("reason") for leg in p14["legs"])
+        assert {"moneyline", "spread", "total"}.issubset(
+            {leg["type"] for leg in p14["legs"]}
+        )
+        assert p7["card_id"] != p10["card_id"] != p14["card_id"]
+        assert p7["selection_profile"] != p10["selection_profile"]
+        assert p10["selection_profile"] != p14["selection_profile"]
     finally:
         backend._search = original_search
 
