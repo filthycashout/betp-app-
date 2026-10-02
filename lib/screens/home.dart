@@ -18,6 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final api = PhilthyApi();
   final ctl = TextEditingController();
   List<GameSummary> games = [];
+  Map<String, List<GameSummary>> nextGamesBySport = {};
   bool busy = true;
   String? err;
 
@@ -33,8 +34,13 @@ class _HomeScreenState extends State<HomeScreen> {
       err = null;
     });
     try {
-      final x = await api.today();
-      if (mounted) setState(() => games = x);
+      final feed = await api.todayFeed();
+      if (mounted) {
+        setState(() {
+          games = feed.games;
+          nextGamesBySport = feed.nextGamesBySport;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => err = '$e');
     } finally {
@@ -51,7 +57,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final x = await api.search(q);
-      if (mounted) setState(() => games = x);
+      if (mounted) {
+        setState(() {
+          games = x;
+          nextGamesBySport = {};
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => err = '$e');
     } finally {
@@ -270,8 +281,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: Theme.of(c).textTheme.headlineSmall,
                 ),
               ),
-              if ((groups[sport] ?? []).isEmpty)
-                const Text('No matching scheduled games.'),
+              if ((groups[sport] ?? []).isEmpty) ...[
+                const Text('No games scheduled for today.'),
+                if ((nextGamesBySport[sport] ?? []).isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Next scheduled',
+                    style: Theme.of(c).textTheme.titleMedium,
+                  ),
+                  for (final g in nextGamesBySport[sport] ?? [])
+                    GameCard(
+                      game: g,
+                      onTap: () => Navigator.push(
+                        c,
+                        MaterialPageRoute(
+                          builder: (_) => GameDetailScreen(game: g),
+                        ),
+                      ),
+                    ),
+                ],
+              ],
               for (final g in groups[sport] ?? [])
                 GameCard(
                   game: g,
