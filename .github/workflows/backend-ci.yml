@@ -32,3 +32,5 @@ jobs:
         run: PYTHONPATH=backend pytest -q backend/tests
       - name: Live keyless prediction smoke
         run: PYTHONPATH=backend python backend/live_prediction_smoke.py
+      - name: Live keyless four-sport gateway smoke
+        run: PYTHONPATH=backend python backend/live_gateway_smoke.py
