@@ -1503,6 +1503,23 @@ def _prop_payload(sport: str, event_id: str, requested: str | None = None) -> di
         **parse_props(raw, sport, markets),
     }
 
+def _matches_search_query(q: str, game: dict[str, Any], sport: str, d: date_cls) -> bool:
+    raw = str(q or "").strip()
+    if not raw:
+        return True
+    haystack = _norm(" ".join([
+        str(game.get("home") or ""),
+        str(game.get("away") or ""),
+        str(game.get("matchup") or ""),
+        str(sport or ""),
+        d.isoformat(),
+        d.strftime("%m/%d/%Y"),
+    ]))
+    whole = _norm(raw)
+    tokens = [_norm(token) for token in raw.split() if _norm(token)]
+    return bool((whole and whole in haystack) or (tokens and all(token in haystack for token in tokens)))
+
+
 def _search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3) -> dict:
     d = date_cls.fromisoformat(date) if date else _pacific_today()
     selected = [sport.upper()] if sport else list(SPORTS)
@@ -1545,7 +1562,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
             except Exception:
                 form_snapshot = {"teams": {}}
             for game in sched:
-                if qn and qn not in _norm(game.get("home")) and qn not in _norm(game.get("away")) and qn not in _norm(s):
+                if not _matches_search_query(q, game, s, d):
                     continue
                 oe = _match_odds(game, odd_events)
                 market = _market(oe)
