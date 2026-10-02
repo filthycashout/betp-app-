@@ -14,6 +14,14 @@ from typing import Any
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from ci_security import (
+    android_private_pkcs8_b64,
+    android_public_spki_sha256,
+    model_key_id,
+    model_public_key_b64,
+    sign_model_artifact,
+    verify_github_oidc,
+)
 
 APP_VERSION = "1.4.2"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
@@ -538,6 +546,52 @@ def root_head():
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION}
+
+@app.get("/v1/artifacts/model-signing-key")
+def model_signing_key():
+    return {
+        "algorithm": "Ed25519",
+        "key_id": model_key_id(),
+        "public_key_b64": model_public_key_b64(),
+    }
+
+@app.get("/v1/ci/android-signing-material")
+def ci_android_signing_material(request: Request):
+    try:
+        claims = verify_github_oidc(request.headers.get("authorization"))
+        private_key_b64 = android_private_pkcs8_b64()
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        raise HTTPException(503, f"signing material unavailable: {type(exc).__name__}")
+    return {
+        "algorithm": "EC_P256",
+        "private_key_pkcs8_b64": private_key_b64,
+        "public_spki_sha256": android_public_spki_sha256(),
+        "repository": claims.get("repository"),
+        "ref": claims.get("ref"),
+        "workflow_ref": claims.get("workflow_ref"),
+    }
+
+@app.post("/v1/ci/sign-model-artifact")
+async def ci_sign_model_artifact(request: Request):
+    try:
+        claims = verify_github_oidc(request.headers.get("authorization"))
+        artifact = await request.json()
+        if not isinstance(artifact, dict):
+            raise ValueError("artifact must be a JSON object")
+        signed = sign_model_artifact(artifact)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(503, f"artifact signer unavailable: {type(exc).__name__}")
+    return {
+        **signed,
+        "repository": claims.get("repository"),
+        "ref": claims.get("ref"),
+    }
 
 @app.get("/ready")
 def ready():
