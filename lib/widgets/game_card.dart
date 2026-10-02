@@ -24,22 +24,40 @@ class GameCard extends StatelessWidget {
   Widget build(BuildContext c) {
     final m = game.market;
     final s = game.projectedScore;
+    final predictions = game.predictions;
+    final ml = Map<String, dynamic>.from(predictions['moneyline'] ?? {});
+    final spread = Map<String, dynamic>.from(predictions['spread'] ?? {});
+    final total = Map<String, dynamic>.from(predictions['total'] ?? {});
 
-    final spreadPick = m['spread_pick']?.toString();
-    final spreadLine = spreadPick == game.home
-        ? m['home_spread']
-        : spreadPick == game.away
-            ? m['away_spread']
-            : null;
-    final totalPick = m['total_pick']?.toString();
-    final totalLine = m['total'];
+    final spreadPick =
+        spread['pick']?.toString() ?? m['spread_pick']?.toString();
+    final spreadLine = spread['line'] ??
+        (spreadPick == game.home
+            ? m['home_spread']
+            : spreadPick == game.away
+                ? m['away_spread']
+                : null);
+    final spreadProbability =
+        spread['probability'] ?? m['spread_pick_probability'];
+    final totalPick = total['pick']?.toString() ?? m['total_pick']?.toString();
+    final totalLine = total['line'] ?? m['total'];
+    final totalProbability =
+        total['probability'] ?? m['total_pick_probability'];
 
-    final spreadText = spreadPick == null || spreadLine == null
+    final spreadText = spreadPick == null
         ? 'Unavailable'
-        : '$spreadPick ${_line(spreadLine)} (${_pct(m['spread_pick_probability'])})';
-    final totalText = totalPick == null || totalLine == null
-        ? 'Unavailable'
-        : '$totalPick $totalLine (${_pct(m['total_pick_probability'])})';
+        : spreadLine == null
+            ? spreadPick
+            : '$spreadPick ${_line(spreadLine)}'
+                '${spreadProbability is num ? ' (${_pct(spreadProbability)})' : ''}';
+    final totalText = totalPick == null
+        ? total['projected_total'] is num
+            ? 'Projected ${total['projected_total']}'
+            : 'Unavailable'
+        : totalLine == null
+            ? totalPick
+            : '$totalPick $totalLine'
+                '${totalProbability is num ? ' (${_pct(totalProbability)})' : ''}';
 
     return Card(
       child: InkWell(
@@ -56,7 +74,15 @@ class GameCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('${game.eventTime} PT'),
               const SizedBox(height: 8),
-              Text('ML: ${game.pick ?? 'Unavailable'}'),
+              Text(
+                'ML: ${ml['pick'] ?? game.pick ?? 'Unavailable'}'
+                '${ml['home_win_probability'] is num ? ' • Home ${_pct(ml['home_win_probability'])}' : ''}',
+              ),
+              if ((ml['source'] ?? game.probabilitySource) != null)
+                Text(
+                  'Source: ${(ml['source'] ?? game.probabilitySource).toString().replaceAll('_', ' ')}',
+                  style: Theme.of(c).textTheme.bodySmall,
+                ),
               Text('Spread lean: $spreadText'),
               Text('O/U lean: $totalText'),
               Text(
