@@ -1528,7 +1528,25 @@ def _odds(sport: str, d: date_cls) -> list[dict]:
                 timeout=12,
             ),
         )
-    return _timed(f"{sport}.odds.espn_keyless", lambda: _espn_market_events(sport, d))
+
+    # Prefer a current read-only sportsbook snapshot. No user credential is
+    # embedded or required. If the direct source is unavailable, fall back to
+    # ESPN's current game-line snapshot.
+    try:
+        direct = _timed(
+            f"{sport}.odds.draftkings_keyless",
+            lambda: draftkings_game_events(sport),
+        )
+    except Exception:
+        direct = []
+    try:
+        espn = _timed(
+            f"{sport}.odds.espn_keyless",
+            lambda: _espn_market_events(sport, d),
+        )
+    except Exception:
+        espn = []
+    return [*direct, *espn]
 
 def _norm(s: str | None) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
