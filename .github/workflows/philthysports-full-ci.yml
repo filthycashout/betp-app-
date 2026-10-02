@@ -191,14 +191,14 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Create SHA-256
-        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.3.apk.sha256
+        run: sha256sum build/app/outputs/flutter-apk/app-release.apk | tee PhilthySports-1.4.4.apk.sha256
 
       - name: Stage APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.3.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk PhilthySports-1.4.4.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-1.4.3-android
+          name: PhilthySports-1.4.4-android
           path: |
-            PhilthySports-1.4.3.apk
-            PhilthySports-1.4.3.apk.sha256
+            PhilthySports-1.4.4.apk
+            PhilthySports-1.4.4.apk.sha256
