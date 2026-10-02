@@ -110,3 +110,21 @@ def test_generated_prediction_bundle_without_moneyline():
     assert generated['moneyline']['pick'] == 'Test Home'
     assert generated['spread']['pick'] == 'Test Home'
     assert generated['total']['pick'] == 'UNDER'
+
+
+def test_keyless_four_sport_live_gateway_contracts():
+    response = client.get('/v1/live/sources')
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['credential_required'] is False
+    assert set(payload['sports']) == {'NFL', 'NBA', 'MLB', 'NHL'}
+    assert all(
+        sport_payload['credential_required'] is False
+        for sport_payload in payload['sports'].values()
+    )
+
+    paths = {route.path for route in runtime.app.routes}
+    assert '/v1/live/{sport}/scoreboard' in paths
+    assert '/v1/live/{sport}/game/{event_id}' in paths
+    assert '/api/v1/live/{sport}/scoreboard' in paths
+    assert '/api/v1/live/{sport}/game/{event_id}' in paths
