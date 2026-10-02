@@ -33,67 +33,174 @@ def parse_props(raw, sport, markets, now=None):
     now = now or datetime.now(timezone.utc)
     start = utc_time(raw.get("commence_time"))
     if start is None or start <= now:
-        return {"props": [], "status": "NO_VERIFIED_PREGAME_EVENT", "message": "A verified future start time is required for pregame prop recommendations."}
+        return {
+            "props": [],
+            "status": "NO_VERIFIED_PREGAME_EVENT",
+            "message": "A verified future start time is required for pregame prop recommendations.",
+        }
+
     groups = {}
     skipped = 0
     for book in raw.get("bookmakers") or []:
+        book_name = book.get("key") or book.get("title") or "unknown"
         for market in book.get("markets") or []:
             key = market.get("key")
             if key not in markets:
                 continue
             updated = utc_time(market.get("last_update") or book.get("last_update"))
-            if updated is None or not -30 <= (now - updated).total_seconds() <= MAX_QUOTE_AGE_SECONDS:
+            if (
+                updated is None
+                or not -30
+                <= (now - updated).total_seconds()
+                <= MAX_QUOTE_AGE_SECONDS
+            ):
                 skipped += 1
                 continue
+
             local = {}
             for outcome in market.get("outcomes") or []:
-                probability = implied(outcome.get("price"))
-                player = str(outcome.get("description") or outcome.get("name") or "").strip()
+                price = number(outcome.get("price"))
+                probability = implied(price)
+                player = str(
+                    outcome.get("description") or outcome.get("name") or ""
+                ).strip()
                 side = str(outcome.get("name") or "").strip()
                 line = number(outcome.get("point"))
-                if probability is None or not player or not side:
+                if probability is None or price is None or not player or not side:
                     continue
                 if outcome.get("point") is not None and line is None:
                     continue
                 if side.lower() in {"over", "under"} and line is None:
                     continue
-                local.setdefault((key, player, line), {})[side.lower()] = probability
+                local.setdefault((key, player, line), {})[side.lower()] = {
+                    "probability": probability,
+                    "price": price,
+                }
+
             for identity, sides in local.items():
-                entry = groups.setdefault(identity, {"pairs": [], "quotes": {}, "books": set(), "updates": []})
-                entry["books"].add(book.get("key") or book.get("title") or "unknown")
+                entry = groups.setdefault(
+                    identity,
+                    {
+                        "pairs": [],
+                        "quotes": {},
+                        "prices": {},
+                        "books": set(),
+                        "updates": [],
+                    },
+                )
+                entry["books"].add(book_name)
                 entry["updates"].append(updated)
-                for side, probability in sides.items():
-                    entry["quotes"].setdefault(side, []).append(probability)
+                for side, quote in sides.items():
+                    entry["quotes"].setdefault(side, []).append(
+                        quote["probability"]
+                    )
+                    entry["prices"].setdefault(side, []).append(
+                        {
+                            "book": book_name,
+                            "price": quote["price"],
+                            "last_update": updated.isoformat(),
+                        }
+                    )
                 for first, second in (("over", "under"), ("yes", "no")):
                     if first in sides and second in sides:
-                        total = sides[first] + sides[second]
-                        entry["pairs"].append((first, second, sides[first] / total))
+                        first_probability = sides[first]["probability"]
+                        second_probability = sides[second]["probability"]
+                        total = first_probability + second_probability
+                        entry["pairs"].append(
+                            {
+                                "first": first,
+                                "second": second,
+                                "first_probability": first_probability / total,
+                                "book": book_name,
+                                "first_price": sides[first]["price"],
+                                "second_price": sides[second]["price"],
+                                "last_update": updated.isoformat(),
+                            }
+                        )
                         break
+
     props = []
     for (market, player, line), entry in groups.items():
-        base = {"sport": sport, "market": market, "player": player, "line": line,
-                "book_count": len(entry["books"]), "last_update": min(entry["updates"]).isoformat(),
-                "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL"}
+        base = {
+            "sport": sport,
+            "market": market,
+            "player": player,
+            "line": line,
+            "book_count": len(entry["books"]),
+            "contributing_books": sorted(entry["books"]),
+            "last_update": min(entry["updates"]).isoformat(),
+            "model_state": "MARKET_ONLY_UNTIL_VALIDATED_PROP_MODEL",
+        }
         pairs = entry["pairs"]
         if pairs:
-            first, second = pairs[0][:2]
-            p = mean(x[2] for x in pairs if x[:2] == (first, second))
-            side, probability = (first.upper(), p) if p >= .5 else (second.upper(), 1 - p)
-            props.append({**base, "outcome": side, "recommended_side": side,
-                          "market_probability": probability, "probability_method": "same_book_two_sided_devig",
-                          "paired_book_count": len(pairs),
-                          "reason": f"Market lean {side} at {probability:.1%}, using complementary prices from the same bookmaker and line. This is market consensus, not a trained prop forecast."})
+            first = pairs[0]["first"]
+            second = pairs[0]["second"]
+            matching = [
+                pair
+                for pair in pairs
+                if pair["first"] == first and pair["second"] == second
+            ]
+            p = mean(pair["first_probability"] for pair in matching)
+            side, probability = (
+                (first.upper(), p)
+                if p >= 0.5
+                else (second.upper(), 1 - p)
+            )
+            side_prices = entry["prices"].get(side.lower()) or []
+            best = max(side_prices, key=lambda quote: quote["price"]) if side_prices else None
+            props.append(
+                {
+                    **base,
+                    "outcome": side,
+                    "recommended_side": side,
+                    "market_probability": probability,
+                    "probability_method": "same_book_two_sided_devig",
+                    "paired_book_count": len(matching),
+                    "best_available_price": best["price"] if best else None,
+                    "best_available_book": best["book"] if best else None,
+                    "best_price_last_update": best["last_update"] if best else None,
+                    "reason": (
+                        f"Market lean {side} at {probability:.1%}, using "
+                        "complementary prices from the same bookmaker and line. "
+                        "The listed best price is a fresh contributing quote; "
+                        "the probability is de-vigged consensus, not a trained prop forecast."
+                    ),
+                }
+            )
         else:
             for side, probabilities in entry["quotes"].items():
-                props.append({**base, "outcome": side.upper(), "recommended_side": None,
-                              "market_probability": mean(probabilities), "probability_method": "raw_implied_not_devigged",
-                              "reason": "Price available; no same-book complementary outcome supports a de-vigged recommendation."})
-    props.sort(key=lambda x: x["market_probability"], reverse=True)
-    return {"props": props, "status": "OK" if props else "NO_FRESH_MARKETS",
-            "rejected_stale_or_undated_markets": skipped, "quote_max_age_seconds": MAX_QUOTE_AGE_SECONDS,
-            "fetched_at": now.isoformat(),
-            "message": "Fresh provider prices validated." if props else "No current, timestamped player-prop prices were returned for the selected event and markets."}
+                side_prices = entry["prices"].get(side) or []
+                best = max(side_prices, key=lambda quote: quote["price"]) if side_prices else None
+                props.append(
+                    {
+                        **base,
+                        "outcome": side.upper(),
+                        "recommended_side": None,
+                        "market_probability": mean(probabilities),
+                        "probability_method": "raw_implied_not_devigged",
+                        "best_available_price": best["price"] if best else None,
+                        "best_available_book": best["book"] if best else None,
+                        "best_price_last_update": best["last_update"] if best else None,
+                        "reason": (
+                            "Price available; no same-book complementary outcome "
+                            "supports a de-vigged recommendation."
+                        ),
+                    }
+                )
 
+    props.sort(key=lambda x: x["market_probability"], reverse=True)
+    return {
+        "props": props,
+        "status": "OK" if props else "NO_FRESH_MARKETS",
+        "rejected_stale_or_undated_markets": skipped,
+        "quote_max_age_seconds": MAX_QUOTE_AGE_SECONDS,
+        "fetched_at": now.isoformat(),
+        "message": (
+            "Fresh provider prices validated."
+            if props
+            else "No current, timestamped player-prop prices were returned for the selected event and markets."
+        ),
+    }
 
 def parse_game_market(event, now=None):
     """Use paired book prices at an actual offered line, never an average line."""
