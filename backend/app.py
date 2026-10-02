@@ -10,6 +10,7 @@ from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -25,6 +26,22 @@ from ci_security import (
 
 APP_VERSION = "1.4.3"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
+
+def _pacific_today() -> date_cls:
+    return datetime.now(PACIFIC_TZ).date()
+
+def _event_time_pacific(value: Any) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(PACIFIC_TZ).isoformat()
+    except Exception:
+        return None
+
 SPORT_KEYS = {
     "NFL": "americanfootball_nfl",
     "NBA": "basketball_nba",
@@ -486,7 +503,7 @@ def _prop_payload(sport: str, event_id: str) -> dict:
     return {"sport": sport, "event_id": event_id, "configured_markets": markets, "props": props, "status": "OK"}
 
 def _search(q: str = "", sport: str | None = None, date: str | None = None, include_props: bool = False, props_limit: int = 3) -> dict:
-    d = date_cls.fromisoformat(date) if date else date_cls.today()
+    d = date_cls.fromisoformat(date) if date else _pacific_today()
     selected = [sport.upper()] if sport else list(SPORTS)
     for s in selected:
         if s not in SPORTS:
@@ -513,7 +530,11 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 score = _score(market)
                 hp = market.get("home_probability")
                 item = {
-                    **game, "date": d.isoformat(), "matchup": f"{game.get('away')} @ {game.get('home')}",
+                    **game,
+                    "date": d.isoformat(),
+                    "event_time_pacific": _event_time_pacific(game.get("event_time")),
+                    "timezone": "America/Los_Angeles",
+                    "matchup": f"{game.get('away')} @ {game.get('home')}",
                     "odds_event_id": oe.get("id") if oe else None,
                     "market": market, "projected_score": score,
                     "pick": (game.get("home") if hp >= .5 else game.get("away")) if hp is not None else None,
@@ -802,7 +823,7 @@ def legacy_games(sport: str, days: int = Query(2, ge=1, le=7)):
     rows: list[dict[str, Any]] = []
     hashes: list[str] = []
     for offset in range(days):
-        d = date_cls.today() + timedelta(days=offset)
+        d = _pacific_today() + timedelta(days=offset)
         payload = _search(sport=s, date=d.isoformat(), include_props=False)
         hashes.append(hashlib.sha256(json.dumps(payload["games"], sort_keys=True, default=str).encode()).hexdigest())
         rows.extend(_legacy_game(g) for g in payload["games"])
@@ -996,98 +1017,216 @@ def parlays(sport: str, event_id: str, date: str | None = None):
         ]
     return {"sport": sport.upper(), "event_id": event_id, "parlays": combos, "status": "OK" if combos else "INSUFFICIENT_ELIGIBLE_LEGS"}
 
-def _multisport_candidates(d: date_cls) -> list[dict[str, Any]]:
-    result = _search(date=d.isoformat(), include_props=False)
+def _multisport_candidates(
+    start_date: date_cls,
+    *,
+    target_count: int = 28,
+    horizon_days: int = 4,
+) -> tuple[list[dict[str, Any]], list[str]]:
     candidates: list[dict[str, Any]] = []
-
+    dates_considered: list[str] = []
     per_sport_prop_events: dict[str, int] = {s: 0 for s in SPORTS}
-    for game in result["games"]:
-        sport = game["sport"]
-        market = game.get("market") or {}
-        hp = market.get("home_probability")
-        if hp is not None and game.get("pick"):
-            picked_home = game["pick"] == game.get("home")
-            probability = float(hp) if picked_home else 1.0 - float(hp)
-            candidates.append({
-                "sport": sport,
-                "event_id": game["event_id"],
-                "event_time": game.get("event_time"),
-                "matchup": game.get("matchup"),
-                "type": "moneyline",
-                "label": f"{game['pick']} moneyline",
-                "probability": round(probability, 6),
-                "reason": f"Fresh de-vigged consensus market gives this side {probability:.1%} implied probability across {len(market.get('books_used') or [])} contributing books.",
-                "model_state": _runtime_mode_for(sport),
-            })
+    seen: set[tuple[str, str, str]] = set()
 
-        oid = game.get("odds_event_id")
-        if oid and per_sport_prop_events[sport] < 2:
-            per_sport_prop_events[sport] += 1
-            try:
-                payload = _prop_payload(sport, oid)
-                for p in payload.get("props", [])[:4]:
-                    if p.get("recommended_side") and p.get("market_probability") is not None:
-                        candidates.append({
-                            "sport": sport,
-                            "event_id": game["event_id"],
-                            "event_time": game.get("event_time"),
-                            "matchup": game.get("matchup"),
-                            "type": "player_prop",
-                            "label": f"{p['player']} {p['recommended_side']} {p['line']} {p['market']}",
-                            "probability": round(float(p["market_probability"]), 6),
-                            "reason": p.get("reason"),
-                            "model_state": p.get("model_state"),
-                        })
-            except Exception:
-                pass
+    for offset in range(max(1, min(int(horizon_days), 7))):
+        d = start_date + timedelta(days=offset)
+        dates_considered.append(d.isoformat())
+        result = _search(date=d.isoformat(), include_props=False)
 
-    candidates.sort(key=lambda x: x.get("probability") or 0.0, reverse=True)
-    return candidates
+        for game in result["games"]:
+            sport = game["sport"]
+            market = game.get("market") or {}
+            hp = market.get("home_probability")
+            if hp is not None and game.get("pick"):
+                picked_home = game["pick"] == game.get("home")
+                probability = float(hp) if picked_home else 1.0 - float(hp)
+                candidate = {
+                    "sport": sport,
+                    "event_id": game["event_id"],
+                    "event_time": game.get("event_time"),
+                    "event_time_pacific": game.get("event_time_pacific"),
+                    "date": d.isoformat(),
+                    "matchup": game.get("matchup"),
+                    "type": "moneyline",
+                    "label": f"{game['pick']} moneyline",
+                    "probability": round(probability, 6),
+                    "reason": (
+                        f"Fresh de-vigged consensus market gives this side "
+                        f"{probability:.1%} implied probability across "
+                        f"{len(market.get('books_used') or [])} contributing books."
+                    ),
+                    "model_state": _runtime_mode_for(sport),
+                }
+                key = (sport, str(game["event_id"]), candidate["label"])
+                if key not in seen:
+                    candidates.append(candidate)
+                    seen.add(key)
 
-def _build_multisport_parlay(leg_count: int, date: str | None = None) -> dict[str, Any]:
-    if leg_count not in {7, 10, 14}:
-        raise ValueError("leg_count must be one of 7, 10, or 14")
-    d = date_cls.fromisoformat(date) if date else date_cls.today()
-    candidates = _multisport_candidates(d)
+            oid = game.get("odds_event_id")
+            if oid and per_sport_prop_events[sport] < 2:
+                per_sport_prop_events[sport] += 1
+                try:
+                    payload = _prop_payload(sport, oid)
+                    for p in payload.get("props", [])[:6]:
+                        if (
+                            p.get("recommended_side")
+                            and p.get("market_probability") is not None
+                        ):
+                            candidate = {
+                                "sport": sport,
+                                "event_id": game["event_id"],
+                                "event_time": game.get("event_time"),
+                                "event_time_pacific": game.get("event_time_pacific"),
+                                "date": d.isoformat(),
+                                "matchup": game.get("matchup"),
+                                "type": "player_prop",
+                                "label": (
+                                    f"{p['player']} {p['recommended_side']} "
+                                    f"{p['line']} {p['market']}"
+                                ),
+                                "probability": round(
+                                    float(p["market_probability"]), 6
+                                ),
+                                "reason": p.get("reason"),
+                                "model_state": p.get("model_state"),
+                            }
+                            key = (
+                                sport,
+                                str(game["event_id"]),
+                                candidate["label"],
+                            )
+                            if key not in seen:
+                                candidates.append(candidate)
+                                seen.add(key)
+                except Exception:
+                    pass
 
-    by_sport = {sport: [x for x in candidates if x["sport"] == sport] for sport in SPORTS}
-    selected: list[dict[str, Any]] = []
-    seen_events: set[tuple[str, str, str]] = set()
-
-    while len(selected) < leg_count:
-        added = False
-        for sport in SPORTS:
-            while by_sport[sport]:
-                leg = by_sport[sport].pop(0)
-                dedupe = (leg["sport"], leg["event_id"], leg["label"])
-                if dedupe in seen_events:
-                    continue
-                selected.append(leg)
-                seen_events.add(dedupe)
-                added = True
-                break
-            if len(selected) >= leg_count:
-                break
-        if not added:
+        if len(candidates) >= target_count:
             break
 
+    candidates.sort(
+        key=lambda x: (
+            float(x.get("probability") or 0.0),
+            1 if x.get("type") == "player_prop" else 0,
+        ),
+        reverse=True,
+    )
+    return candidates, dates_considered
+
+
+def _build_multisport_parlay(
+    leg_count: int,
+    date: str | None = None,
+) -> dict[str, Any]:
+    if leg_count not in {7, 10, 14}:
+        raise ValueError("leg_count must be one of 7, 10, or 14")
+
+    d = date_cls.fromisoformat(date) if date else _pacific_today()
+    candidates, dates_considered = _multisport_candidates(
+        d,
+        target_count=max(28, leg_count * 3),
+        horizon_days=4,
+    )
+
+    profile = {
+        7: "BALANCED_HIGH_CONFIDENCE",
+        10: "PROP_WEIGHTED_DIVERSIFIED",
+        14: "BROAD_MULTISPORT_COVERAGE",
+    }[leg_count]
+    desired_props = {7: 2, 10: 4, 14: 5}[leg_count]
+
+    selected: list[dict[str, Any]] = []
+    selected_keys: set[tuple[str, str, str]] = set()
+    event_counts: dict[tuple[str, str], int] = {}
+
+    def add_leg(leg: dict[str, Any]) -> bool:
+        key = (leg["sport"], str(leg["event_id"]), leg["label"])
+        event_key = (leg["sport"], str(leg["event_id"]))
+        if key in selected_keys:
+            return False
+        if event_counts.get(event_key, 0) >= 2:
+            return False
+        selected.append(leg)
+        selected_keys.add(key)
+        event_counts[event_key] = event_counts.get(event_key, 0) + 1
+        return True
+
+    # First guarantee multisport coverage whenever fresh candidates make it possible.
+    for sport in SPORTS:
+        sport_best = next((x for x in candidates if x["sport"] == sport), None)
+        if sport_best is not None:
+            add_leg(sport_best)
+        if len(selected) >= leg_count:
+            break
+
+    # Then deliberately include player props instead of allowing a card of only favorites.
+    prop_count = sum(1 for x in selected if x.get("type") == "player_prop")
+    if prop_count < desired_props:
+        for leg in (x for x in candidates if x.get("type") == "player_prop"):
+            if add_leg(leg):
+                prop_count += 1
+            if prop_count >= desired_props or len(selected) >= leg_count:
+                break
+
+    # Each card is built independently. A small deterministic rotation keeps the
+    # 7-, 10-, and 14-leg cards from being simple nested prefixes of one another.
+    if candidates:
+        rotation = {7: 0, 10: max(1, len(candidates) // 7), 14: max(2, len(candidates) // 5)}[leg_count]
+        rotated = candidates[rotation:] + candidates[:rotation]
+    else:
+        rotated = []
+
+    for leg in rotated:
+        if len(selected) >= leg_count:
+            break
+        add_leg(leg)
+
+    props_used = sum(1 for x in selected if x.get("type") == "player_prop")
+    sports_used = sorted({x["sport"] for x in selected})
+    card_id = f"{d.isoformat()}-{leg_count}-{profile}"
+
     return {
+        "card_id": card_id,
         "date": d.isoformat(),
+        "timezone": "America/Los_Angeles",
+        "dates_considered": dates_considered,
         "requested_legs": leg_count,
         "actual_legs": len(selected),
-        "multisport": len({x["sport"] for x in selected}) > 1,
-        "sports_included": sorted({x["sport"] for x in selected}),
+        "selection_profile": profile,
+        "multisport": len(sports_used) > 1,
+        "sports_included": sports_used,
+        "player_prop_legs": props_used,
+        "market_pick_legs": len(selected) - props_used,
         "legs": selected,
         "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL",
         "estimated_joint_probability": None,
         "reasoning": [
-            "Legs are ranked from fresh de-vigged event markets and available player-prop markets, then round-robin selected across NFL, NBA, MLB, and NHL to encourage multisport coverage.",
-            "The system does not multiply leg probabilities or add a correlation boost because measured cross-leg dependency has not passed governance.",
-            "A leg is omitted rather than fabricated when a fresh probability or mapped live prop market is unavailable.",
-            "Manual review is required before any wagering action.",
+            (
+                "This card is generated independently from the other 7-, 10-, "
+                "and 14-leg cards. Fresh eligible legs are ranked by current "
+                "de-vigged probability, then diversified by sport and event."
+            ),
+            (
+                f"The {leg_count}-leg profile targets player props as part of "
+                f"the card when fresh mapped prop markets exist; {props_used} "
+                "player-prop legs are available in this card."
+            ),
+            (
+                "No leg is fabricated. Missing sportsbook markets, unmapped "
+                "prop events, or failed credential gates reduce the card size."
+            ),
+            (
+                "Joint probability is intentionally unscored until measured "
+                "cross-leg dependence passes the v8 governance threshold."
+            ),
         ],
-        "status": "OK" if len(selected) == leg_count else "INSUFFICIENT_FRESH_ELIGIBLE_LEGS",
+        "status": (
+            "OK"
+            if len(selected) == leg_count and len(sports_used) > 1
+            else "INSUFFICIENT_FRESH_ELIGIBLE_LEGS"
+        ),
     }
+
 
 @app.get("/api/parlays/multisport", include_in_schema=False)
 @app.get("/api/v1/parlays/multisport", include_in_schema=False)
