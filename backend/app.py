@@ -1555,6 +1555,17 @@ def _same_team(a: str | None, b: str | None) -> bool:
     x, y = _norm(a), _norm(b)
     return bool(x and y and (x == y or x in y or y in x))
 
+def _market_source_rank(event: dict[str, Any]) -> int:
+    source = str(event.get("market_source") or "").upper()
+    if "THE_ODDS" in source:
+        return 30
+    if "DRAFTKINGS" in source:
+        return 20
+    if "ESPN" in source:
+        return 10
+    return 0
+
+
 def _match_odds(game: dict, events: list[dict]) -> dict | None:
     start = utc_time(game.get("event_time"))
     if start is None:
@@ -1566,8 +1577,12 @@ def _match_odds(game: dict, events: list[dict]) -> dict | None:
                 and _same_team(game.get("home"), event.get("home_team"))
                 and _same_team(game.get("away"), event.get("away_team"))):
             matches.append(event)
-    # Ambiguity must not silently attach the wrong doubleheader's markets.
-    return matches[0] if len(matches) == 1 else None
+    if not matches:
+        return None
+    best_rank = max(_market_source_rank(event) for event in matches)
+    best = [event for event in matches if _market_source_rank(event) == best_rank]
+    # Ambiguity within the same provider still fails closed for doubleheaders.
+    return best[0] if len(best) == 1 else None
 
 def _american_to_prob(x: float) -> float:
     x = float(x)
