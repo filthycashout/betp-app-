@@ -48,10 +48,13 @@ def main() -> None:
         raise SystemExit("duplicate settled leg ids")
 
     counts=defaultdict(lambda:[0,0,0,0,0])
+    dates_by_key=defaultdict(set)
     for _, group in df.groupby("slate_id", sort=False):
         rows=group.to_dict("records")
         for left,right in combinations(rows,2):
             key=dependency_key(left,right)
+            dates_by_key[key].add(str(pd.to_datetime(left["settled_at"], utc=True).date()))
+            dates_by_key[key].add(str(pd.to_datetime(right["settled_at"], utc=True).date()))
             lh,rh=int(left["hit"]),int(right["hit"])
             bucket=counts[key]
             if lh and rh: bucket[0]+=1
@@ -63,12 +66,15 @@ def main() -> None:
     estimates={}
     for key,(a,b,c,d,n) in sorted(counts.items()):
         measured=phi(a,b,c,d)
-        eligible=n>=args.min_pairs and measured is not None
+        distinct_dates=len(dates_by_key[key])
+        eligible=n>=args.min_pairs and distinct_dates>=60 and measured is not None
         # Empirical-Bayes style shrinkage toward independence. Never extrapolate
         # from small samples: runtime may consume only eligible rows.
         shrunk=(measured*n/(n+200.0)) if measured is not None else None
         estimates[key]={
             "pairs":n,
+            "distinct_settled_dates":distinct_dates,
+            "minimum_distinct_dates":60,
             "phi_raw":measured,
             "phi_shrunk":shrunk,
             "eligible_for_runtime":eligible,
