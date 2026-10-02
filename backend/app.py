@@ -1138,6 +1138,96 @@ def _espn_recent_form_snapshot(sport: str, d: date_cls) -> dict[str, Any]:
     return snapshot
 
 
+def _nhl_recent_form_snapshot(d: date_cls) -> dict[str, Any]:
+    cache_key = ("NHL_OFFICIAL", d.isoformat())
+    cached = _FORM_CACHE.get(cache_key)
+    now = time.time()
+    if cached and now - cached[0] <= _FORM_TTL_SECONDS:
+        return cached[1]
+
+    end = d - timedelta(days=1)
+    start = end - timedelta(days=_FORM_LOOKBACK_DAYS["NHL"])
+    teams: dict[str, dict[str, Any]] = {}
+    margins: list[float] = []
+    completed = 0
+    seen: set[str] = set()
+    cursor = start
+
+    while cursor <= end:
+        raw = _json(
+            f"https://api-web.nhle.com/v1/schedule/{cursor.isoformat()}",
+            timeout=12,
+        )
+        for day in raw.get("gameWeek") or []:
+            day_raw = day.get("date")
+            try:
+                day_date = date_cls.fromisoformat(str(day_raw))
+            except ValueError:
+                continue
+            if day_date < start or day_date > end:
+                continue
+            for game in day.get("games") or []:
+                event_id = str(game.get("id") or "")
+                if not event_id or event_id in seen:
+                    continue
+                seen.add(event_id)
+                state = str(game.get("gameState") or "").upper()
+                if state not in {"FINAL", "OFF"}:
+                    continue
+                home_obj = game.get("homeTeam") or {}
+                away_obj = game.get("awayTeam") or {}
+                hs = _coerce_number(home_obj.get("score"))
+                aw = _coerce_number(away_obj.get("score"))
+                home_name = _nhl_name(home_obj)
+                away_name = _nhl_name(away_obj)
+                if hs is None or aw is None or not home_name or not away_name:
+                    continue
+
+                completed += 1
+                margins.append(abs(hs - aw))
+                for name, scored, allowed, won in (
+                    (home_name, hs, aw, hs > aw),
+                    (away_name, aw, hs, aw > hs),
+                ):
+                    key = _norm(name)
+                    row = teams.setdefault(
+                        key,
+                        {
+                            "name": name,
+                            "games": 0,
+                            "wins": 0,
+                            "ties": 0,
+                            "points_for": 0.0,
+                            "points_against": 0.0,
+                        },
+                    )
+                    row["games"] += 1
+                    row["points_for"] += float(scored)
+                    row["points_against"] += float(allowed)
+                    if scored == allowed:
+                        row["ties"] += 1
+                    elif won:
+                        row["wins"] += 1
+        cursor += timedelta(days=7)
+
+    snapshot = {
+        "teams": teams,
+        "completed_games": completed,
+        "league_mean_abs_margin": mean(margins) if margins else None,
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "source": "NHL Web API completed schedules",
+    }
+    _FORM_CACHE[cache_key] = (now, snapshot)
+    return snapshot
+
+
+def _recent_form_snapshot(sport: str, d: date_cls) -> dict[str, Any]:
+    if sport == "NHL":
+        return _nhl_recent_form_snapshot(d)
+    return _espn_recent_form_snapshot(sport, d)
+
+
 def _form_team(snapshot: dict[str, Any], team_name: str | None) -> dict[str, Any] | None:
     wanted = _norm(team_name)
     if not wanted:
@@ -1161,7 +1251,7 @@ def _recent_form_prediction(
         try:
             snapshot = _timed(
                 f"{sport}.recent_form",
-                lambda: _espn_recent_form_snapshot(sport, d),
+                lambda: _recent_form_snapshot(sport, d),
             )
         except Exception:
             snapshot = {"teams": {}}
@@ -1574,7 +1664,7 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
             s: pool.submit(
                 _timed,
                 f"{s}.recent_form",
-                lambda sport=s: _espn_recent_form_snapshot(sport, d),
+                lambda sport=s: _recent_form_snapshot(sport, d),
             )
             for s in selected
         }
