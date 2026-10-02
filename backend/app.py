@@ -1900,6 +1900,13 @@ def model_registry():
         "sports": {
             sport: {
                 **((CANDIDATE_REGISTRY.get("sports") or {}).get(sport) or {}),
+                "promotion_state": (
+                    "PROMOTED_TRAINED_MODEL"
+                    if gates[sport]["passed"]
+                    else ((CANDIDATE_REGISTRY.get("sports") or {}).get(sport) or {}).get(
+                        "promotion_state", "NO_PROMOTED_MATCHUP_MODEL"
+                    )
+                ),
                 "promoted_artifact_loaded": PROMOTED_MODELS.get(sport) is not None,
                 "promotion_gate_passed": gates[sport]["passed"],
                 "runtime_mode": _runtime_mode_for(sport),
