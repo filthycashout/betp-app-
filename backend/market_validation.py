@@ -209,7 +209,13 @@ def parse_game_market(event, now=None):
                          'spread_home_probability','spread_away_probability','spread_pick',
                          'spread_pick_probability','total','over_probability','under_probability',
                          'total_pick','total_pick_probability'])
-    out.update(books_used=[], freshness_verified=False)
+    out.update(
+        books_used=[],
+        freshness_verified=False,
+        provider_timestamp_verified=False,
+        observed_at_verified=False,
+        freshness_basis=[],
+    )
     if not event:
         return out
     start=utc_time(event.get('commence_time'))
@@ -219,8 +225,18 @@ def parse_game_market(event, now=None):
     money=[];spreads={};totals={};books=set()
     for book in event.get('bookmakers') or []:
         for market in book.get('markets') or []:
-            updated=utc_time(market.get('last_update') or book.get('last_update'))
+            provider_updated=utc_time(market.get('last_update') or book.get('last_update'))
+            observed=utc_time(market.get('observed_at') or book.get('observed_at'))
+            updated=provider_updated or observed
             fresh=updated is not None and -30 <= (now-updated).total_seconds() <= MAX_QUOTE_AGE_SECONDS
+            if fresh and provider_updated is not None:
+                out['provider_timestamp_verified']=True
+                if 'provider_timestamp' not in out['freshness_basis']:
+                    out['freshness_basis'].append('provider_timestamp')
+            elif fresh and observed is not None:
+                out['observed_at_verified']=True
+                if 'fresh_fetch_observed_at' not in out['freshness_basis']:
+                    out['freshness_basis'].append('fresh_fetch_observed_at')
             outcomes=market.get('outcomes') or []
             key=market.get('key')
             names=(home,away) if key in {'h2h','spreads'} else ('Over','Under')
