@@ -51,3 +51,8 @@ class PhilthySportsApp extends StatelessWidget {
     );
   }
 }
+
+// Backwards-compatible app class retained for the integration harness.
+class PhilthyParleysApp extends PhilthySportsApp {
+  const PhilthyParleysApp({super.key});
+}
