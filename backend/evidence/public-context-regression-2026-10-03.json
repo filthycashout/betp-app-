@@ -1,0 +1,14 @@
+{
+  "backend_version": "1.5.5",
+  "regression": {
+    "passed": 62,
+    "failed": 0,
+    "command": "PYTHONPATH=backend pytest -q backend/tests"
+  },
+  "governance_selftest": "PASS",
+  "syntax": "PASS",
+  "diff_whitespace": "PASS",
+  "live_canaries": "public-context-live-2026-10-03.json",
+  "scope": "Local verification before source publication; no physical Android test or model promotion.",
+  "recorded_at": "2026-10-03T18:17:57.814548+00:00"
+}

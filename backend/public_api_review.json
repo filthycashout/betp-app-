@@ -1,0 +1,187 @@
+{
+  "reviewed_at": "2026-10-03",
+  "directory_repository": "https://github.com/public-apis/public-apis",
+  "directory_commit": "dfb5690f7fdd4073a54290f499a76c71cd9e5ba8",
+  "apilayer_review": "https://apilayer.com/",
+  "scope": "Sports, weather and news replacements relevant to PhilthySports. Not every API category in the directory.",
+  "providers": [
+    {
+      "id": "espn",
+      "name": "ESPN Site API",
+      "purpose": "Scores, schedules, injuries and current headlines",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "none",
+      "decision": "retained_and_extended",
+      "note": "Existing sports adapters retained; new dated headline endpoint, excluded from model features.",
+      "source_url": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+    },
+    {
+      "id": "nba",
+      "name": "NBA CDN LiveData",
+      "purpose": "NBA live scoreboard and box scores",
+      "sports": "NBA",
+      "authentication": "none",
+      "decision": "retained",
+      "note": "Existing live adapter retained. Separate full-season schedule URL returned 403 in this review; no new dependency on it.",
+      "source_url": "https://github.com/swar/nba_api"
+    },
+    {
+      "id": "mlb",
+      "name": "MLB StatsAPI",
+      "purpose": "Schedules, live scores, player data and venue coordinates",
+      "sports": "MLB",
+      "authentication": "none",
+      "decision": "retained_and_extended",
+      "note": "Official venue metadata now supports weather for confirmed open-air venues.",
+      "source_url": "https://statsapi.mlb.com/api/v1/schedule?sportId=1"
+    },
+    {
+      "id": "nhl",
+      "name": "NHL Web API",
+      "purpose": "Schedule, live game centre and statistics",
+      "sports": "NHL",
+      "authentication": "none",
+      "decision": "retained",
+      "note": "Current Web API retained; older directory links are not treated as current endpoint specifications.",
+      "source_url": "https://api-web.nhle.com/v1/schedule/now"
+    },
+    {
+      "id": "nflverse",
+      "name": "nflreadpy / nflverse",
+      "purpose": "Historical training inputs",
+      "sports": "NFL",
+      "authentication": "none",
+      "decision": "existing_research_adapter",
+      "note": "Already present in the historical collector. Data availability is not evidence of pregame provenance or model promotion.",
+      "source_url": "https://nflreadpy.nflverse.com/"
+    },
+    {
+      "id": "nws",
+      "name": "US National Weather Service",
+      "purpose": "US venue forecasts",
+      "sports": "NFL, MLB",
+      "authentication": "none",
+      "decision": "implemented",
+      "note": "Default weather provider. Excludes past events, stale forecasts and unconfirmed outdoor venues.",
+      "source_url": "https://www.weather.gov/documentation/services-web-api"
+    },
+    {
+      "id": "open-meteo",
+      "name": "Open-Meteo",
+      "purpose": "Global weather forecasts",
+      "sports": "NFL, MLB",
+      "authentication": "none_noncommercial",
+      "decision": "implemented_opt_in",
+      "note": "Set OPEN_METEO_ACCESS=noncommercial only for eligible non-commercial use. Off by default. No historical model features are inferred from current forecasts.",
+      "source_url": "https://open-meteo.com/en/docs"
+    },
+    {
+      "id": "draftkings-bovada",
+      "name": "DraftKings / Bovada public feeds",
+      "purpose": "Game odds and selected player props",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "none",
+      "decision": "retained",
+      "note": "Existing adapters retained. Coverage, timestamps and complementary prices remain checked per event and market.",
+      "source_url": "https://github.com/filthycashout/betp-app-/blob/main/backend/keyless_sportsbook.py"
+    },
+    {
+      "id": "odds-api",
+      "name": "The Odds API",
+      "purpose": "Primary credentialed odds and props",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "ODDS_API_KEY",
+      "decision": "optional_existing",
+      "note": "Still useful for coverage gaps. Rotation confirmation and entitlement checks remain required.",
+      "source_url": "https://the-odds-api.com/liveapi/guides/v4/"
+    },
+    {
+      "id": "weatherstack",
+      "name": "APILayer Weatherstack",
+      "purpose": "Weather alternative to Visual Crossing",
+      "sports": "NFL, MLB",
+      "authentication": "provider_key",
+      "decision": "not_enabled",
+      "note": "Requires an account key and suitable forecast entitlement; does not remove key dependence. NWS used instead.",
+      "source_url": "https://docs.apilayer.com/weatherstack/docs/getting-started"
+    },
+    {
+      "id": "mediastack",
+      "name": "APILayer Mediastack",
+      "purpose": "Sports headlines, not verified injuries",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "provider_key",
+      "decision": "not_enabled",
+      "note": "Requires a provider key; current sports headlines are available through the new ESPN adapter. Not a replacement for private X access.",
+      "source_url": "https://apilayer.com/products/mediastack/"
+    },
+    {
+      "id": "balldontlie",
+      "name": "BALLDONTLIE",
+      "purpose": "Sports statistics and paid odds/props",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "provider_key",
+      "decision": "not_enabled",
+      "note": "Directory says no authentication; current NBA documentation requires an API key and paid access for odds/props.",
+      "source_url": "https://nba.balldontlie.io/"
+    },
+    {
+      "id": "thesportsdb",
+      "name": "TheSportsDB",
+      "purpose": "Team metadata and artwork",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "provider_key",
+      "decision": "not_enabled",
+      "note": "Metadata option, not verified sportsbook player-prop coverage or a production shared-key solution.",
+      "source_url": "https://www.thesportsdb.com/api.php"
+    },
+    {
+      "id": "odds-api-io",
+      "name": "Odds-API.io",
+      "purpose": "Alternative odds provider",
+      "sports": "multiple_sports",
+      "authentication": "provider_key",
+      "decision": "not_enabled",
+      "note": "Separate provider from The Odds API. Requires its own key, schema adapter and live coverage validation.",
+      "source_url": "https://docs.odds-api.io/"
+    },
+    {
+      "id": "fanline",
+      "name": "FanLine Wire public snapshot",
+      "purpose": "Demo odds snapshot",
+      "sports": "multiple_sports",
+      "authentication": "none_demo",
+      "decision": "rejected_for_predictions",
+      "note": "Live request succeeded, but free rows lack selection labels, line handicaps and scheduled event time needed for safe market mapping.",
+      "source_url": "https://fanlinewire.com/docs"
+    },
+    {
+      "id": "third-party-picks",
+      "name": "Bet Better / NoPunt",
+      "purpose": "Third-party forecasts",
+      "sports": "multiple_sports",
+      "authentication": "none_listed",
+      "decision": "rejected_for_model_promotion",
+      "note": "Public model predictions are not trained PhilthySports weights, settled validation or calibrated promotion evidence.",
+      "source_url": "https://github.com/public-apis/public-apis#sports--fitness"
+    }
+  ],
+  "credential_remediation": {
+    "runtime_provider_key": "ODDS_API_KEY is optional for the existing primary odds path; keyless coverage is not guaranteed complete.",
+    "legacy_keys": "Previously exposed Odds API, Sportradar, Visual Crossing, Google service-account, X and Twilio credentials still require revocation even when replaced.",
+    "not_runtime_requirements": [
+      "SPORTRADAR_API_KEY",
+      "VISUAL_CROSSING_API_KEY",
+      "Google service-account credential",
+      "X bearer token",
+      "Twilio authentication"
+    ],
+    "signing": "Preserve the existing Android/model signing identity."
+  },
+  "governance": {
+    "automatic_wagering": false,
+    "weather_or_news_used_in_predictions": false,
+    "model_promotion_changed": false,
+    "stale_or_ambiguous_odds_accepted": false
+  }
+}
