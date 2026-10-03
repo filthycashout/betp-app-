@@ -1,1 +1,2 @@
 sport,event_id,event_time,as_of,home_team,away_team,target_home_win,label_available_at,market_home_probability,consensus_de_vig_home_probability,home_spread,consensus_total
+MLB,849829,2026-10-03T17:00:00+00:00,2026-10-03T03:22:46.849424+00:00,Cleveland Guardians,Chicago White Sox,0,2026-10-03T21:15:25.952795+00:00,0.5779177274554469,0.5779177274554469,-1.5,
