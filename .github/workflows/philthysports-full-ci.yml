@@ -200,10 +200,11 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk PhilthyParleys.apk
           sha256sum PhilthyParleys.apk > PhilthyParleys.apk.sha256
           python - <<'PY2'
-          import json, os
+          import json, os, re
           from pathlib import Path
+          version, code = re.search(r'^version:\s*(\S+)\+(\d+)\s*$', Path('pubspec.yaml').read_text(), re.M).groups()
           Path("build-metadata.json").write_text(json.dumps({
-            "app_name": "PhilthyParleys", "version": "1.5.0", "version_code": 17,
+            "app_name": "PhilthyParleys", "version": version, "version_code": int(code),
             "package_id": "com.philthysports.philthysports", "commit": os.environ["GITHUB_SHA"],
             "physical_device_test": "NOT_RUN",
           }, indent=2)+"\n")
@@ -211,7 +212,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhilthyParleys-1.5.0-android
+          name: PhilthyParleys-android
           path: |
             PhilthyParleys.apk
             PhilthyParleys.apk.sha256
@@ -228,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: PhilthyParleys-1.5.0-android
+          name: PhilthyParleys-android
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -245,5 +246,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: PhilthyParleys-1.5.0-emulator-evidence
+          name: PhilthyParleys-emulator-evidence
           path: device-report/

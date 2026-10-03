@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import copy
 import json
+import io
 from pathlib import Path
 import sys
 
@@ -154,6 +155,45 @@ def test_capture_checksums_verified_before_build(tmp_path,monkeypatch):
     assert ep._all_pregame_rows(tmp_path)==[]
     p=next((tmp_path/'pregame').glob('pregame_*.jsonl'));p.write_text('{"tampered":true}\n')
     with pytest.raises(ValueError,match='checksum'):ep._all_pregame_rows(tmp_path)
+
+
+def test_capture_omits_unneeded_prop_fanout(tmp_path, monkeypatch):
+    requests_seen = []
+    def respond(url):
+        requests_seen.append(ep.urllib.parse.parse_qs(ep.urllib.parse.urlsplit(url).query))
+        return {'games': []}
+    monkeypatch.setattr(ep, '_json', respond)
+    ep.capture('https://example.invalid', tmp_path, days=4)
+    assert requests_seen == [{'include_props': ['false'], 'props_limit': ['0'], 'days': ['4']}]
+
+
+def test_evidence_retries_transient_timeout_and_502(monkeypatch):
+    replies = iter([TimeoutError(), ep.urllib.error.HTTPError('https://example.invalid', 502, 'Bad Gateway', {}, None), io.BytesIO(b'{"ok":true}')])
+    calls = []
+    def open_response(*args, **kwargs):
+        calls.append(kwargs['timeout'])
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+    monkeypatch.setattr(ep.urllib.request, 'urlopen', open_response)
+    monkeypatch.setattr(ep.time, 'sleep', lambda _: None)
+    assert ep._json('https://example.invalid') == {'ok': True}
+    assert calls == [45, 45, 45]
+
+
+@pytest.mark.parametrize('status, expected_calls', [(401, 1), (503, 3)])
+def test_evidence_error_is_bounded_and_does_not_echo_url(monkeypatch, status, expected_calls):
+    calls = []
+    def fail(*args, **kwargs):
+        calls.append(1)
+        raise ep.urllib.error.HTTPError('https://example.invalid?secret=sentinel', status, 'sentinel', {}, None)
+    monkeypatch.setattr(ep.urllib.request, 'urlopen', fail)
+    monkeypatch.setattr(ep.time, 'sleep', lambda _: None)
+    with pytest.raises(RuntimeError) as error:
+        ep._json('https://example.invalid?secret=sentinel')
+    assert str(error.value) == f'Evidence source HTTP {status}'
+    assert len(calls) == expected_calls
 
 
 def test_malformed_promoted_artifact_falls_back(tmp_path,monkeypatch):

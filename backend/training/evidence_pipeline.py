@@ -4,6 +4,8 @@ import argparse
 import csv
 import hashlib
 import json
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -26,8 +28,19 @@ def _json(url: str, timeout: int = 45) -> Any:
             "User-Agent": "PhilthySports-v8-evidence/1.0",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            exc.close()
+            if status not in {429, 502, 503, 504} or attempt == 2:
+                raise RuntimeError(f"Evidence source HTTP {status}") from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == 2:
+                raise RuntimeError("Evidence source unavailable after 3 attempts") from None
+        time.sleep(attempt + 1)
 
 
 def _canonical(value: Any) -> bytes:
@@ -53,7 +66,8 @@ def _parse_time(value: str) -> datetime:
 
 def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
     query = urllib.parse.urlencode(
-        {"include_props": "true", "props_limit": "20", "days": str(days)}
+        # Matchup training uses game markets, not the expensive per-event prop fan-out.
+        {"include_props": "false", "props_limit": "0", "days": str(days)}
     )
     source_url = f"{base_url.rstrip('/')}/v1/today?{query}"
     payload = _json(source_url)

@@ -2147,7 +2147,7 @@ def system_status():
             "credential_core_keyless": "PASS",
             "credential_live_odds_props": "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
             "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE",
-            "immutable_pregame_evidence_capture": "PASS_AUTOMATED_GITHUB_HISTORY",
+            "immutable_pregame_evidence_capture": "CONFIGURED_LAST_RUN_VERIFICATION_REQUIRED",
         },
         "credential_gate": {
             "core_runtime_requires_secret": False,
@@ -2158,7 +2158,7 @@ def system_status():
             "live_canary_evidence_verified": False,
         },
         "production_ready": False,
-        "production_ready_reason": "The HTTPS backend, pinned Android signing, four-sport live adapters, and immutable pregame evidence capture are operational. Production-ready remains blocked until four sport-specific trained models pass every v8 promotion gate, fresh live odds/props credentials pass canaries, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
+        "production_ready_reason": "The backend has HTTPS, pinned Android signing, four-sport adapters, and a configured pregame evidence workflow. Its latest capture result must be verified in GitHub. Production-ready remains blocked until four sport-specific trained models pass every v8 promotion gate, live provider canaries and credential revocation are evidenced, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
         "drive_reconstruction": {sport: (DRIVE_RECONSTRUCTION.get("sports") or {}).get(sport, {}).get("status", "NO_EVIDENCE") for sport in SPORTS},
@@ -3111,4 +3111,3 @@ def multisport_parlays(legs: int = Query(7), date: str | None = None):
         return _build_multisport_parlay(int(legs), date)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-
