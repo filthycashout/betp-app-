@@ -171,22 +171,36 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                   ),
                 ),
               if (health.isNotEmpty) _card('Backend health', health),
-              if (sectionErrors['Backend health'] case final message?)
-                _sectionError('Backend health', message),
+              if (sectionErrors['Backend health'] != null)
+                _sectionError(
+                  'Backend health',
+                  sectionErrors['Backend health']!,
+                ),
               if (system.isNotEmpty) _card('Production gates', system),
-              if (sectionErrors['Production gates'] case final message?)
-                _sectionError('Production gates', message),
+              if (sectionErrors['Production gates'] != null)
+                _sectionError(
+                  'Production gates',
+                  sectionErrors['Production gates']!,
+                ),
               if (models.isNotEmpty) _card('Model governance', models),
-              if (sectionErrors['Model governance'] case final message?)
-                _sectionError('Model governance', message),
+              if (sectionErrors['Model governance'] != null)
+                _sectionError(
+                  'Model governance',
+                  sectionErrors['Model governance']!,
+                ),
               if (registry.isNotEmpty)
                 _card('Candidate & promoted model registry', registry),
-              if (sectionErrors['Candidate & promoted model registry']
-                  case final message?)
-                _sectionError('Candidate & promoted model registry', message),
+              if (sectionErrors['Candidate & promoted model registry'] != null)
+                _sectionError(
+                  'Candidate & promoted model registry',
+                  sectionErrors['Candidate & promoted model registry']!,
+                ),
               if (props.isNotEmpty) _card('Player prop capabilities', props),
-              if (sectionErrors['Player prop capabilities'] case final message?)
-                _sectionError('Player prop capabilities', message),
+              if (sectionErrors['Player prop capabilities'] != null)
+                _sectionError(
+                  'Player prop capabilities',
+                  sectionErrors['Player prop capabilities']!,
+                ),
             ],
           ),
         ),
