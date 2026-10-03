@@ -5,7 +5,6 @@ import '../services/api.dart';
 import '../widgets/game_card.dart';
 import 'game_detail.dart';
 import 'settings.dart';
-import 'system_status.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -371,8 +370,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(err!, style: const TextStyle(color: Colors.red)),
                       const SizedBox(height: 8),
                       const Text(
-                        'If this is a backend connection error, open the gear icon '
-                        'and set the Python API URL.',
+                        'If this is a backend connection error, open Settings '
+                        'and verify the Python API URL.',
                       ),
                     ],
                   ),
@@ -382,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 6),
                 child: Text(
-                  "$sport today's games",
+                  _tabIndex == 1 ? '$sport picks' : "$sport today's games",
                   style: Theme.of(c).textTheme.headlineSmall,
                 ),
               ),
