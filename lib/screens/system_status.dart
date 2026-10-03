@@ -20,6 +20,7 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
   Map<String, dynamic> models = const {};
   Map<String, dynamic> registry = const {};
   Map<String, dynamic> props = const {};
+  final Map<String, String> sectionErrors = {};
 
   @override
   void initState() {
@@ -28,31 +29,57 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       busy = true;
       error = null;
+      sectionErrors.clear();
     });
-    try {
-      final results = await Future.wait([
-        api.health(),
-        api.systemStatus(),
-        api.modelStatus(),
-        api.modelRegistry(),
-        api.propCapabilities(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        health = results[0];
-        system = results[1];
-        models = results[2];
-        registry = results[3];
-        props = results[4];
-      });
-    } catch (e) {
-      if (mounted) setState(() => error = '$e');
-    } finally {
-      if (mounted) setState(() => busy = false);
+
+    Future<void> loadSection(
+      String key,
+      Future<Map<String, dynamic>> Function() loader,
+      void Function(Map<String, dynamic>) assign,
+    ) async {
+      try {
+        final value = await loader();
+        if (!mounted) return;
+        setState(() {
+          assign(value);
+          sectionErrors.remove(key);
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          sectionErrors[key] = '$e';
+        });
+      }
     }
+
+    await Future.wait([
+      loadSection('Backend health', api.health, (value) => health = value),
+      loadSection('Production gates', api.systemStatus, (value) => system = value),
+      loadSection('Model governance', api.modelStatus, (value) => models = value),
+      loadSection(
+        'Candidate & promoted model registry',
+        api.modelRegistry,
+        (value) => registry = value,
+      ),
+      loadSection(
+        'Player prop capabilities',
+        api.propCapabilities,
+        (value) => props = value,
+      ),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      busy = false;
+      if (sectionErrors.length == 5) {
+        error =
+            'All status endpoints are unavailable. Pull to retry or verify the backend URL.';
+      }
+    });
   }
 
   dynamic _redact(dynamic value) {
@@ -76,6 +103,25 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
     }
     if (value is List) return value.map(_redact).toList();
     return value;
+  }
+
+  Widget _sectionError(String title, String message) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(
+              'Unavailable: $message',
+              style: const TextStyle(color: Colors.redAccent),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _card(String title, Map<String, dynamic> data) {
@@ -124,13 +170,23 @@ class _SystemStatusScreenState extends State<SystemStatusScreen> {
                     child: Text(error!, style: const TextStyle(color: Colors.red)),
                   ),
                 ),
-              if (!busy && error == null) ...[
-                _card('Backend health', health),
-                _card('Production gates', system),
-                _card('Model governance', models),
+              if (health.isNotEmpty) _card('Backend health', health),
+              if (sectionErrors['Backend health'] case final message?)
+                _sectionError('Backend health', message),
+              if (system.isNotEmpty) _card('Production gates', system),
+              if (sectionErrors['Production gates'] case final message?)
+                _sectionError('Production gates', message),
+              if (models.isNotEmpty) _card('Model governance', models),
+              if (sectionErrors['Model governance'] case final message?)
+                _sectionError('Model governance', message),
+              if (registry.isNotEmpty)
                 _card('Candidate & promoted model registry', registry),
-                _card('Player prop capabilities', props),
-              ],
+              if (sectionErrors['Candidate & promoted model registry']
+                  case final message?)
+                _sectionError('Candidate & promoted model registry', message),
+              if (props.isNotEmpty) _card('Player prop capabilities', props),
+              if (sectionErrors['Player prop capabilities'] case final message?)
+                _sectionError('Player prop capabilities', message),
             ],
           ),
         ),
