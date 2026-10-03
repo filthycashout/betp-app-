@@ -1,0 +1,104 @@
+{
+  "checked_at": "2026-10-03T18:15:29.536877+00:00",
+  "backend_version": "1.5.5",
+  "scope": "Local backend routes making real public-provider requests; not deployed-backend verification.",
+  "passed": true,
+  "checks": [
+    {
+      "path": "/v1/context/weather?lat=32.7073&lon=-117.1566",
+      "http_status": 200,
+      "available": true,
+      "provider": "NWS",
+      "retrieved_at": "2026-10-03T18:15:29.533645+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "provider_issued_at": "2026-10-03T07:59:25+00:00",
+      "valid_from": "2026-10-03T18:00:00+00:00",
+      "valid_until": "2026-10-03T19:00:00+00:00",
+      "temperature_c": 36.0,
+      "wind_kmh_max": 5.0,
+      "precipitation_probability_pct": 0.0,
+      "passed": true
+    },
+    {
+      "path": "/v1/context/news/NFL?limit=3",
+      "http_status": 200,
+      "available": true,
+      "provider": "ESPN",
+      "retrieved_at": "2026-10-03T18:15:29.065090+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "article_count": 3,
+      "publication_times": [
+        "2026-10-03T16:55:57+00:00",
+        "2026-10-03T16:51:12+00:00",
+        "2026-10-03T14:35:29+00:00"
+      ],
+      "passed": true
+    },
+    {
+      "path": "/v1/context/news/NBA?limit=3",
+      "http_status": 200,
+      "available": true,
+      "provider": "ESPN",
+      "retrieved_at": "2026-10-03T18:15:29.101023+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "article_count": 3,
+      "publication_times": [
+        "2026-10-03T04:46:35+00:00",
+        "2026-10-03T02:37:52+00:00",
+        "2026-10-03T02:33:07+00:00"
+      ],
+      "passed": true
+    },
+    {
+      "path": "/v1/context/news/MLB?limit=3",
+      "http_status": 200,
+      "available": true,
+      "provider": "ESPN",
+      "retrieved_at": "2026-10-03T18:15:29.311045+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "article_count": 3,
+      "publication_times": [
+        "2026-10-03T18:10:11+00:00",
+        "2026-10-03T16:58:04+00:00",
+        "2026-10-03T16:45:50+00:00"
+      ],
+      "passed": true
+    },
+    {
+      "path": "/v1/context/news/NHL?limit=3",
+      "http_status": 200,
+      "available": true,
+      "provider": "ESPN",
+      "retrieved_at": "2026-10-03T18:15:29.143111+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "article_count": 3,
+      "publication_times": [
+        "2026-10-03T17:48:26+00:00",
+        "2026-10-03T17:16:53+00:00",
+        "2026-10-03T05:08:06+00:00"
+      ],
+      "passed": true
+    },
+    {
+      "path": "/v1/context/weather?lat=51.5&lon=-0.1&provider=open_meteo",
+      "http_status": 200,
+      "available": true,
+      "provider": "Open-Meteo",
+      "retrieved_at": "2026-10-03T18:15:29.363196+00:00",
+      "reason": null,
+      "context_used_in_prediction": false,
+      "provider_issued_at": null,
+      "valid_from": "2026-10-03T18:00:00+00:00",
+      "valid_until": "2026-10-03T19:00:00+00:00",
+      "temperature_c": 17.9,
+      "wind_kmh_max": 6.1,
+      "precipitation_probability_pct": 8.0,
+      "passed": true
+    }
+  ]
+}

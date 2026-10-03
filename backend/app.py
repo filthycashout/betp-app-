@@ -18,6 +18,7 @@ from keyless_sportsbook import (
     keyless_prop_events,
     keyless_sportsbook_status,
 )
+from public_context import game_weather_context, sports_news, weather_context
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -36,7 +37,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.5.5"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -813,10 +814,12 @@ def _espn_schedule(sport: str, date_yyyymmdd: str) -> list[dict]:
     return out
 
 def _mlb_schedule(date_iso: str) -> list[dict]:
-    raw = _json("https://statsapi.mlb.com/api/v1/schedule", params={"sportId": 1, "date": date_iso, "hydrate": "probablePitcher,team"})
+    raw = _json("https://statsapi.mlb.com/api/v1/schedule", params={"sportId": 1, "date": date_iso, "hydrate": "probablePitcher,team,venue(location,fieldInfo)"})
     out = []
     for day in raw.get("dates", []):
         for g in day.get("games", []):
+            venue = g.get("venue") or {}
+            coordinates = (venue.get("location") or {}).get("defaultCoordinates") or {}
             out.append({
                 "event_id": str(g.get("gamePk")), "sport": "MLB", "event_time": g.get("gameDate"),
                 "home": g["teams"]["home"]["team"]["name"], "away": g["teams"]["away"]["team"]["name"],
@@ -824,6 +827,12 @@ def _mlb_schedule(date_iso: str) -> list[dict]:
                 "away_record_pct": _record_pct_mapping(g["teams"]["away"].get("leagueRecord") or {}),
                 "home_probable_pitcher": g["teams"]["home"].get("probablePitcher", {}).get("fullName"),
                 "away_probable_pitcher": g["teams"]["away"].get("probablePitcher", {}).get("fullName"),
+                "venue": {
+                    "name": venue.get("name"), "latitude": coordinates.get("latitude"),
+                    "longitude": coordinates.get("longitude"),
+                    "outdoor": str((venue.get("fieldInfo") or {}).get("roofType") or "").lower() == "open",
+                    "source": "MLB StatsAPI venue",
+                },
                 "status": g.get("status", {}).get("detailedState", ""), "schedule_source": "MLB StatsAPI",
             })
     return out
@@ -1970,6 +1979,39 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                 games.append(item)
     return {"query": q, "date": d.isoformat(), "sports": selected, "fresh_fetch": True, "games": games, "source_telemetry": _SOURCE}
 
+@app.get("/api/v1/data/providers", include_in_schema=False)
+@app.get("/v1/data/providers")
+def data_providers():
+    inventory = json.loads((Path(__file__).parent / "public_api_review.json").read_text())
+    inventory["backend_version"] = APP_VERSION
+    inventory["runtime"] = {
+        "weather_default": "NWS",
+        "open_meteo_noncommercial_enabled": os.getenv("OPEN_METEO_ACCESS", "disabled").lower() == "noncommercial",
+        "primary_odds_ready": _primary_prop_provider_ready(),
+        "context_used_in_prediction": False,
+    }
+    return inventory
+
+
+@app.get("/api/v1/context/weather", include_in_schema=False)
+@app.get("/v1/context/weather")
+def weather(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180),
+            at: str | None = None, provider: str = "nws"):
+    try:
+        return weather_context(lat, lon, at, provider)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@app.get("/api/v1/context/news/{sport}", include_in_schema=False)
+@app.get("/v1/context/news/{sport}")
+def news(sport: str, limit: int = Query(5, ge=1, le=20)):
+    try:
+        return sports_news(sport.upper(), limit)
+    except ValueError:
+        raise HTTPException(404, "unsupported sport") from None
+
+
 @app.get("/api/live/sources", include_in_schema=False)
 @app.get("/api/v1/live/sources", include_in_schema=False)
 @app.get("/v1/live/sources")
@@ -2671,6 +2713,15 @@ def game_detail(sport: str, event_id: str, date: str | None = None):
             str(fallback.get("note") or "Fallback input uses completed games before the matchup date only.")
         )
     reasons.append(game.get("prediction_reasoning") or "No governed probability explanation is available.")
+
+    weather_info = game_weather_context(game)
+    game["weather_context"] = weather_info
+    if weather_info.get("available"):
+        reasons.append(
+            f"Venue forecast from {weather_info['provider']}: "
+            f"{weather_info['temperature_c']:g} °C at game time. "
+            "Weather is context only and has not changed this prediction."
+        )
 
     game["score_prediction"] = {
         "home": score.get("home"),
