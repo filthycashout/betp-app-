@@ -21,6 +21,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, List<GameSummary>> nextGamesBySport = {};
   bool busy = true;
   String? err;
+  String _selectedSport = 'NFL';
+  int _tabIndex = 0;
+
+  static const _accent = Color(0xFF78D8C3);
+  static const _selectedSurface = Color(0xFF355149);
 
   @override
   void initState() {
@@ -174,6 +179,82 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+
+  IconData _sportIcon(String sport) {
+    switch (sport) {
+      case 'NFL':
+        return Icons.sports_football_rounded;
+      case 'NBA':
+        return Icons.sports_basketball_rounded;
+      case 'MLB':
+        return Icons.sports_baseball_rounded;
+      case 'NHL':
+        return Icons.sports_hockey_rounded;
+      default:
+        return Icons.sports;
+    }
+  }
+
+  Widget _sportSelector() {
+    const sports = ['NFL', 'NBA', 'MLB', 'NHL'];
+    return Row(
+      children: [
+        for (var i = 0; i < sports.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: SizedBox(
+              height: 62,
+              child: OutlinedButton(
+                onPressed: () => setState(() => _selectedSport = sports[i]),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _selectedSport == sports[i]
+                      ? Colors.white
+                      : const Color(0xFFD9DEDB),
+                  backgroundColor: _selectedSport == sports[i]
+                      ? _selectedSurface
+                      : const Color(0xFF101612),
+                  side: BorderSide(
+                    color: _selectedSport == sports[i]
+                        ? _selectedSurface
+                        : const Color(0xFF53605A),
+                    width: 1.2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _sportIcon(sports[i]),
+                        color: _selectedSport == sports[i]
+                            ? const Color(0xFFE8F4F0)
+                            : _accent,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        sports[i],
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext c) {
     final groups = <String, List<GameSummary>>{};
@@ -182,24 +263,42 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0B100C),
       appBar: AppBar(
-        title: const Text('PhilthyParleys'),
-        actions: [
-          IconButton(
-            tooltip: 'System & model status',
-            icon: const Icon(Icons.verified_user_outlined),
-            onPressed: () => Navigator.push(
-              c,
-              MaterialPageRoute(builder: (_) => const SystemStatusScreen()),
-            ),
+        toolbarHeight: 76,
+        backgroundColor: const Color(0xFF07110D),
+        surfaceTintColor: Colors.transparent,
+        leadingWidth: 72,
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 18),
+          child: Icon(
+            Icons.auto_graph_rounded,
+            size: 38,
+            color: Color(0xFFF0F4F1),
           ),
-          IconButton(
-            tooltip: 'Backend settings',
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.push(
-              c,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ).then((_) => _loadToday()),
+        ),
+        titleSpacing: 4,
+        title: const Text(
+          'PhilthySports',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 18),
+            child: Center(
+              child: Text(
+                _selectedSport,
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -208,6 +307,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
+            _sportSelector(),
+            const SizedBox(height: 16),
             TextField(
               controller: ctl,
               textInputAction: TextInputAction.search,
@@ -215,6 +316,9 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText: 'Search team, matchup, date, or sport',
+                filled: true,
+                fillColor: const Color(0xFF0E130F),
+                contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward),
                   onPressed: _search,
@@ -223,7 +327,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Card(
+            if (_tabIndex == 2)
+              Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -273,7 +378,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-            for (final sport in const ['NFL', 'NBA', 'MLB', 'NHL']) ...[
+            for (final sport in [_selectedSport]) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 6),
                 child: Text(
@@ -314,6 +419,50 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ],
         ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tabIndex,
+        height: 78,
+        backgroundColor: const Color(0xFF111713),
+        indicatorColor: _selectedSurface,
+        surfaceTintColor: Colors.transparent,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        onDestinationSelected: (value) async {
+          if (value == 3) {
+            await Navigator.push(
+              c,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            );
+            if (mounted) {
+              setState(() => _tabIndex = 0);
+              _loadToday();
+            }
+            return;
+          }
+          setState(() => _tabIndex = value);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.sports_score_outlined),
+            selectedIcon: Icon(Icons.sports_score_rounded),
+            label: 'Live',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_graph_outlined),
+            selectedIcon: Icon(Icons.auto_graph_rounded),
+            label: 'Picks',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.format_list_numbered_outlined),
+            selectedIcon: Icon(Icons.format_list_numbered_rounded),
+            label: 'Parlay',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+        ],
       ),
     );
   }
