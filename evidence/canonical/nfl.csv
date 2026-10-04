@@ -1,1 +1,2 @@
 sport,event_id,event_time,as_of,home_team,away_team,target_home_win,label_available_at,market_home_probability,consensus_de_vig_home_probability,home_spread,consensus_total
+NFL,401872965,2026-10-04T13:30:00+00:00,2026-10-04T12:23:22.575389+00:00,Washington Commanders,Indianapolis Colts,0,2026-10-04T17:34:57.339605+00:00,0.3418803418803419,0.3418803418803419,5.0,46.5
