@@ -1,7 +1,7 @@
 name: philthysports
 description: PhilthyParleys matchup search engine for NFL, NBA, MLB, and NHL.
 publish_to: "none"
-version: 1.6.0+22
+version: 1.6.1+23
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:

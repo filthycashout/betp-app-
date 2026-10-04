@@ -1,7 +1,7 @@
 # PhilthyParleys
 
 PhilthyParleys is the renamed PhilthySports Android client for NFL, NBA, MLB and NHL.
-Version **1.5.2+19** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
+Version **1.6.1+23** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
 
 - Search team, matchup, date or sport; view today's NFL/NBA/MLB/NHL games plus verified next scheduled games for idle leagues; review available moneyline/spread/total markets and player props; and build 7/10/14-leg manual-review multisport parlay cards when sufficient eligible markets exist.
 - The client validates a candidate HTTPS backend before saving it, checks service identity, and retries temporary gateway/network failures with a finite budget.
@@ -11,7 +11,7 @@ Version **1.5.2+19** preserves package ID `com.philthysports.philthysports` and 
 - Training retains prior settled labels, records result availability, verifies capture hashes and excludes unavailable results from chronological folds and holdout training.
 - No trained model replaces the market baseline until strict per-sport evaluation and signature checks pass. A baseline needs usable current market data; it does not guarantee prices exist for every game.
 
-Backend: https://philthysports-powerhouse-v8.onrender.com
+Backend: https://philthysports-api-v9.onrender.com
 
 
 ## Keyless live-data gateway
@@ -60,7 +60,7 @@ When the primary odds credential is unavailable or not rotation-confirmed, the b
 The 7/10/14-leg multisport builder scans its full horizon before stopping for candidate count, represents every sport that has an eligible candidate in that horizon, deliberately reserves room for player props, preserves the actual sportsbook evidence on prop legs, and never invents a joint hit probability without a validated dependence model.
 
 
-## Android 1.6.0 — bundled dashboard
+## Android 1.6.1 — bundled dashboard
 
 The Android app now bundles the same React dashboard as the PhilthySports Site. It opens from local assets without a Sites login. Android performs allowlisted HTTPS GET requests for the score feeds and the existing Powerhouse backend; no provider secret or arbitrary network proxy is exposed. The stable package/signing identity is preserved.
 

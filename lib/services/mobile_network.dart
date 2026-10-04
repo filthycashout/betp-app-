@@ -14,7 +14,7 @@ class MobileNetwork {
         return uri.path == '/api/v1/schedule';
       case 'api-web.nhle.com':
         return RegExp(r'^/v1/score/\d{4}-\d{2}-\d{2}$').hasMatch(uri.path);
-      case 'philthysports-powerhouse-v8.onrender.com':
+      case 'philthysports-api-v9.onrender.com':
         return const ['/health','/v1/system/status','/v1/models/status','/v1/data/providers','/v1/search','/v1/parlays/multisport'].contains(uri.path) ||
             RegExp(r'^/v1/games/(NFL|NBA|MLB|NHL)/\d{1,20}(/props)?$').hasMatch(uri.path);
       default: return false;

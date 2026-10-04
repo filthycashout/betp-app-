@@ -91,9 +91,19 @@ jobs:
           AUDIENCE="philthysports-ci"
           OIDC_JSON="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
           OIDC_TOKEN="$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"$OIDC_JSON")"
-          SIGNING_JSON="$(curl -fsS --retry 8 --retry-all-errors --retry-delay 2 \
-            -H "Authorization: Bearer $OIDC_TOKEN" \
-            https://philthysports-powerhouse-v8.onrender.com/v1/ci/android-signing-material)"
+          SIGNING_JSON=""
+          for SIGNING_BASE in \
+            https://philthysports-api-v9.onrender.com \
+            https://philthysports-powerhouse-v8.onrender.com
+          do
+            if CANDIDATE="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              "$SIGNING_BASE/v1/ci/android-signing-material")"; then
+              SIGNING_JSON="$CANDIDATE"
+              break
+            fi
+          done
+          test -n "$SIGNING_JSON"
           SIGNING_PATH="$RUNNER_TEMP/philthysports-signing.json"
           umask 077
           printf '%s' "$SIGNING_JSON" > "$SIGNING_PATH"
@@ -170,6 +180,18 @@ jobs:
               raise SystemExit("No Android app Gradle file found")
           PY
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package.json
+
+      - name: Rebuild bundled dashboard for current backend
+        working-directory: mobile_dashboard
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
       - name: Flutter dependencies
         run: flutter pub get
 
@@ -182,7 +204,7 @@ jobs:
       - name: Build release APK against Powerhouse
         run: >-
           flutter build apk --release
-          --dart-define=PHILTHY_API_BASE_URL=https://philthysports-powerhouse-v8.onrender.com
+          --dart-define=PHILTHY_API_BASE_URL=https://philthysports-api-v9.onrender.com
 
       - name: Verify stable APK signature identity
         shell: bash
