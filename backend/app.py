@@ -189,6 +189,7 @@ MODEL_BUNDLE_PATH = Path(__file__).resolve().parent / "models" / "manifest.json"
 DRIVE_RECONSTRUCTION_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_manifest.json"
 DRIVE_RECONSTRUCTION_ADDENDUM_PATH = Path(__file__).resolve().parent / "training" / "drive_reconstruction_addendum_2026-10-02.json"
 CANDIDATE_REGISTRY_PATH = Path(__file__).resolve().parent / "models" / "candidate_registry.json"
+V8_GATE_STATUS_PATH = Path(__file__).resolve().parent / "evidence" / "v8_gate_status.json"
 
 def _load_model_registry() -> dict[str, dict[str, Any]]:
     manifest = json.loads(MODEL_BUNDLE_PATH.read_text())
@@ -239,6 +240,19 @@ def _load_candidate_registry() -> dict[str, Any]:
 
 
 CANDIDATE_REGISTRY = _load_candidate_registry()
+
+
+def _load_v8_gate_status() -> dict[str, Any]:
+    if not V8_GATE_STATUS_PATH.exists():
+        return {"schema_version": 1, "evidence_capture": {"verified": False}}
+    try:
+        payload = json.loads(V8_GATE_STATUS_PATH.read_text())
+        return payload if isinstance(payload, dict) else {"schema_version": 1, "evidence_capture": {"verified": False}}
+    except (OSError, ValueError, TypeError):
+        return {"schema_version": 1, "evidence_capture": {"verified": False}}
+
+
+V8_GATE_STATUS = _load_v8_gate_status()
 
 PROMOTION_ECE_MAX = 0.01
 
@@ -2073,7 +2087,7 @@ def root():
         "health": "/health",
         "system_status": "/v1/system/status",
         "models_status": "/v1/models/status",
-        "multisport_parlays": "/v1/parlays/multisport?legs=7",
+        "best_three_leg_parlays": "/v1/parlays/best3",
     }
 
 @app.head("/")
@@ -2166,6 +2180,15 @@ def system_status():
         for g in gates.values()
     )
     promotion_pass = all(g["passed"] for g in gates.values())
+    capture = V8_GATE_STATUS.get("evidence_capture") or {}
+    capture_verified = (
+        capture.get("verified") is True
+        and capture.get("workflow_conclusion") == "success"
+        and capture.get("branch") == "evidence-snapshots"
+        and bool(capture.get("captured_at_utc"))
+        and bool(capture.get("canonical_rows"))
+        and bool(capture.get("canonical_sha256"))
+    )
 
     remaining = [
         "physical Android-device end-to-end smoke testing",
@@ -2189,7 +2212,15 @@ def system_status():
             "credential_core_keyless": "PASS",
             "credential_live_odds_props": "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
             "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE",
-            "immutable_pregame_evidence_capture": "CONFIGURED_LAST_RUN_VERIFICATION_REQUIRED",
+            "immutable_pregame_evidence_capture": (
+                "PASS_VERIFIED_CHECKSUMMED_HISTORY"
+                if capture_verified
+                else "CONFIGURED_LAST_RUN_VERIFICATION_REQUIRED"
+            ),
+        },
+        "evidence_capture_gate": {
+            **capture,
+            "verified_by_runtime_manifest": capture_verified,
         },
         "credential_gate": {
             "core_runtime_requires_secret": False,
@@ -2200,7 +2231,7 @@ def system_status():
             "live_canary_evidence_verified": False,
         },
         "production_ready": False,
-        "production_ready_reason": "The backend has HTTPS, pinned Android signing, four-sport adapters, and a configured pregame evidence workflow. Its latest capture result must be verified in GitHub. Production-ready remains blocked until four sport-specific trained models pass every v8 promotion gate, live provider canaries and credential revocation are evidenced, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
+        "production_ready_reason": "The backend has HTTPS, pinned Android signing, four-sport adapters, and a verified checksummed pregame evidence history. Production-ready remains blocked until four sport-specific trained models accumulate sufficient resolved samples and pass every v8 promotion gate, live provider canaries and credential revocation are evidenced, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
         "drive_reconstruction": {sport: (DRIVE_RECONSTRUCTION.get("sports") or {}).get(sport, {}).get("status", "NO_EVIDENCE") for sport in SPORTS},
@@ -4066,7 +4097,7 @@ def _build_multisport_parlay(
 @app.get("/api/v1/parlays/multisport", include_in_schema=False)
 @app.get("/v1/parlays/multisport")
 def multisport_parlays(legs: int = Query(7), date: str | None = None):
-    try:
-        return _build_multisport_parlay(int(legs), date)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+    raise HTTPException(
+        410,
+        "Legacy 7/10/14-leg cards were removed. Use /v1/parlays/best3 for two three-leg parlays per sport.",
+    )
