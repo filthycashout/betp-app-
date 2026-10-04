@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "verified_at_utc": "2026-10-04T17:35:01Z",
+  "evidence_capture": {
+    "verified": true,
+    "workflow_name": "PhilthySports v8 Evidence Capture",
+    "workflow_run_id": 37221041798,
+    "workflow_conclusion": "success",
+    "captured_at_utc": "2026-10-04T17:34:57Z",
+    "branch": "evidence-snapshots",
+    "workflow_source_commit": "485b235c160a12605869e4ed85ca12b86c185a92",
+    "secrets_embedded": false,
+    "canonical_rows": {
+      "NFL": 1,
+      "NBA": 0,
+      "MLB": 4,
+      "NHL": 13
+    },
+    "canonical_sha256": {
+      "NFL": "e2b8803b3b4ab2237f5f08b146da5b4d51a83917ca4c5d559c021600111e7ad7",
+      "NBA": "530ac5dd2c7cb4071dff6730655104fa163beaa7eb26068abf4308f23f1ac77c",
+      "MLB": "d26ebe6a237dd20ac8f2b5a87a08374dc100e09a2652d9c47f894ebb66295224",
+      "NHL": "0bf179f52d1a0bfccebc7883f5ef7f9aa45c377cc1810ee2c981b61dd24d79dd"
+    },
+    "pregame_source_manifest_sha256": "3c64223e7da4fb14fa162bc3332b4ad2ae19e31377727864444c53ea8c8cd8c5",
+    "chronology_contract": "as_of < event_time",
+    "promotion_ready": false,
+    "note": "Capture and settlement history are verified and checksummed. Row counts remain below strict v8 promotion thresholds."
+  },
+  "gate_assessment": {
+    "chronology": "IMPLEMENTED_CAPTURE_VERIFIED_PROMOTION_SAMPLE_INSUFFICIENT",
+    "calibration": "IMPLEMENTED_OOF_ONLY_EVIDENCE_INSUFFICIENT",
+    "leakage": "IMPLEMENTED_FAIL_CLOSED_PROMOTION_EVIDENCE_INSUFFICIENT",
+    "provenance": "CAPTURE_HASHES_VERIFIED_PROMOTED_MODEL_PROVENANCE_MISSING",
+    "four_sport_model_promotion": "BLOCKED_SAMPLE_SUFFICIENCY",
+    "credential_core_keyless": "PASS",
+    "credential_live_odds_props": "PRIMARY_ROTATED_KEY_AND_LIVE_CANARY_EVIDENCE_REQUIRED",
+    "stable_android_signing": "PASS",
+    "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY"
+  },
+  "sample_policy": {
+    "NFL": {
+      "minimum_total_rows": 1200,
+      "minimum_oof_rows": 600,
+      "minimum_holdout_rows": 240
+    },
+    "NBA": {
+      "minimum_total_rows": 2500,
+      "minimum_oof_rows": 1200,
+      "minimum_holdout_rows": 500
+    },
+    "MLB": {
+      "minimum_total_rows": 4000,
+      "minimum_oof_rows": 2000,
+      "minimum_holdout_rows": 800
+    },
+    "NHL": {
+      "minimum_total_rows": 2500,
+      "minimum_oof_rows": 1200,
+      "minimum_holdout_rows": 500
+    }
+  },
+  "android_signing": {
+    "verified": true,
+    "apk_version": "1.6.3",
+    "build": 26,
+    "apk_sha256": "b807192965729d85a2dcf9520c0b3a069683c421c039d6777f8d9acafe0eb619",
+    "signature_scheme": "v2",
+    "note": "Latest APK package/signature verification passed against the pinned release-signing path."
+  }
+}
