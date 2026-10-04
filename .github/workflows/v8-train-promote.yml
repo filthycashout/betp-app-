@@ -9,7 +9,7 @@ on:
       - "backend/model_runtime.py"
       - "backend/ci_security.py"
   schedule:
-    - cron: "43 10 * * *"
+    - cron: "43 * * * *"
   workflow_dispatch:
 
 permissions:
