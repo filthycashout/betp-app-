@@ -154,35 +154,54 @@ def main() -> None:
     assert generated["spread"]["pick"] in {"Test Home", "Test Away"}
     assert generated["total"]["pick"] in {"OVER", "UNDER"}
 
-    original_search = backend._search
-    original_props_for_game = backend._props_for_game
+    original_board_for_date = backend._board_for_date
     try:
-        backend._search = lambda *args, **kwargs: _fake_games()
-        backend._props_for_game = lambda *args, **kwargs: {"props": []}
-        p7 = backend._build_multisport_parlay(7, "2026-10-02")
-        p10 = backend._build_multisport_parlay(10, "2026-10-02")
-        p14 = backend._build_multisport_parlay(14, "2026-10-02")
-        assert p7["actual_legs"] == 7 and p7["multisport"]
-        assert p10["actual_legs"] == 10 and p10["multisport"]
-        assert p14["actual_legs"] == 14 and p14["multisport"]
-        assert p14["estimated_joint_probability"] is None
-        assert p14["dependency_method"] == "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL"
-        assert all(leg.get("reason") for leg in p14["legs"])
-        assert {"moneyline", "spread", "total"}.issubset(
-            {leg["type"] for leg in p14["legs"]}
-        )
-        assert p7["card_id"] != p10["card_id"] != p14["card_id"]
-        assert p7["selection_profile"] != p10["selection_profile"]
-        assert p10["selection_profile"] != p14["selection_profile"]
-    finally:
-        backend._search = original_search
-        backend._props_for_game = original_props_for_game
+        def fake_board(_date):
+            game_candidates = []
+            prop_candidates = []
+            for sport_index, sport in enumerate(backend.SPORTS):
+                for index in range(4):
+                    common = {
+                        "sport": sport,
+                        "event_id": f"{sport}-event-{index}",
+                        "event_time": f"2026-10-02T{12 + index:02d}:00:00Z",
+                        "matchup": f"{sport} Away {index} @ {sport} Home {index}",
+                        "best_available_book": "fixture_book",
+                        "best_available_price": -110 + index,
+                        "as_of": "2026-10-02T08:00:00Z",
+                        "reason": "Fixture carries explicit fresh-market evidence for contract testing.",
+                    }
+                    game_candidates.append({
+                        **common,
+                        "type": "moneyline",
+                        "label": f"{sport} GAME PICK {index}",
+                        "probability": 0.72 - (sport_index * 0.01) - (index * 0.01),
+                    })
+                    prop_candidates.append({
+                        **common,
+                        "event_id": f"{sport}-prop-event-{index}",
+                        "type": "player_prop",
+                        "label": f"{sport} PLAYER PROP {index}",
+                        "probability": 0.71 - (sport_index * 0.01) - (index * 0.01),
+                    })
+            return {
+                "game_candidates": game_candidates,
+                "prop_candidates": prop_candidates,
+            }
 
-    try:
-        backend._build_multisport_parlay(3, "2026-10-02")
-        raise AssertionError("invalid leg count did not fail")
-    except ValueError:
-        pass
+        backend._board_for_date = fake_board
+        best3 = backend._best_three_leg_parlays("2026-10-02")
+        assert best3["parlays_per_sport"] == 2
+        assert best3["legs_per_parlay"] == 3
+        assert len(best3["cards"]) == 8
+        for sport in backend.SPORTS:
+            cards = [card for card in best3["cards"] if card["sport"] == sport]
+            assert [card["rank"] for card in cards] == [1, 2]
+            assert all(card["status"] == "OK" for card in cards)
+            assert all(len(card["legs"]) == 3 for card in cards)
+            assert all(card["reasoning"] for card in cards)
+    finally:
+        backend._board_for_date = original_board_for_date
 
     print("PhilthySports backend selftest PASS")
 
