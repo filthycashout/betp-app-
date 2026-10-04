@@ -22,3 +22,44 @@ export function parlayPolicy(payload:Row,now=Date.now()):Row{
  if(legs.length===original.length)return{...payload,estimated_joint_probability:null};
  return{...payload,legs,actual_legs:legs.length,status:'INSUFFICIENT_VERIFIED_LEGS',estimated_joint_probability:null,dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',reasoning:['Only upcoming selections carrying a sportsbook price and a quote timestamp within 15 minutes are displayed.',`${original.length-legs.length} returned selections were withheld because their own freshness evidence was incomplete.`,'Joint probability is unavailable without validated cross-leg dependence.']};
 }
+
+
+function freshSelection(row:Row,now=Date.now()):boolean{
+ if(row?.available===false)return false;
+ const event=Date.parse(row?.event_time||'');
+ const quote=Date.parse(row?.as_of||'');
+ return Number.isFinite(event)&&event>now
+  &&probability(row?.probability)
+  &&Number.isFinite(quote)&&now-quote>=-60000&&now-quote<=15*60000
+  &&typeof row?.best_available_book==='string'&&row.best_available_book.length>0
+  &&typeof row?.best_available_price==='number'&&Number.isFinite(row.best_available_price);
+}
+function withheld(row:Row,reason:string):Row{
+ return{...row,available:false,label:'UNAVAILABLE — VERIFIED EVIDENCE REQUIRED',probability:null,best_available_book:null,best_available_price:null,reason};
+}
+export function best12Policy(payload:Row,now=Date.now()):Row{
+ const original=Array.isArray(payload.picks)?payload.picks:[];
+ const picks=original.map((row:Row)=>{
+  if(row?.available===false)return row;
+  return freshSelection(row,now)?row:withheld(row,'This selection was withheld because its own future-event, sportsbook price or quote-timestamp evidence did not pass the mobile freshness check.');
+ });
+ const available=picks.filter((row:Row)=>row.available===true).length;
+ return{...payload,picks,available_picks:available,status:available===12?'OK':'PARTIAL_VERIFIED_COVERAGE'};
+}
+export function best3Policy(payload:Row,now=Date.now()):Row{
+ const cards=(Array.isArray(payload.cards)?payload.cards:[]).map((card:Row)=>{
+  const original=Array.isArray(card.legs)?card.legs:[];
+  const legs=original.filter((row:Row)=>freshSelection(row,now));
+  return{...card,legs,status:legs.length===3?'OK':'INSUFFICIENT_VERIFIED_LEGS',estimated_joint_probability:null,dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL'};
+ });
+ return{...payload,cards,status:cards.length===8&&cards.every((c:Row)=>c.status==='OK')?'OK':'PARTIAL_VERIFIED_COVERAGE'};
+}
+export function best9Policy(payload:Row,now=Date.now()):Row{
+ const original=Array.isArray(payload.picks)?payload.picks:[];
+ const picks=original.map((row:Row)=>{
+  if(row?.available===false)return row;
+  return freshSelection(row,now)?row:withheld(row,'This game pick was withheld because its own sportsbook price or fresh quote timestamp did not pass the mobile evidence check.');
+ });
+ const available=picks.filter((row:Row)=>row.available===true).length;
+ return{...payload,picks,available_picks:available,status:available===9?'OK':'PARTIAL_VERIFIED_COVERAGE'};
+}
