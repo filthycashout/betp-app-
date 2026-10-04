@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 class MobileNetwork {
   static bool isAllowed(Uri uri) {
     if (uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
-        (uri.hasPort && uri.port != 443) || uri.fragment.isNotEmpty) return false;
+        (uri.hasPort && uri.port != 443) || uri.fragment.isNotEmpty) {
+      return false;
+    }
     switch (uri.host) {
       case 'site.api.espn.com':
         return RegExp(r'^/apis/site/v2/sports/(football/nfl|basketball/nba|baseball/mlb|hockey/nhl)/scoreboard$').hasMatch(uri.path);

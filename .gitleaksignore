@@ -1,0 +1,3 @@
+# False positive: the literal port and path 8443/api/v1/schedule in a negative
+# URL allowlist test. This is not a credential; only this historical finding is ignored.
+e1cf1eab5c48fa8d77d087466b453d9ac53df9c9:test/mobile_network_test.dart:generic-api-key:15
