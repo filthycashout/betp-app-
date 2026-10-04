@@ -54,7 +54,7 @@ class _MobileDashboardState extends State<MobileDashboard> {
       if(!_ready || _error!=null) Positioned.fill(child:ColoredBox(color:const Color(0xFF0C100F),child:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
         const Icon(Icons.bolt,color:Color(0xFF83E5CA),size:42),
         const SizedBox(height:16),
-        const Text('PhilthySports',style:TextStyle(fontSize:26,fontWeight:FontWeight.w700)),
+        const Text('PhilthyParleys',style:TextStyle(fontSize:26,fontWeight:FontWeight.w700)),
         const SizedBox(height:20),
         if(_error==null) const CircularProgressIndicator(color:Color(0xFF83E5CA)) else ...[
           Text(_error!),
