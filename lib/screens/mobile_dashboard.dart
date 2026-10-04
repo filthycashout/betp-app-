@@ -52,7 +52,10 @@ class _MobileDashboardState extends State<MobileDashboard> {
     child:Scaffold(backgroundColor:const Color(0xFF0C100F),body:SafeArea(child:Stack(children:[
       WebViewWidget(controller:_controller),
       if(!_ready || _error!=null) Positioned.fill(child:ColoredBox(color:const Color(0xFF0C100F),child:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
-        const Icon(Icons.bolt,color:Color(0xFF83E5CA),size:42),
+        ClipRRect(
+          borderRadius:BorderRadius.circular(18),
+          child:Image.asset('assets/dashboard/filthy-pickz-logo.jpg',width:220,fit:BoxFit.contain),
+        ),
         const SizedBox(height:16),
         const Text('PhilthyParleys',style:TextStyle(fontSize:26,fontWeight:FontWeight.w700)),
         const SizedBox(height:20),
