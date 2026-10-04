@@ -70,6 +70,7 @@ jobs:
         run: |
           flutter create --platforms=android --org com.philthysports --project-name philthysports .
           rm -f test/widget_test.dart
+          python ci/apply_android_branding.py
           python - <<'PY'
           from pathlib import Path
           p = Path('android/app/src/main/AndroidManifest.xml')
