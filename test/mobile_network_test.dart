@@ -6,13 +6,13 @@ void main() {
       'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=20261004',
       'https://statsapi.mlb.com/api/v1/schedule?sportId=1',
       'https://api-web.nhle.com/v1/score/2026-10-03',
-      'https://philthysports-powerhouse-v8.onrender.com/v1/games/NFL/401872965/props?date=2026-10-04',
+      'https://philthysports-api-v9.onrender.com/v1/games/NFL/401872965/props?date=2026-10-04',
     ]) {expect(MobileNetwork.isAllowed(Uri.parse(url)),isTrue);}
     for (final url in [
       'http://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard',
       'https://site.api.espn.com.attacker.test/apis/site/v2/sports/football/nfl/scoreboard',
       'https://user:pass@statsapi.mlb.com/api/v1/schedule',
-      'https://philthysports-powerhouse-v8.onrender.com/v1/ci/android-signing-material',
+      'https://philthysports-api-v9.onrender.com/v1/ci/android-signing-material',
       'file:///data/local/tmp/secret',
     ]) {expect(MobileNetwork.isAllowed(Uri.parse(url)),isFalse);}
     expect(MobileNetwork.isAllowed(Uri.parse('https://statsapi.mlb.com/api/v1/schedule').replace(port:8443)),isFalse);
