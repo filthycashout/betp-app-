@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleDot, CircleHelp, Clock3, Layers3, ListFilter, LoaderCircle, Radio, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Trophy, WifiOff, X } from 'lucide-react';
+import { Activity, ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleDot, CircleHelp, Clock3, Layers3, ListFilter, LoaderCircle, Radio, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Trophy, WifiOff, X, Zap } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
