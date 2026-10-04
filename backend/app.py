@@ -3100,16 +3100,24 @@ def _board_for_date(d: date_cls) -> dict[str, Any]:
     for game in games:
         game_candidates.extend(_game_market_candidates(game))
 
-    def pull_props(game: dict[str, Any]) -> list[dict[str, Any]]:
-        rows, _ = _available_props_for_game(game)
+    def pull_sport_props(sport: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        # Keep same-sport lookups sequential. The keyless adapter caches a league
+        # board after the first request, preventing a burst of duplicate upstream
+        # calls while still scanning every scheduled game.
+        for game in (g for g in games if g.get("sport") == sport):
+            found, _ = _available_props_for_game(game)
+            rows.extend(found)
         return rows
 
-    # Public sportsbook adapters cache per league. Concurrent game matching keeps
-    # the board responsive without inventing a result when a provider is missing.
     if games:
-        with ThreadPoolExecutor(max_workers=min(8, len(games))) as pool:
-            futures = [pool.submit(pull_props, game) for game in games]
-            for future in futures:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                sport: pool.submit(pull_sport_props, sport)
+                for sport in SPORTS
+                if any(g.get("sport") == sport for g in games)
+            }
+            for future in futures.values():
                 try:
                     prop_candidates.extend(future.result())
                 except Exception:
