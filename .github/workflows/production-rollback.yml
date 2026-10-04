@@ -1,0 +1,82 @@
+name: PhilthyParleys Audited Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Optional known-good main commit. Leave blank to use evidence/ops/last_known_good.json."
+        required: false
+        type: string
+      confirm:
+        description: "Type ROLLBACK to create a rollback pull request."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rollback-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve audited rollback target
+        id: target
+        env:
+          REQUESTED: ${{ inputs.target_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = "ROLLBACK" || { echo "Confirmation must equal ROLLBACK"; exit 2; }
+          git fetch origin evidence-snapshots
+          target="$(echo "$REQUESTED" | xargs)"
+          if [ -z "$target" ]; then
+            target="$(git show origin/evidence-snapshots:evidence/ops/last_known_good.json | python -c 'import json,sys; print(json.load(sys.stdin)["main_commit"])')"
+          fi
+          echo "$target" | grep -Eq '^[0-9a-f]{40}$' || { echo "Invalid target SHA"; exit 2; }
+          git cat-file -e "$target^{commit}"
+          git merge-base --is-ancestor "$target" HEAD || { echo "Target is not an ancestor of current main"; exit 2; }
+          test "$target" != "$(git rev-parse HEAD)" || { echo "Target is already current main"; exit 2; }
+          merges="$(git rev-list --merges "$target"..HEAD)"
+          test -z "$merges" || { echo "Rollback range contains merge commits and requires manual handling: $merges"; exit 2; }
+          echo "sha=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Build auditable revert commit
+        id: revert
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ steps.target.outputs.sha }}"
+          branch="rollback/${{ github.run_id }}"
+          git config user.name "philthysports-rollback-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git switch -c "$branch"
+          git revert --no-commit "$target"..HEAD
+          git commit -m "Rollback production source to state of $target"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Verify rollback candidate
+        run: |
+          python -m py_compile backend/app.py backend/model_runtime.py backend/training/evidence_pipeline.py backend/training/prediction_ledger.py
+          pip install -r backend/requirements.txt
+          cd backend
+          python -m pytest -q
+
+      - name: Push rollback branch
+        run: git push origin "${{ steps.revert.outputs.branch }}"
+
+      - name: Open rollback pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr create             --base main             --head "${{ steps.revert.outputs.branch }}"             --title "Audited rollback to ${{ steps.target.outputs.sha }}"             --body "Creates an auditable revert of commits after `${{ steps.target.outputs.sha }}`. CI passed on the rollback candidate. Merge only after reviewing the production-guard evidence."
