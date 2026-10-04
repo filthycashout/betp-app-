@@ -74,7 +74,7 @@ jobs:
           from pathlib import Path
           p = Path('android/app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          s = s.replace('android:label="philthysports"', 'android:label="PhilthySports"')
+          s = s.replace('android:label="philthysports"', 'android:label="PhilthyParleys"')
           permission = '<uses-permission android:name="android.permission.INTERNET"/>'
           if permission not in s:
               s = s.replace(
