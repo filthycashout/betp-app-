@@ -3089,16 +3089,47 @@ def _board_for_date(d: date_cls) -> dict[str, Any]:
     if cached and now - cached[0] <= _BEST_BOARD_TTL_SECONDS:
         return cached[1]
 
-    search = _search(date=key, include_props=False)
-    games = [
-        game
-        for game in search.get("games") or []
-        if _future_pregame(game)
-    ]
+    # The ranked board needs schedules + sportsbook evidence, not the heavier
+    # injury/live/recent-form bundle used by the matchup screen. Fetch these two
+    # sources per league in parallel so the board stays inside the mobile timeout.
+    schedules: dict[str, list[dict[str, Any]]] = {}
+    odds: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        schedule_jobs = {
+            sport: pool.submit(_schedule, sport, d)
+            for sport in SPORTS
+        }
+        odds_jobs = {
+            sport: pool.submit(_odds, sport, d)
+            for sport in SPORTS
+        }
+        for sport in SPORTS:
+            try:
+                schedules[sport] = schedule_jobs[sport].result()
+            except Exception:
+                schedules[sport] = []
+            try:
+                odds[sport] = odds_jobs[sport].result()
+            except Exception:
+                odds[sport] = []
+
+    games: list[dict[str, Any]] = []
     game_candidates: list[dict[str, Any]] = []
     prop_candidates: list[dict[str, Any]] = []
-    for game in games:
-        game_candidates.extend(_game_market_candidates(game))
+    for sport in SPORTS:
+        for scheduled in schedules[sport]:
+            game = {
+                **scheduled,
+                "date": key,
+                "event_time_pacific": _event_time_pacific(scheduled.get("event_time")),
+                "matchup": f"{scheduled.get('away')} @ {scheduled.get('home')}",
+                "market": _market(_match_odds(scheduled, odds[sport])),
+                "model_status": _runtime_mode_for(sport),
+            }
+            if not _future_pregame(game):
+                continue
+            games.append(game)
+            game_candidates.extend(_game_market_candidates(game))
 
     def pull_sport_props(sport: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -3141,7 +3172,6 @@ def _board_for_date(d: date_cls) -> dict[str, Any]:
     }
     _BEST_BOARD_CACHE[key] = (now, payload)
     return payload
-
 
 def _unavailable_pick(
     sport: str,
