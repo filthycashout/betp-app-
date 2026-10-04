@@ -1,0 +1,158 @@
+name: PhilthyParleys Production Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "lib/**"
+      - "mobile_dashboard/**"
+      - "ci/**"
+      - ".github/workflows/production-ops-guard.yml"
+  schedule:
+    - cron: "52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: philthyparleys-production-guard
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out production source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out immutable evidence history
+        uses: actions/checkout@v4
+        with:
+          ref: evidence-snapshots
+          path: evidence_checkout
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify evidence capture freshness
+        id: evidence
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          path=Path("evidence_checkout/evidence/run_metadata/latest.json")
+          if not path.exists():
+              raise SystemExit("evidence run metadata is missing")
+          data=json.loads(path.read_text())
+          captured=datetime.fromisoformat(data["captured_at_utc"].replace("Z","+00:00"))
+          age=(datetime.now(timezone.utc)-captured).total_seconds()
+          if age > 3*3600:
+              raise SystemExit(f"latest immutable evidence capture is stale: {age/3600:.2f} hours")
+          if data.get("branch") != "evidence-snapshots":
+              raise SystemExit("evidence metadata does not identify evidence-snapshots")
+          if data.get("secrets_embedded") is not False:
+              raise SystemExit("evidence metadata does not confirm secrets_embedded=false")
+          print(json.dumps({"captured_at_utc":data["captured_at_utc"],"age_seconds":age},indent=2))
+          PY
+
+      - name: Verify production backend
+        id: backend
+        continue-on-error: true
+        run: |
+          python backend/ops/production_guard.py \
+            --base-url https://philthysports-api-v9.onrender.com \
+            --output /tmp/production-guard.json
+
+      - name: Record current deployment as last known good
+        if: steps.evidence.outcome == 'success' && steps.backend.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence_checkout/evidence/ops
+          cp /tmp/production-guard.json evidence_checkout/evidence/ops/latest-production-guard.json
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          report=json.loads(Path("/tmp/production-guard.json").read_text())
+          out={
+            "schema_version":1,
+            "verified_at":datetime.now(timezone.utc).isoformat(),
+            "main_commit":os.environ["GITHUB_SHA"],
+            "backend":"https://philthysports-api-v9.onrender.com",
+            "api_version":report.get("api_version"),
+            "checks":report.get("checks"),
+          }
+          Path("evidence_checkout/evidence/ops/last_known_good.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n"
+          )
+          PY
+          git -C evidence_checkout config user.name "philthysports-ops-bot"
+          git -C evidence_checkout config user.email "actions@users.noreply.github.com"
+          git -C evidence_checkout add evidence/ops
+          if ! git -C evidence_checkout diff --cached --quiet; then
+            git -C evidence_checkout commit -m "Record last known good production commit ${GITHUB_SHA}"
+            git -C evidence_checkout push origin evidence-snapshots
+          fi
+
+      - name: Alert on production guard failure
+        if: steps.evidence.outcome != 'success' || steps.backend.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="PhilthyParleys production guard failure"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          body="$(cat <<EOF
+          Production guard failed for commit `${GITHUB_SHA}`.
+
+          Evidence freshness: **${{ steps.evidence.outcome }}**
+          Backend verification: **${{ steps.backend.outcome }}**
+
+          The last known-good rollback target is stored on the `evidence-snapshots` branch at:
+          `evidence/ops/last_known_good.json`.
+
+          No automatic rollback was performed. Use the audited rollback workflow after reviewing the failure.
+          EOF
+          )"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+      - name: Close recovered production alert
+        if: steps.evidence.outcome == 'success' && steps.backend.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          existing="$(gh issue list --state open --search "PhilthyParleys production guard failure in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Production guard recovered on commit ${GITHUB_SHA}."
+          fi
+
+      - name: Upload guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-guard-evidence
+          path: /tmp/production-guard.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Enforce production guard
+        if: steps.evidence.outcome != 'success' || steps.backend.outcome != 'success'
+        run: exit 1
