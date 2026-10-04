@@ -118,3 +118,6 @@
  .pick-evidence{grid-template-columns:repeat(3,minmax(0,1fr))}
  .reasoning-panel{padding:13px}
 }
+
+.brand-mark{overflow:hidden;padding:0;background:#0c100f;border:1px solid #6f806f}
+.brand-mark img{width:100%;height:100%;display:block;object-fit:cover;border-radius:7px}
