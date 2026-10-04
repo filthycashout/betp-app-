@@ -221,10 +221,17 @@ def parse_props(raw, sport, markets, now=None):
 def parse_game_market(event, now=None):
     """Use paired book prices at an actual offered line, never an average line."""
     now = now or datetime.now(timezone.utc)
-    out = dict.fromkeys(['home_probability','away_probability','home_spread','away_spread',
-                         'spread_home_probability','spread_away_probability','spread_pick',
-                         'spread_pick_probability','total','over_probability','under_probability',
-                         'total_pick','total_pick_probability'])
+    out = dict.fromkeys([
+        'home_probability', 'away_probability', 'moneyline_pick',
+        'moneyline_pick_probability', 'moneyline_best_price',
+        'moneyline_best_book', 'moneyline_last_update',
+        'home_spread', 'away_spread', 'spread_home_probability',
+        'spread_away_probability', 'spread_pick', 'spread_pick_probability',
+        'spread_best_price', 'spread_best_book', 'spread_last_update',
+        'total', 'over_probability', 'under_probability', 'total_pick',
+        'total_pick_probability', 'total_best_price', 'total_best_book',
+        'total_last_update', 'last_update',
+    ])
     out.update(
         books_used=[],
         freshness_verified=False,
@@ -234,60 +241,183 @@ def parse_game_market(event, now=None):
     )
     if not event:
         return out
-    start=utc_time(event.get('commence_time'))
+    start = utc_time(event.get('commence_time'))
     if not start or start <= now:
         return out
-    home,away=event.get('home_team'),event.get('away_team')
-    money=[];spreads={};totals={};books=set()
+
+    home, away = event.get('home_team'), event.get('away_team')
+    money = []
+    spreads = {}
+    totals = {}
+    books = set()
+    fresh_updates = []
+
     for book in event.get('bookmakers') or []:
+        book_name = book.get('key') or book.get('title') or 'unknown'
         for market in book.get('markets') or []:
-            provider_updated=utc_time(market.get('last_update') or book.get('last_update'))
-            observed=utc_time(market.get('observed_at') or book.get('observed_at'))
-            updated=provider_updated or observed
-            fresh=updated is not None and -30 <= (now-updated).total_seconds() <= MAX_QUOTE_AGE_SECONDS
+            provider_updated = utc_time(
+                market.get('last_update') or book.get('last_update')
+            )
+            observed = utc_time(
+                market.get('observed_at') or book.get('observed_at')
+            )
+            updated = provider_updated or observed
+            fresh = (
+                updated is not None
+                and -30 <= (now - updated).total_seconds() <= MAX_QUOTE_AGE_SECONDS
+            )
+            if fresh:
+                fresh_updates.append(updated)
             if fresh and provider_updated is not None:
-                out['provider_timestamp_verified']=True
+                out['provider_timestamp_verified'] = True
                 if 'provider_timestamp' not in out['freshness_basis']:
                     out['freshness_basis'].append('provider_timestamp')
             elif fresh and observed is not None:
-                out['observed_at_verified']=True
+                out['observed_at_verified'] = True
                 if 'fresh_fetch_observed_at' not in out['freshness_basis']:
                     out['freshness_basis'].append('fresh_fetch_observed_at')
-            outcomes=market.get('outcomes') or []
-            key=market.get('key')
-            names=(home,away) if key in {'h2h','spreads'} else ('Over','Under')
-            a=next((o for o in outcomes if o.get('name')==names[0]),None)
-            b=next((o for o in outcomes if o.get('name')==names[1]),None)
-            if not a or not b: continue
-            pa,pb=implied(a.get('price')),implied(b.get('price'))
-            probability=pa/(pa+pb) if fresh and pa is not None and pb is not None else None
-            if key=='h2h':
-                if len(outcomes)==2 and probability is not None:
-                    money.append(probability);books.add(book.get('key') or 'unknown')
+
+            outcomes = market.get('outcomes') or []
+            key = market.get('key')
+            names = (home, away) if key in {'h2h', 'spreads'} else ('Over', 'Under')
+            a = next((o for o in outcomes if o.get('name') == names[0]), None)
+            b = next((o for o in outcomes if o.get('name') == names[1]), None)
+            if not a or not b:
                 continue
-            if key not in {'spreads','totals'}:continue
-            point,other=number(a.get('point')),number(b.get('point'))
-            if point is None or other is None:continue
-            if (key=='spreads' and abs(point+other)>1e-8) or (key=='totals' and point!=other):continue
-            group=(spreads if key=='spreads' else totals).setdefault(point,{'quotes':0,'probs':[]})
-            group['quotes']+=1
-            if probability is not None:group['probs'].append(probability)
-            books.add(book.get('key') or 'unknown')
+
+            a_price = number(a.get('price'))
+            b_price = number(b.get('price'))
+            pa, pb = implied(a_price), implied(b_price)
+            probability = (
+                pa / (pa + pb)
+                if fresh and pa is not None and pb is not None
+                else None
+            )
+
+            if key == 'h2h':
+                if len(outcomes) == 2 and probability is not None:
+                    money.append({
+                        'probability': probability,
+                        'home_price': a_price,
+                        'away_price': b_price,
+                        'book': book_name,
+                        'updated': updated,
+                    })
+                    books.add(book_name)
+                continue
+
+            if key not in {'spreads', 'totals'}:
+                continue
+            point, other = number(a.get('point')), number(b.get('point'))
+            if point is None or other is None:
+                continue
+            if (
+                (key == 'spreads' and abs(point + other) > 1e-8)
+                or (key == 'totals' and point != other)
+            ):
+                continue
+
+            group = (spreads if key == 'spreads' else totals).setdefault(
+                point,
+                {'quotes': 0, 'probs': [], 'pairs': []},
+            )
+            group['quotes'] += 1
+            if probability is not None:
+                group['probs'].append(probability)
+                group['pairs'].append({
+                    'probability': probability,
+                    'first_price': a_price,
+                    'second_price': b_price,
+                    'book': book_name,
+                    'updated': updated,
+                })
+                books.add(book_name)
+
     if money:
-        out['home_probability']=mean(money);out['away_probability']=1-out['home_probability']
-    for groups,prefix in ((spreads,'spread'),(totals,'total')):
-        if not groups:continue
+        hp = mean(row['probability'] for row in money)
+        home_pick = hp >= 0.5
+        side_quotes = [
+            {
+                'price': row['home_price'] if home_pick else row['away_price'],
+                'book': row['book'],
+                'updated': row['updated'],
+            }
+            for row in money
+            if (row['home_price'] if home_pick else row['away_price']) is not None
+        ]
+        best = max(side_quotes, key=lambda row: row['price']) if side_quotes else None
+        out.update(
+            home_probability=hp,
+            away_probability=1 - hp,
+            moneyline_pick=home if home_pick else away,
+            moneyline_pick_probability=max(hp, 1 - hp),
+            moneyline_best_price=best['price'] if best else None,
+            moneyline_best_book=best['book'] if best else None,
+            moneyline_last_update=(
+                max(row['updated'] for row in money if row['updated']).isoformat()
+                if any(row['updated'] for row in money)
+                else None
+            ),
+        )
+
+    for groups, prefix in ((spreads, 'spread'), (totals, 'total')):
+        if not groups:
+            continue
         # Prefer lines supported by verified two-sided prices, then book coverage.
-        point,group=max(groups.items(),key=lambda x:(len(x[1]['probs']),x[1]['quotes'],-abs(x[0])))
-        if prefix=='spread':out.update(home_spread=point,away_spread=-point)
-        else:out['total']=point
-        if not group['probs']:continue
-        p=mean(group['probs']);out['freshness_verified']=True
-        if prefix=='spread':
-            out.update(spread_home_probability=p,spread_away_probability=1-p,
-                       spread_pick=home if p>=.5 else away,spread_pick_probability=max(p,1-p))
+        point, group = max(
+            groups.items(),
+            key=lambda x: (len(x[1]['probs']), x[1]['quotes'], -abs(x[0])),
+        )
+        if prefix == 'spread':
+            out.update(home_spread=point, away_spread=-point)
         else:
-            out.update(over_probability=p,under_probability=1-p,total_pick='OVER' if p>=.5 else 'UNDER',total_pick_probability=max(p,1-p))
-    out['freshness_verified']=out['freshness_verified'] or bool(money)
-    out['books_used']=sorted(books)
+            out['total'] = point
+        if not group['probs']:
+            continue
+
+        p = mean(group['probs'])
+        out['freshness_verified'] = True
+        first_pick = p >= 0.5
+        side_quotes = [
+            {
+                'price': row['first_price'] if first_pick else row['second_price'],
+                'book': row['book'],
+                'updated': row['updated'],
+            }
+            for row in group['pairs']
+            if (row['first_price'] if first_pick else row['second_price']) is not None
+        ]
+        best = max(side_quotes, key=lambda row: row['price']) if side_quotes else None
+        last_update = (
+            max(row['updated'] for row in group['pairs'] if row['updated']).isoformat()
+            if any(row['updated'] for row in group['pairs'])
+            else None
+        )
+
+        if prefix == 'spread':
+            out.update(
+                spread_home_probability=p,
+                spread_away_probability=1 - p,
+                spread_pick=home if first_pick else away,
+                spread_pick_probability=max(p, 1 - p),
+                spread_best_price=best['price'] if best else None,
+                spread_best_book=best['book'] if best else None,
+                spread_last_update=last_update,
+            )
+        else:
+            out.update(
+                over_probability=p,
+                under_probability=1 - p,
+                total_pick='OVER' if first_pick else 'UNDER',
+                total_pick_probability=max(p, 1 - p),
+                total_best_price=best['price'] if best else None,
+                total_best_book=best['book'] if best else None,
+                total_last_update=last_update,
+            )
+
+    out['freshness_verified'] = out['freshness_verified'] or bool(money)
+    out['books_used'] = sorted(books)
+    out['last_update'] = (
+        max(fresh_updates).isoformat() if fresh_updates else None
+    )
     return out
