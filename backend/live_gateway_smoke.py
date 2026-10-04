@@ -73,52 +73,29 @@ def main() -> None:
 
     print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
 
-    available_candidates, _ = backend._multisport_candidates(
-        backend._pacific_today(),
-        target_count=56,
-        horizon_days=4,
-    )
-    available_candidate_sports = {
-        str(row.get("sport") or "")
-        for row in available_candidates
-        if row.get("sport")
-    }
+    parlay_board = backend._best_three_leg_parlays(today.isoformat())
+    cards = parlay_board.get("cards") or []
+    if parlay_board.get("parlays_per_sport") != 2:
+        raise SystemExit("best3 contract did not return two parlays per sport")
+    if parlay_board.get("legs_per_parlay") != 3:
+        raise SystemExit("best3 contract did not return three-leg cards")
+    if len(cards) != len(backend.SPORTS) * 2:
+        raise SystemExit(f"best3 contract returned {len(cards)} cards instead of 8")
 
-    parlay_canary = {}
-    for legs in (7, 10, 14):
-        card = backend._build_multisport_parlay(
-            legs,
-            backend._pacific_today().isoformat(),
-        )
-        parlay_canary[str(legs)] = {
-            "status": card.get("status"),
-            "actual_legs": card.get("actual_legs"),
-            "player_prop_legs": card.get("player_prop_legs"),
-            "sports_included": card.get("sports_included"),
-            "dependency_method": card.get("dependency_method"),
-        }
-        if card.get("actual_legs") != legs:
-            raise SystemExit(
-                f"{legs}-leg live parlay canary returned {card.get('actual_legs')} legs"
-            )
-        if card.get("multisport") is not True:
-            raise SystemExit(f"{legs}-leg live parlay canary is not multisport")
-        if set(card.get("sports_included") or []) != available_candidate_sports:
-            raise SystemExit(
-                f"{legs}-leg live parlay did not cover every eligible candidate sport: "
-                f"card={card.get('sports_included')} "
-                f"eligible={sorted(available_candidate_sports)}"
-            )
-        if int(card.get("player_prop_legs") or 0) <= 0:
-            raise SystemExit(
-                f"{legs}-leg live parlay canary did not include a player prop"
-            )
-        if not card.get("reasoning"):
-            raise SystemExit(f"{legs}-leg live parlay has no overall reasoning")
-        if not all(leg.get("reason") for leg in card.get("legs") or []):
-            raise SystemExit(f"{legs}-leg live parlay has a leg without reasoning")
+    for sport in backend.SPORTS:
+        sport_cards = [card for card in cards if card.get("sport") == sport]
+        if [card.get("rank") for card in sport_cards] != [1, 2]:
+            raise SystemExit(f"{sport}: missing BEST 1/BEST 2 three-leg cards")
+        for card in sport_cards:
+            if not card.get("reasoning"):
+                raise SystemExit(f"{sport}: best3 card has no overall reasoning")
+            if card.get("status") == "OK":
+                if len(card.get("legs") or []) != 3:
+                    raise SystemExit(f"{sport}: OK best3 card did not contain three legs")
+                if not all(leg.get("reason") for leg in card.get("legs") or []):
+                    raise SystemExit(f"{sport}: best3 card has a leg without reasoning")
 
-    print(json.dumps({"live_parlays": parlay_canary}, indent=2, sort_keys=True))
+    print(json.dumps({"best_three_leg_parlays": parlay_board}, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
