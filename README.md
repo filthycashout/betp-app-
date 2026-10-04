@@ -1,7 +1,7 @@
 # PhilthyParleys
 
 PhilthyParleys is the renamed PhilthySports Android client for NFL, NBA, MLB and NHL.
-Version **1.6.2+24** preserves package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
+Version **1.6.3+25** uses the supplied FILTHY PICKZ raccoon artwork for the launcher, splash/loading treatment and in-app header while preserving package ID `com.philthysports.philthysports` and the pinned release signing certificate for compatible updates.
 
 - Search team, matchup, date or sport; view today's NFL/NBA/MLB/NHL games; review moneyline/spread/total markets and player props; open a fixed Best 12 board (4 game props, 4 player props, 4 multisport-mix selections); and review Best 1 / Best 2 three-leg cards for each sport when sufficient verified markets exist.
 - The client validates a candidate HTTPS backend before saving it, checks service identity, and retries temporary gateway/network failures with a finite budget.
@@ -60,7 +60,7 @@ When the primary odds credential is unavailable or not rotation-confirmed, the b
 The mobile release no longer displays 7/10/14-leg cards. It shows two three-leg cards per sport and preserves actual sportsbook evidence on every displayed leg. Each scheduled matchup also exposes nine fixed pick slots: moneyline, point spread, over/under, three roster-verified player props for the home side and three for the away side. Missing evidence remains visibly unavailable, and no joint parlay hit probability is invented without a validated dependence model.
 
 
-## Android 1.6.2 — bundled dashboard
+## Android 1.6.3 — bundled dashboard
 
 The Android app now bundles the same React dashboard as the PhilthySports Site. It opens from local assets without a Sites login. Android performs allowlisted HTTPS GET requests for the score feeds and the existing Powerhouse backend; no provider secret or arbitrary network proxy is exposed. The stable package/signing identity is preserved.
 
