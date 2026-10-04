@@ -58,3 +58,10 @@ Production readiness remains unproven: exposed legacy credential revocation, bro
 When the primary odds credential is unavailable or not rotation-confirmed, the backend attempts read-only public sportsbook feeds and validates them by team identity, start time, pregame state and freshness. The release live canary verifies current/upcoming NFL, NBA, MLB and NHL game markets plus mapped player-prop coverage. Empty, blocked, stale, ambiguous or unmatched responses are rejected rather than converted into synthetic lines.
 
 The 7/10/14-leg multisport builder scans its full horizon before stopping for candidate count, represents every sport that has an eligible candidate in that horizon, deliberately reserves room for player props, preserves the actual sportsbook evidence on prop legs, and never invents a joint hit probability without a validated dependence model.
+
+
+## Android 1.6.0 — bundled dashboard
+
+The Android app now bundles the same React dashboard as the PhilthySports Site. It opens from local assets without a Sites login. Android performs allowlisted HTTPS GET requests for the score feeds and the existing Powerhouse backend; no provider secret or arbitrary network proxy is exposed. The stable package/signing identity is preserved.
+
+Mobile UI source is in `mobile_dashboard/`; `npm install` followed by `npm run build` regenerates `assets/dashboard/`. The web UI and its v8 evidence filters are preserved. The CI APK smoke checks require the actual dashboard to render, fresh feeds for all four sports, and Settings navigation. Physical-device and live-prop/model-promotion checks remain separate.

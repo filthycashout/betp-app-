@@ -16,3 +16,6 @@ build/
 .dart_tool/
 
 .venv/
+
+mobile_dashboard/node_modules
+mobile_dashboard/.vite/

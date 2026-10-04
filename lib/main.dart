@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home.dart';
+import 'screens/mobile_dashboard.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +47,7 @@ class PhilthySportsApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: const MobileDashboard(),
     );
   }
 }

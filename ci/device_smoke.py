@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 import subprocess
 import time
+import re
+import xml.etree.ElementTree as ET
 
 
 def main():
@@ -23,7 +25,7 @@ def main():
         r=subprocess.run(adb+list(cmd),capture_output=True,timeout=90,check=check)
         return r.stdout if binary else r.stdout.decode(errors='replace').strip()
     report={'started_at':datetime.now(timezone.utc).isoformat(),'apk_sha256':hashlib.sha256(args.apk.read_bytes()).hexdigest(),
-            'scope':'exact_release_install_and_launch_only','passed':False,'physical_test':False}
+            'scope':'exact_release_install_launch_live_score_feeds_and_navigation','passed':False,'physical_test':False}
     try:
         call('wait-for-device')
         virtual=call('shell','getprop','ro.kernel.qemu')=='1' or call('shell','getprop','ro.boot.qemu')=='1'
@@ -37,7 +39,7 @@ def main():
         call('logcat','-c')
         launch=call('shell','am','start','-W','-n',package+'/.MainActivity')
         if 'Error' in launch:raise RuntimeError('Activity launch failed')
-        time.sleep(15)
+        time.sleep(5)
         pid=call('shell','pidof',package,check=False)
         if not pid:raise RuntimeError('App process exited after launch')
         logs=call('logcat','-d','--pid='+pid.split()[0])
@@ -47,8 +49,54 @@ def main():
         call('shell','uiautomator','dump','/sdcard/window.xml',check=False)
         xml=call('shell','cat','/sdcard/window.xml',check=False)
         (args.output/'window.xml').write_text(xml)
+        def dump():
+            call('shell','uiautomator','dump','/sdcard/window.xml',check=False)
+            return call('shell','cat','/sdcard/window.xml',check=False)
+        def wait_for(text, seconds=50):
+            deadline=time.monotonic()+seconds
+            while time.monotonic()<deadline:
+                value=dump()
+                if text in value:return value
+                time.sleep(2)
+            raise RuntimeError('Dashboard did not expose: '+text)
+        def tap_label(label):
+            root=ET.fromstring(dump())
+            for node in root.iter('node'):
+                text=(node.attrib.get('text','') or node.attrib.get('content-desc','')).strip()
+                if text==label or text.endswith(' '+label):
+                    b=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.attrib.get('bounds',''))
+                    if b:
+                        x1,y1,x2,y2=map(int,b.groups())
+                        if x2>x1 and y2>y1:
+                            call('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2));return
+            raise RuntimeError('Dashboard control missing: '+label)
+        wait_for('The scoreboard')
+        logs=call('logcat','-d','--pid='+pid.split()[0])
+        if 'PHILTHY_DASHBOARD_READY' not in logs:raise RuntimeError('Bundled React dashboard did not signal readiness')
+        report['bundled_dashboard']='PASS'
+        report['sport_tabs']={}
+        for sport in ['NFL','NBA','NHL','MLB']:
+            call('logcat','-c')
+            tap_label(sport)
+            wait_for(sport+' games')
+            deadline=time.monotonic()+50
+            while time.monotonic()<deadline:
+                logs=call('logcat','-d','--pid='+pid.split()[0])
+                if 'PHILTHY_SCORES:'+sport+':' in logs:break
+                time.sleep(2)
+            else:raise RuntimeError('No fresh live feed received for '+sport)
+            value=dump()
+            (args.output/(sport.lower()+'-scoreboard.xml')).write_text(value)
+            (args.output/(sport.lower()+'-scoreboard.png')).write_bytes(call('exec-out','screencap','-p',binary=True))
+            report['sport_tabs'][sport]='PASS_FRESH_FEED_RECEIVED'
+        tap_label('Settings')
+        wait_for('Your settings')
+        (args.output/'settings.png').write_bytes(call('exec-out','screencap','-p',binary=True))
+        tap_label('Games')
+        wait_for('The scoreboard')
+        (args.output/'app-logcat.txt').write_text(call('logcat','-d','--pid='+pid.split()[0]))
         report.update(launch='PASS',process_alive=True,passed=True,physical_test=args.require_physical and not virtual,
-                      interactive_end_to_end_verified=False,live_props_verified=False)
+                      interactive_end_to_end_verified=False,scoreboard_navigation_verified=True,live_props_verified=False)
     except Exception as exc:
         report['failure']=type(exc).__name__+': '+str(exc)
     finally:
