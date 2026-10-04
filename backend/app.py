@@ -37,7 +37,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.5.5"
+APP_VERSION = "1.6.2"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2834,6 +2834,876 @@ def parlays(sport: str, event_id: str, date: str | None = None):
             "Manual review is required before any wagering action.",
         ]
     return {"sport": sport.upper(), "event_id": event_id, "parlays": combos, "status": "OK" if combos else "INSUFFICIENT_ELIGIBLE_LEGS"}
+
+
+# ---------------------------------------------------------------------------
+# Best-picks boards used by the PhilthyParleys mobile dashboard.
+#
+# These endpoints intentionally fail closed. A missing sportsbook price,
+# timestamp, roster match, or recommended prop side is rendered as unavailable;
+# it is never replaced with a synthetic selection.
+# ---------------------------------------------------------------------------
+
+_ROSTER_CACHE: dict[tuple[str, str], tuple[float, set[str]]] = {}
+_ROSTER_TTL_SECONDS = 900
+_BEST_BOARD_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_BEST_BOARD_TTL_SECONDS = 30
+
+
+def _future_pregame(game: dict[str, Any]) -> bool:
+    event_time = utc_time(game.get("event_time"))
+    return bool(event_time and event_time > datetime.now(timezone.utc))
+
+
+def _game_market_candidates(game: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return only fresh, sportsbook-backed ML/spread/total selections."""
+    if not _future_pregame(game):
+        return []
+
+    market = game.get("market") or {}
+    sport = str(game.get("sport") or "").upper()
+    event_id = str(game.get("event_id") or "")
+    event_time = game.get("event_time")
+    matchup = game.get("matchup") or f"{game.get('away')} @ {game.get('home')}"
+    base = {
+        "available": True,
+        "sport": sport,
+        "event_id": event_id,
+        "event_time": event_time,
+        "event_time_pacific": game.get("event_time_pacific"),
+        "date": game.get("date"),
+        "matchup": matchup,
+        "category": "GAME_PROP",
+        "model_state": game.get("model_status"),
+        "evidence_basis": "FRESH_TWO_SIDED_SPORTSBOOK_DEVIG",
+    }
+    candidates: list[dict[str, Any]] = []
+
+    ml_pick = market.get("moneyline_pick") or game.get("pick")
+    ml_probability = market.get("moneyline_pick_probability")
+    if ml_probability is None:
+        hp = market.get("home_probability")
+        ap = market.get("away_probability")
+        if hp is not None and ap is not None:
+            if float(hp) >= float(ap):
+                ml_pick, ml_probability = game.get("home"), float(hp)
+            else:
+                ml_pick, ml_probability = game.get("away"), float(ap)
+    if (
+        ml_pick
+        and ml_probability is not None
+        and market.get("moneyline_best_book")
+        and market.get("moneyline_best_price") is not None
+        and market.get("moneyline_last_update")
+    ):
+        candidates.append({
+            **base,
+            "type": "moneyline",
+            "market_label": "MONEYLINE",
+            "label": f"{ml_pick} ML",
+            "selection": ml_pick,
+            "line": None,
+            "probability": round(float(ml_probability), 6),
+            "best_available_book": market.get("moneyline_best_book"),
+            "best_available_price": market.get("moneyline_best_price"),
+            "as_of": market.get("moneyline_last_update"),
+            "reason": (
+                f"{ml_pick} is the stronger fresh moneyline side at "
+                f"{float(ml_probability):.1%} after removing the paired-book vig. "
+                f"The displayed price is the best verified contributing quote from "
+                f"{market.get('moneyline_best_book')} at the recorded quote time. "
+                "No unverified model edge is added."
+            ),
+        })
+
+    spread_pick = market.get("spread_pick")
+    spread_probability = market.get("spread_pick_probability")
+    if spread_pick and spread_probability is not None:
+        spread_line = (
+            market.get("home_spread")
+            if spread_pick == game.get("home")
+            else market.get("away_spread")
+        )
+        if (
+            spread_line is not None
+            and market.get("spread_best_book")
+            and market.get("spread_best_price") is not None
+            and market.get("spread_last_update")
+        ):
+            candidates.append({
+                **base,
+                "type": "spread",
+                "market_label": "POINT SPREAD",
+                "label": f"{spread_pick} {float(spread_line):+g}",
+                "selection": spread_pick,
+                "line": float(spread_line),
+                "probability": round(float(spread_probability), 6),
+                "best_available_book": market.get("spread_best_book"),
+                "best_available_price": market.get("spread_best_price"),
+                "as_of": market.get("spread_last_update"),
+                "reason": (
+                    f"The offered spread {spread_pick} {float(spread_line):+g} "
+                    f"has the stronger fresh two-sided de-vigged price at "
+                    f"{float(spread_probability):.1%}. The line itself is preserved "
+                    f"from {market.get('spread_best_book')}; it is not an averaged or "
+                    "fabricated number."
+                ),
+            })
+
+    total_pick = market.get("total_pick")
+    total_probability = market.get("total_pick_probability")
+    total_line = market.get("total")
+    if (
+        total_pick
+        and total_probability is not None
+        and total_line is not None
+        and market.get("total_best_book")
+        and market.get("total_best_price") is not None
+        and market.get("total_last_update")
+    ):
+        candidates.append({
+            **base,
+            "type": "total",
+            "market_label": "OVER / UNDER",
+            "label": f"{total_pick} {float(total_line):g}",
+            "selection": total_pick,
+            "line": float(total_line),
+            "probability": round(float(total_probability), 6),
+            "best_available_book": market.get("total_best_book"),
+            "best_available_price": market.get("total_best_price"),
+            "as_of": market.get("total_last_update"),
+            "reason": (
+                f"{total_pick} {float(total_line):g} is the stronger side of the "
+                f"current two-sided total at {float(total_probability):.1%} after "
+                f"de-vigging. The quoted total and price come from "
+                f"{market.get('total_best_book')} and must remain fresh to display."
+            ),
+        })
+
+    return candidates
+
+
+def _prop_candidate(
+    game: dict[str, Any],
+    prop: dict[str, Any],
+    *,
+    team: str | None = None,
+    team_side: str | None = None,
+    roster_source: str | None = None,
+) -> dict[str, Any] | None:
+    side = prop.get("recommended_side")
+    probability = prop.get("market_probability")
+    line = prop.get("line")
+    player = str(prop.get("player") or "").strip()
+    book = prop.get("best_available_book")
+    price = prop.get("best_available_price")
+    as_of = prop.get("best_price_last_update") or prop.get("last_update")
+    if (
+        not side
+        or probability is None
+        or line is None
+        or not player
+        or not book
+        or price is None
+        or not as_of
+    ):
+        return None
+
+    return {
+        "available": True,
+        "sport": str(game.get("sport") or "").upper(),
+        "event_id": str(game.get("event_id") or ""),
+        "event_time": game.get("event_time"),
+        "event_time_pacific": game.get("event_time_pacific"),
+        "date": game.get("date"),
+        "matchup": game.get("matchup")
+        or f"{game.get('away')} @ {game.get('home')}",
+        "category": "PLAYER_PROP",
+        "type": "player_prop",
+        "market_label": str(prop.get("market") or "").replace("_", " ").upper(),
+        "label": f"{player} {side} {float(line):g} {prop.get('market')}",
+        "player": player,
+        "team": team,
+        "team_side": team_side,
+        "line": float(line),
+        "selection": side,
+        "probability": round(float(probability), 6),
+        "probability_method": prop.get("probability_method"),
+        "best_available_book": book,
+        "best_available_price": price,
+        "as_of": as_of,
+        "contributing_books": prop.get("contributing_books") or [],
+        "model_state": prop.get("model_state"),
+        "roster_verification_source": roster_source,
+        "evidence_basis": "FRESH_PLAYER_PROP_TWO_SIDED_DEVIG",
+        "reason": (
+            f"{player} {side} {float(line):g} is the recommended side because "
+            f"fresh complementary prices de-vig to {float(probability):.1%}. "
+            f"The best displayed contributing price is {price:+g} at {book}. "
+            + (
+                f"Player-to-team assignment is verified through {roster_source}. "
+                if roster_source
+                else ""
+            )
+            + "This is market evidence, not an invented player projection."
+        ),
+    }
+
+
+def _available_props_for_game(
+    game: dict[str, Any],
+    matched_odds_event: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    try:
+        payload = _props_for_game(
+            str(game.get("sport") or "").upper(),
+            game,
+            matched_odds_event,
+        )
+    except Exception as exc:
+        return [], {
+            "status": "PROP_LOOKUP_FAILED_CLOSED",
+            "provider": None,
+            "message": f"Fresh prop lookup failed closed ({type(exc).__name__}).",
+        }
+
+    candidates = []
+    for prop in payload.get("props") or []:
+        candidate = _prop_candidate(game, prop)
+        if candidate is not None:
+            candidates.append(candidate)
+    candidates.sort(
+        key=lambda row: (
+            float(row.get("probability") or 0.0),
+            len(row.get("contributing_books") or []),
+        ),
+        reverse=True,
+    )
+    return candidates, payload
+
+
+def _board_for_date(d: date_cls) -> dict[str, Any]:
+    key = d.isoformat()
+    cached = _BEST_BOARD_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached[0] <= _BEST_BOARD_TTL_SECONDS:
+        return cached[1]
+
+    search = _search(date=key, include_props=False)
+    games = [
+        game
+        for game in search.get("games") or []
+        if _future_pregame(game)
+    ]
+    game_candidates: list[dict[str, Any]] = []
+    prop_candidates: list[dict[str, Any]] = []
+    for game in games:
+        game_candidates.extend(_game_market_candidates(game))
+
+    def pull_props(game: dict[str, Any]) -> list[dict[str, Any]]:
+        rows, _ = _available_props_for_game(game)
+        return rows
+
+    # Public sportsbook adapters cache per league. Concurrent game matching keeps
+    # the board responsive without inventing a result when a provider is missing.
+    if games:
+        with ThreadPoolExecutor(max_workers=min(8, len(games))) as pool:
+            futures = [pool.submit(pull_props, game) for game in games]
+            for future in futures:
+                try:
+                    prop_candidates.extend(future.result())
+                except Exception:
+                    continue
+
+    game_candidates.sort(
+        key=lambda row: float(row.get("probability") or 0.0),
+        reverse=True,
+    )
+    prop_candidates.sort(
+        key=lambda row: float(row.get("probability") or 0.0),
+        reverse=True,
+    )
+    payload = {
+        "date": key,
+        "timezone": "America/Los_Angeles",
+        "games_scanned": len(games),
+        "game_candidates": game_candidates,
+        "prop_candidates": prop_candidates,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _BEST_BOARD_CACHE[key] = (now, payload)
+    return payload
+
+
+def _unavailable_pick(
+    sport: str,
+    category: str,
+    label: str,
+    reason: str,
+    *,
+    matchup: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "available": False,
+        "sport": sport,
+        "category": category,
+        "market_label": label,
+        "label": "UNAVAILABLE — VERIFIED EVIDENCE REQUIRED",
+        "matchup": matchup,
+        "probability": None,
+        "best_available_book": None,
+        "best_available_price": None,
+        "as_of": None,
+        "reason": reason,
+    }
+
+
+def _best12(date: str | None = None) -> dict[str, Any]:
+    d = date_cls.fromisoformat(date) if date else _pacific_today()
+    board = _board_for_date(d)
+    games = board["game_candidates"]
+    props = board["prop_candidates"]
+    selections: list[dict[str, Any]] = []
+    used: set[tuple[str, str, str]] = set()
+
+    def ident(row: dict[str, Any]) -> tuple[str, str, str]:
+        return (
+            str(row.get("sport") or ""),
+            str(row.get("event_id") or ""),
+            str(row.get("label") or ""),
+        )
+
+    # 4/12: one strongest verified game-market selection from each sport.
+    for sport in SPORTS:
+        row = next((x for x in games if x.get("sport") == sport), None)
+        if row:
+            row = {**row, "board_bucket": "GAME_PROP"}
+            selections.append(row)
+            used.add(ident(row))
+        else:
+            selections.append(_unavailable_pick(
+                sport,
+                "GAME_PROP",
+                "BEST GAME PROP",
+                "No fresh two-sided ML/spread/total quote passed the evidence checks for this sport.",
+            ))
+
+    # 4/12: one strongest verified player prop from each sport.
+    for sport in SPORTS:
+        row = next((x for x in props if x.get("sport") == sport), None)
+        if row:
+            row = {**row, "board_bucket": "PLAYER_PROP"}
+            selections.append(row)
+            used.add(ident(row))
+        else:
+            selections.append(_unavailable_pick(
+                sport,
+                "PLAYER_PROP",
+                "BEST PLAYER PROP",
+                "No fresh, paired and de-vigged player-prop recommendation passed the evidence checks for this sport.",
+            ))
+
+    # 4/12: one additional best evidence-backed selection per sport. Together this
+    # final bucket is the multisport mix and may contain either a game or player prop.
+    all_rows = sorted(
+        [*games, *props],
+        key=lambda row: float(row.get("probability") or 0.0),
+        reverse=True,
+    )
+    for sport in SPORTS:
+        row = next(
+            (
+                x
+                for x in all_rows
+                if x.get("sport") == sport and ident(x) not in used
+            ),
+            None,
+        )
+        if row:
+            row = {
+                **row,
+                "board_bucket": "MULTISPORT_MIX",
+                "category": (
+                    "MULTISPORT_PLAYER_PROP"
+                    if row.get("type") == "player_prop"
+                    else "MULTISPORT_GAME_PROP"
+                ),
+            }
+            selections.append(row)
+            used.add(ident(row))
+        else:
+            selections.append(_unavailable_pick(
+                sport,
+                "MULTISPORT_MIX",
+                "BEST MULTISPORT MIX",
+                "A second independent fresh selection was not available for this sport; no substitute was fabricated.",
+            ))
+
+    available_count = sum(1 for row in selections if row.get("available"))
+    return {
+        "date": d.isoformat(),
+        "timezone": "America/Los_Angeles",
+        "requested_picks": 12,
+        "available_picks": available_count,
+        "breakdown": {
+            "game_props": 4,
+            "player_props": 4,
+            "multisport_mix": 4,
+        },
+        "picks": selections,
+        "status": "OK" if available_count == 12 else "PARTIAL_VERIFIED_COVERAGE",
+        "reasoning": [
+            "The first four slots are one strongest fresh game-market selection for each of NFL, NBA, MLB and NHL.",
+            "The next four slots are one strongest fresh player-prop selection for each sport, using paired prices and de-vigged probability only.",
+            "The final four slots form the multisport mix: one additional evidence-backed game or player prop from each sport, so the bucket spans all four leagues.",
+            "Every displayed selection must carry a real bookmaker, price and recent quote timestamp. Missing evidence stays visibly unavailable instead of being guessed.",
+        ],
+    }
+
+
+def _best_three_leg_parlays(date: str | None = None) -> dict[str, Any]:
+    d = date_cls.fromisoformat(date) if date else _pacific_today()
+    board = _board_for_date(d)
+    all_rows = sorted(
+        [*board["game_candidates"], *board["prop_candidates"]],
+        key=lambda row: float(row.get("probability") or 0.0),
+        reverse=True,
+    )
+    cards: list[dict[str, Any]] = []
+
+    for sport in SPORTS:
+        pool = [row for row in all_rows if row.get("sport") == sport]
+        game_pool = [row for row in pool if row.get("type") != "player_prop"]
+        prop_pool = [row for row in pool if row.get("type") == "player_prop"]
+        used_sets: set[tuple[str, ...]] = set()
+
+        for rank in (1, 2):
+            selected: list[dict[str, Any]] = []
+            start_offset = rank - 1
+
+            # Force a balanced evidence mix when the sport has both types.
+            if game_pool:
+                selected.append(game_pool[min(start_offset, len(game_pool) - 1)])
+            prop_choice = next(
+                (
+                    row
+                    for row in prop_pool[start_offset:]
+                    if row.get("label") not in {x.get("label") for x in selected}
+                ),
+                None,
+            )
+            if prop_choice:
+                selected.append(prop_choice)
+
+            for row in pool[start_offset:] + pool[:start_offset]:
+                if len(selected) >= 3:
+                    break
+                if any(
+                    row.get("event_id") == x.get("event_id")
+                    and row.get("label") == x.get("label")
+                    for x in selected
+                ):
+                    continue
+                if (
+                    sum(1 for x in selected if x.get("event_id") == row.get("event_id"))
+                    >= 2
+                ):
+                    continue
+                selected.append(row)
+
+            signature = tuple(sorted(str(x.get("label")) for x in selected))
+            if (
+                len(selected) != 3
+                or len(signature) != 3
+                or signature in used_sets
+            ):
+                cards.append({
+                    "sport": sport,
+                    "rank": rank,
+                    "title": f"{sport} BEST {rank} — 3 LEG",
+                    "status": "INSUFFICIENT_VERIFIED_LEGS",
+                    "legs": [],
+                    "estimated_joint_probability": None,
+                    "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL",
+                    "reasoning": [
+                        "Three distinct fresh sportsbook-backed legs were not simultaneously available.",
+                        "PhilthyParleys does not fill missing legs with stale, synthetic or unverified selections.",
+                    ],
+                })
+                continue
+
+            used_sets.add(signature)
+            cards.append({
+                "sport": sport,
+                "rank": rank,
+                "title": f"{sport} BEST {rank} — 3 LEG",
+                "status": "OK",
+                "legs": selected,
+                "estimated_joint_probability": None,
+                "dependency_method": "UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL",
+                "reasoning": [
+                    (
+                        "This three-leg card is built only from fresh verified "
+                        f"{sport} game markets and player props, ranked by the "
+                        "de-vigged probability attached to the offered prices."
+                    ),
+                    (
+                        "The builder prefers a mix of game-market and player-prop "
+                        "evidence and limits repeated legs from one event to reduce "
+                        "obvious same-game concentration."
+                    ),
+                    (
+                        "Each leg shows its own bookmaker, price, timestamp and "
+                        "selection reasoning so the evidence can be reviewed before use."
+                    ),
+                    (
+                        "No joint hit rate is shown because cross-leg dependence has "
+                        "not passed the governed validation gate. Manual review remains required."
+                    ),
+                ],
+            })
+
+    return {
+        "date": d.isoformat(),
+        "timezone": "America/Los_Angeles",
+        "parlays_per_sport": 2,
+        "legs_per_parlay": 3,
+        "sports": list(SPORTS),
+        "cards": cards,
+        "status": (
+            "OK"
+            if cards and all(card.get("status") == "OK" for card in cards)
+            else "PARTIAL_VERIFIED_COVERAGE"
+        ),
+    }
+
+
+def _espn_roster_names(sport: str, team_name: str) -> set[str]:
+    cache_key = (sport, _norm(team_name))
+    now = time.time()
+    cached = _ROSTER_CACHE.get(cache_key)
+    if cached and now - cached[0] <= _ROSTER_TTL_SECONDS:
+        return cached[1]
+
+    a, b = ESPN[sport]
+    directory = _cached_json(
+        f"roster-directory:{sport}",
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/teams",
+        params={"limit": 1000},
+        ttl_seconds=_ROSTER_TTL_SECONDS,
+    )
+    entries: list[dict[str, Any]] = []
+    for sport_row in directory.get("sports") or []:
+        for league in sport_row.get("leagues") or []:
+            for wrapper in league.get("teams") or []:
+                team = wrapper.get("team") if isinstance(wrapper, dict) else None
+                if isinstance(team, dict):
+                    entries.append(team)
+
+    wanted = _norm(team_name)
+
+    def aliases(team: dict[str, Any]) -> set[str]:
+        values = [
+            team.get("displayName"),
+            team.get("shortDisplayName"),
+            team.get("name"),
+            team.get("location"),
+            team.get("abbreviation"),
+            team.get("nickname"),
+        ]
+        return {_norm(value) for value in values if value}
+
+    team = next((row for row in entries if wanted in aliases(row)), None)
+    if team is None:
+        matches = [
+            row
+            for row in entries
+            if any(
+                wanted and alias and (wanted in alias or alias in wanted)
+                for alias in aliases(row)
+            )
+        ]
+        if len(matches) == 1:
+            team = matches[0]
+    if team is None:
+        _ROSTER_CACHE[cache_key] = (now, set())
+        return set()
+
+    team_id = team.get("id") or team.get("uid") or team.get("abbreviation")
+    if not team_id:
+        _ROSTER_CACHE[cache_key] = (now, set())
+        return set()
+
+    roster = _cached_json(
+        f"roster:{sport}:{team_id}",
+        f"https://site.api.espn.com/apis/site/v2/sports/{a}/{b}/teams/{team_id}/roster",
+        ttl_seconds=_ROSTER_TTL_SECONDS,
+    )
+
+    names: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            full = value.get("fullName") or value.get("displayName")
+            if full and (
+                value.get("id") is not None
+                or value.get("position") is not None
+                or value.get("jersey") is not None
+            ):
+                normalized = _norm(str(full))
+                if normalized:
+                    names.add(normalized)
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(roster.get("athletes") or [])
+    _ROSTER_CACHE[cache_key] = (now, names)
+    return names
+
+
+def _roster_side_for_player(
+    sport: str,
+    player: str,
+    home: str,
+    away: str,
+) -> tuple[str | None, str | None, str | None]:
+    player_norm = _norm(player)
+    if not player_norm:
+        return None, None, None
+    home_names = _espn_roster_names(sport, home)
+    away_names = _espn_roster_names(sport, away)
+
+    in_home = player_norm in home_names
+    in_away = player_norm in away_names
+    if in_home ^ in_away:
+        return (
+            (home, "HOME", "ESPN roster") if in_home
+            else (away, "AWAY", "ESPN roster")
+        )
+
+    # Conservative unique initial+surname fallback for provider abbreviations.
+    parts = str(player).strip().lower().replace(".", "").split()
+    if len(parts) >= 2:
+        surname = _norm(parts[-1])
+        initial = _norm(parts[0])[:1]
+
+        def loose(roster: set[str]) -> list[str]:
+            return [
+                name
+                for name in roster
+                if name.endswith(surname)
+                and (not initial or name.startswith(initial))
+            ]
+
+        hm, am = loose(home_names), loose(away_names)
+        if len(hm) == 1 and not am:
+            return home, "HOME", "ESPN roster unique initial/surname match"
+        if len(am) == 1 and not hm:
+            return away, "AWAY", "ESPN roster unique initial/surname match"
+
+    return None, None, None
+
+
+def _best9_for_game(
+    sport: str,
+    event_id: str,
+    date: str | None = None,
+) -> dict[str, Any]:
+    s = sport.upper()
+    if s not in SPORTS:
+        raise ValueError(f"unsupported sport: {s}")
+    game = game_detail(s, event_id, date)
+    if not _future_pregame(game):
+        return {
+            "sport": s,
+            "event_id": event_id,
+            "matchup": game.get("matchup"),
+            "requested_picks": 9,
+            "available_picks": 0,
+            "picks": [
+                _unavailable_pick(
+                    s,
+                    "GAME_CLOSED",
+                    label,
+                    "Pregame recommendations are closed once the event has started.",
+                    matchup=game.get("matchup"),
+                )
+                for label in (
+                    "MONEYLINE",
+                    "POINT SPREAD",
+                    "OVER / UNDER",
+                    "HOME PLAYER PROP 1",
+                    "HOME PLAYER PROP 2",
+                    "HOME PLAYER PROP 3",
+                    "AWAY PLAYER PROP 1",
+                    "AWAY PLAYER PROP 2",
+                    "AWAY PLAYER PROP 3",
+                )
+            ],
+            "status": "PREGAME_CLOSED",
+            "reasoning": [
+                "Pregame recommendations are closed because this event is no longer a future matchup."
+            ],
+        }
+
+    game_market = {row["type"]: row for row in _game_market_candidates(game)}
+    picks: list[dict[str, Any]] = []
+    for market_type, label in (
+        ("moneyline", "MONEYLINE"),
+        ("spread", "POINT SPREAD"),
+        ("total", "OVER / UNDER"),
+    ):
+        row = game_market.get(market_type)
+        if row:
+            picks.append(row)
+        else:
+            picks.append(_unavailable_pick(
+                s,
+                "GAME_PROP",
+                label,
+                f"No fresh two-sided {label.lower()} quote passed the evidence checks for this matchup.",
+                matchup=game.get("matchup"),
+            ))
+
+    matched = None
+    try:
+        d = date_cls.fromisoformat(str(game.get("date") or _pacific_today()))
+        matched = _match_odds(game, _odds(s, d))
+    except Exception:
+        matched = None
+
+    try:
+        payload = _props_for_game(s, game, matched)
+        raw_props = payload.get("props") or []
+    except Exception:
+        raw_props = []
+
+    home, away = str(game.get("home") or ""), str(game.get("away") or "")
+    by_side: dict[str, list[dict[str, Any]]] = {"HOME": [], "AWAY": []}
+    for prop in raw_props:
+        team, side, source = _roster_side_for_player(
+            s,
+            str(prop.get("player") or ""),
+            home,
+            away,
+        )
+        if not side:
+            continue
+        row = _prop_candidate(
+            game,
+            prop,
+            team=team,
+            team_side=side,
+            roster_source=source,
+        )
+        if row:
+            by_side[side].append(row)
+
+    for rows in by_side.values():
+        rows.sort(
+            key=lambda row: float(row.get("probability") or 0.0),
+            reverse=True,
+        )
+
+    for side, team in (("HOME", home), ("AWAY", away)):
+        chosen: list[dict[str, Any]] = []
+        used_players: set[str] = set()
+        # Prefer three distinct players, then allow a second market for a verified
+        # player only when that is the only way to reach the requested coverage.
+        for row in by_side[side]:
+            player_key = _norm(row.get("player"))
+            if player_key in used_players:
+                continue
+            chosen.append(row)
+            used_players.add(player_key)
+            if len(chosen) == 3:
+                break
+        if len(chosen) < 3:
+            for row in by_side[side]:
+                if row in chosen:
+                    continue
+                chosen.append(row)
+                if len(chosen) == 3:
+                    break
+
+        picks.extend(chosen)
+        while len(chosen) < 3:
+            index = len(chosen) + 1
+            placeholder = _unavailable_pick(
+                s,
+                "PLAYER_PROP",
+                f"{side} PLAYER PROP {index}",
+                (
+                    f"A {index}/3 verified {team} player prop is unavailable. "
+                    "The app requires a fresh paired price plus a verified roster match and will not guess the player's team."
+                ),
+                matchup=game.get("matchup"),
+            )
+            placeholder["team"] = team
+            placeholder["team_side"] = side
+            picks.append(placeholder)
+            chosen.append(placeholder)
+
+    available_count = sum(1 for row in picks if row.get("available"))
+    return {
+        "sport": s,
+        "event_id": event_id,
+        "date": game.get("date"),
+        "event_time": game.get("event_time"),
+        "matchup": game.get("matchup"),
+        "requested_picks": 9,
+        "available_picks": available_count,
+        "breakdown": {
+            "moneyline": 1,
+            "point_spread": 1,
+            "over_under": 1,
+            "home_player_props": 3,
+            "away_player_props": 3,
+        },
+        "picks": picks,
+        "status": "OK" if available_count == 9 else "PARTIAL_VERIFIED_COVERAGE",
+        "reasoning": [
+            "The first three slots are the fresh moneyline, point spread and over/under recommendations for this matchup.",
+            "The next three slots are player props verified against the home-team roster; the final three are verified against the away-team roster.",
+            "Player-prop sides require a recent paired sportsbook quote and de-vigged probability. Team assignment requires a current ESPN roster match.",
+            "Any missing bookmaker evidence, timestamp, line, recommended side or roster match stays visibly unavailable rather than being replaced with a guess.",
+        ],
+    }
+
+
+@app.get("/api/v1/picks/best12", include_in_schema=False)
+@app.get("/v1/picks/best12")
+def best12(date: str | None = None):
+    try:
+        return _best12(date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@app.get("/api/v1/parlays/best3", include_in_schema=False)
+@app.get("/v1/parlays/best3")
+def best_three_leg_parlays(date: str | None = None):
+    try:
+        return _best_three_leg_parlays(date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@app.get("/api/v1/games/{sport}/{event_id}/best9", include_in_schema=False)
+@app.get("/v1/games/{sport}/{event_id}/best9")
+def best_nine_game_picks(
+    sport: str,
+    event_id: str,
+    date: str | None = None,
+):
+    try:
+        return _best9_for_game(sport, event_id, date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
 
 def _multisport_candidates(
     start_date: date_cls,
