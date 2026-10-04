@@ -15,7 +15,7 @@ class PhilthySportsApp extends StatelessWidget {
     const accent = Color(0xFF78D8C3);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'PhilthySports',
+      title: 'PhilthyParleys',
       theme: ThemeData(
         brightness: Brightness.dark,
         useMaterial3: true,
