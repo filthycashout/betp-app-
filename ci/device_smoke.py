@@ -95,7 +95,7 @@ def main():
         report['best12_navigation']='PASS'
 
         tap_label('Parlay')
-        wait_for('BEST 1 & BEST 2')
+        wait_for('Best Parlays')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
