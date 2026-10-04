@@ -1,0 +1,35 @@
+{
+  "api_version": "1.6.3",
+  "base_url": "https://philthysports-api-v9.onrender.com",
+  "checked_at": "2026-10-04T18:04:56.315743+00:00",
+  "checks": {
+    "core_keyless": true,
+    "health_ok": true,
+    "immutable_capture": true,
+    "keyless_props_fallback": true,
+    "manual_review_only": true,
+    "service_identity": true,
+    "stable_android_signing": true
+  },
+  "credential_gate": {
+    "core_runtime_requires_secret": false,
+    "live_canary_evidence_verified": false,
+    "odds_api_key_configured": false,
+    "odds_props_live_allowed": false,
+    "provider_revocation_independently_verified": false,
+    "rotation_confirmed": false
+  },
+  "gates": {
+    "calibration": "BLOCKED_EVIDENCE",
+    "chronology": "BLOCKED_EVIDENCE",
+    "credential_core_keyless": "PASS",
+    "credential_live_odds_props": "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+    "four_sport_model_promotion": "BLOCKED_EVIDENCE",
+    "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY",
+    "leakage": "BLOCKED_EVIDENCE",
+    "provenance": "BLOCKED_EVIDENCE",
+    "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE"
+  },
+  "passed": true,
+  "props_status": "KEYLESS_FALLBACK_CONFIGURED_PRIMARY_KEY_NOT_REQUIRED"
+}

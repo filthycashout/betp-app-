@@ -1,0 +1,16 @@
+{
+  "api_version": "1.6.3",
+  "backend": "https://philthysports-api-v9.onrender.com",
+  "checks": {
+    "core_keyless": true,
+    "health_ok": true,
+    "immutable_capture": true,
+    "keyless_props_fallback": true,
+    "manual_review_only": true,
+    "service_identity": true,
+    "stable_android_signing": true
+  },
+  "main_commit": "9b82ea635b51567ec44fe5c7de71fb2f413fbf2b",
+  "schema_version": 1,
+  "verified_at": "2026-10-04T18:04:56.843317+00:00"
+}
