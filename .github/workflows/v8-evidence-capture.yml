@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/training/evidence_pipeline.py"
+      - "backend/training/prediction_ledger.py"
       - ".github/workflows/v8-evidence-capture.yml"
   schedule:
     - cron: "17 * * * *"
@@ -29,8 +30,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Preserve evidence tool from main
-        run: cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
+      - name: Preserve evidence tools from main
+        run: |
+          cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
+          cp backend/training/prediction_ledger.py /tmp/prediction_ledger.py
 
       - name: Capture strict pregame evidence from live Powerhouse
         run: |
@@ -38,7 +41,7 @@ jobs:
           rm -rf /tmp/pregame_capture
           mkdir -p /tmp/pregame_capture
           python /tmp/evidence_pipeline.py capture \
-            --base-url https://philthysports-powerhouse-v8.onrender.com \
+            --base-url https://philthysports-api-v9.onrender.com \
             --days 4 \
             --output-dir /tmp/pregame_capture
 
@@ -61,18 +64,29 @@ jobs:
           mkdir -p "$TARGET"
           cp /tmp/pregame_capture/* "$TARGET"/
 
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py capture \
+            --root evidence \
+            --capture-dir "$TARGET"
+
           python /tmp/evidence_pipeline.py settle \
+            --root evidence \
+            --lookback-days 21
+
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py settle \
             --root evidence \
             --lookback-days 21
 
           python /tmp/evidence_pipeline.py build \
             --root evidence
 
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py verify \
+            --root evidence
+
           mkdir -p evidence/run_metadata
           cat > evidence/run_metadata/latest.json <<EOF
           {
             "captured_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "source_backend": "https://philthysports-powerhouse-v8.onrender.com",
+            "source_backend": "https://philthysports-api-v9.onrender.com",
             "workflow_source_commit": "${GITHUB_SHA}",
             "branch": "evidence-snapshots",
             "secrets_embedded": false
