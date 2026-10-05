@@ -1,5 +1,5 @@
 'use client';
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useState,type CSSProperties} from 'react';
 import {CheckCircle2,RefreshCw,ShieldCheck,XCircle} from 'lucide-react';
 import Dashboard from './sports-dashboard';
 import {pacificDate,SPORTS,type Sport} from '@/lib/sports';
@@ -34,4 +34,4 @@ export default function EvidenceShell(){
   </div>}
  </>;
 }
-function chip(active:boolean):React.CSSProperties{return{border:`1px solid ${active?'#83e5ca':'#33463f'}`,background:active?'#17372e':'#0e1714',color:active?'#e7fff7':'#a8beb6',borderRadius:999,padding:'8px 12px',fontWeight:800};}
+function chip(active:boolean):CSSProperties{return{border:`1px solid ${active?'#83e5ca':'#33463f'}`,background:active?'#17372e':'#0e1714',color:active?'#e7fff7':'#a8beb6',borderRadius:999,padding:'8px 12px',fontWeight:800};}
