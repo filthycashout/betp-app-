@@ -90,12 +90,12 @@ def main():
             (args.output/(sport.lower()+'-scoreboard.png')).write_bytes(call('exec-out','screencap','-p',binary=True))
             report['sport_tabs'][sport]='PASS_FRESH_FEED_RECEIVED'
         tap_label('Picks')
-        wait_for('BEST 12 PICKS')
+        wait_for('Best 12 picks')
         (args.output/'picks.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best12_navigation']='PASS'
 
         tap_label('Parlay')
-        wait_for('Best Parlays')
+        wait_for('Best 3-leg parlays')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
