@@ -1,0 +1,42 @@
+{
+  "ready_sports": [],
+  "schema_version": 1,
+  "sports": {
+    "MLB": {
+      "chronology_failures": [],
+      "label_availability_failures": [],
+      "minimum_holdout_rows": 800,
+      "minimum_oof_rows": 2000,
+      "minimum_total_rows": 4000,
+      "rows": 1007,
+      "sample_ready": false
+    },
+    "NBA": {
+      "chronology_failures": [],
+      "label_availability_failures": [],
+      "minimum_holdout_rows": 500,
+      "minimum_oof_rows": 1200,
+      "minimum_total_rows": 2500,
+      "rows": 616,
+      "sample_ready": false
+    },
+    "NFL": {
+      "chronology_failures": [],
+      "label_availability_failures": [],
+      "minimum_holdout_rows": 240,
+      "minimum_oof_rows": 600,
+      "minimum_total_rows": 1200,
+      "rows": 240,
+      "sample_ready": false
+    },
+    "NHL": {
+      "chronology_failures": [],
+      "label_availability_failures": [],
+      "minimum_holdout_rows": 500,
+      "minimum_oof_rows": 1200,
+      "minimum_total_rows": 2500,
+      "rows": 526,
+      "sample_ready": false
+    }
+  }
+}
