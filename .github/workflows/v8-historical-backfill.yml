@@ -1,0 +1,137 @@
+name: PhilthySports v8 Historical Backfill
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/training/historical_backfill.py"
+      - ".github/workflows/v8-historical-backfill.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: philthysports-v8-historical-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current training source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check out durable evidence history
+        uses: actions/checkout@v4
+        with:
+          ref: evidence-snapshots
+          path: evidence_checkout
+          fetch-depth: 0
+
+      - name: Refresh evidence branch before mutation
+        run: git -C evidence_checkout pull --ff-only origin evidence-snapshots
+
+      - name: Download pinned timestamped historical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ADnocap/taut-arb-backtest/releases/download/v3.0-sports/sports_data.db.gz"
+          EXPECTED="67c1db827dc310e8bed13783e4139164784dedf40abb4faf2eeb8ebd212a6ee0"
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30 \
+            -o /tmp/sports_data.db.gz "$URL"
+          echo "$EXPECTED  /tmp/sports_data.db.gz" | sha256sum -c -
+          gzip -dc /tmp/sports_data.db.gz > /tmp/sports_data.db
+          test -s /tmp/sports_data.db
+
+      - name: Extract only provable pregame and settled rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="evidence_checkout/evidence/historical/approved/taut-arb-v3"
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          python backend/training/historical_backfill.py extract \
+            --db /tmp/sports_data.db \
+            --output-dir "$TARGET" \
+            --source-url "https://github.com/ADnocap/taut-arb-backtest/releases/download/v3.0-sports/sports_data.db.gz" \
+            --source-asset-sha256 "67c1db827dc310e8bed13783e4139164784dedf40abb4faf2eeb8ebd212a6ee0" \
+            --source-release "v3.0-sports" \
+            --min-match-score 0.90
+
+      - name: Merge checksum-verified historical evidence into canonical sets
+        run: |
+          python backend/training/historical_backfill.py merge \
+            --root evidence_checkout/evidence
+
+      - name: Verify chronology and promotion sample readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json
+          from datetime import datetime
+          from pathlib import Path
+
+          root=Path("evidence_checkout/evidence")
+          policy=json.loads(Path("backend/training/policy.json").read_text())
+          report={"schema_version":1,"sports":{},"ready_sports":[]}
+          for sport in ("NFL","NBA","MLB","NHL"):
+              csv_path=root/"canonical"/f"{sport.lower()}.csv"
+              rows=list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
+              chronology_fail=[]
+              label_fail=[]
+              for row in rows:
+                  as_of=datetime.fromisoformat(row["as_of"].replace("Z","+00:00"))
+                  event=datetime.fromisoformat(row["event_time"].replace("Z","+00:00"))
+                  label=datetime.fromisoformat(row["label_available_at"].replace("Z","+00:00"))
+                  if not as_of < event:
+                      chronology_fail.append(row["event_id"])
+                  if not label > event:
+                      label_fail.append(row["event_id"])
+              minimums=policy["sample_policy"][sport]
+              total=len(rows)
+              ready=total >= int(minimums["minimum_total_rows"])
+              report["sports"][sport]={
+                  "rows":total,
+                  "minimum_total_rows":int(minimums["minimum_total_rows"]),
+                  "minimum_oof_rows":int(minimums["minimum_oof_rows"]),
+                  "minimum_holdout_rows":int(minimums["minimum_holdout_rows"]),
+                  "chronology_failures":chronology_fail,
+                  "label_availability_failures":label_fail,
+                  "sample_ready":ready,
+              }
+              if chronology_fail or label_fail:
+                  raise SystemExit(f"{sport} historical merge failed chronology verification")
+              if ready:
+                  report["ready_sports"].append(sport)
+          out=root/"historical"/"backfill_readiness.json"
+          out.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+
+      - name: Commit immutable historical provenance and rebuilt canonical sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C evidence_checkout config user.name "philthysports-evidence-bot"
+          git -C evidence_checkout config user.email "actions@users.noreply.github.com"
+          git -C evidence_checkout add evidence
+          if git -C evidence_checkout diff --cached --quiet; then
+            echo "Historical backfill produced no evidence changes."
+            exit 0
+          fi
+          git -C evidence_checkout commit -m "Backfill verified timestamped historical evidence"
+          git -C evidence_checkout pull --rebase origin evidence-snapshots
+          git -C evidence_checkout push origin evidence-snapshots
+
+      - name: Explain promotion handoff
+        run: |
+          echo "Historical evidence is now on evidence-snapshots."
+          echo "The existing hourly v8 train/promote workflow will train only sports that satisfy strict sample minimums and will preserve the market baseline for every failure."
