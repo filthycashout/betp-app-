@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
+from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.model_selection import TimeSeriesSplit
@@ -82,6 +82,34 @@ def select_features(df: pd.DataFrame, explicit: list[str] | None) -> list[str]:
     return features
 
 
+def temporal_feature_audit(df: pd.DataFrame, features: list[str]) -> dict[str, Any]:
+    checked: list[str] = []
+    inherited_from_snapshot: list[str] = []
+    failures: list[dict[str, Any]] = []
+    for feature in features:
+        observed_col = f"{feature}_observed_at"
+        if observed_col not in df.columns:
+            inherited_from_snapshot.append(feature)
+            continue
+        observed = pd.to_datetime(df[observed_col], utc=True, errors="raise")
+        checked.append(observed_col)
+        mask = observed > df["as_of"]
+        if bool(mask.any()):
+            failures.append({
+                "feature": feature,
+                "observed_column": observed_col,
+                "rows": int(mask.sum()),
+            })
+    if failures:
+        raise ValueError(f"Temporal feature leakage detected: {failures}")
+    return {
+        "passed": True,
+        "feature_observation_columns_checked": checked,
+        "features_inheriting_row_snapshot_time": inherited_from_snapshot,
+        "rule": "feature observed_at <= row as_of; otherwise row as_of is the canonical pregame snapshot",
+    }
+
+
 def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame, list[str], dict]:
     raw = path.read_bytes()
     df = pd.read_csv(path)
@@ -134,18 +162,21 @@ def load_canonical(path: Path, features: list[str] | None) -> tuple[pd.DataFrame
     if exact_target_features:
         raise ValueError(f"Exact target proxy leakage detected: {exact_target_features}")
 
+    temporal_audit = temporal_feature_audit(df, features)
     schema = {
-        "schema_version": 1,
+        "schema_version": 2,
         "required_columns": sorted(REQUIRED),
         "features": features,
         "feature_dtypes": {c: str(df[c].dtype) for c in features},
         "target": "target_home_win",
         "market_baseline": "market_home_probability",
+        "feature_time_rule": temporal_audit["rule"],
     }
     meta = {
         "dataset_sha256": sha256_bytes(raw),
         "feature_schema_sha256": sha256_bytes(canonical_json(schema)),
         "schema": schema,
+        "temporal_feature_audit": temporal_audit,
     }
     return df, features, meta
 
@@ -157,7 +188,6 @@ def chronological_holdout(df: pd.DataFrame, fraction: float) -> tuple[pd.DataFra
     if count >= len(df) // 2:
         raise ValueError("Holdout would consume too much of dataset")
     cutoff = df.iloc[-count]["as_of"]
-    # Never split simultaneous predictions or train on unresolved earlier games.
     dev = df[(df["as_of"] < cutoff) & (df["label_available_at"] < cutoff)].copy()
     holdout = df[df["as_of"] >= cutoff].copy()
     if len(dev) < 100 or dev["target_home_win"].nunique() != 2:
@@ -192,9 +222,12 @@ def fit_oof(df: pd.DataFrame, features: list[str], splits: int, *, return_detail
         pipeline.fit(X.iloc[train_idx], y[train_idx])
         oof_p[valid_idx] = pipeline.predict_proba(X.iloc[valid_idx])[:, 1]
         oof_y[valid_idx] = y[valid_idx]
-        folds.append({"train_rows": len(train_idx), "validation_rows": len(valid_idx),
-                      "latest_training_label_available_at": df.iloc[train_idx]["label_available_at"].max().isoformat(),
-                      "first_validation_as_of": df.iloc[valid_idx]["as_of"].min().isoformat()})
+        folds.append({
+            "train_rows": len(train_idx),
+            "validation_rows": len(valid_idx),
+            "latest_training_label_available_at": df.iloc[train_idx]["label_available_at"].max().isoformat(),
+            "first_validation_as_of": df.iloc[valid_idx]["as_of"].min().isoformat(),
+        })
 
     mask = np.isfinite(oof_p)
     if int(mask.sum()) < max(100, len(df) // 3):
@@ -206,10 +239,84 @@ def fit_oof(df: pd.DataFrame, features: list[str], splits: int, *, return_detail
     return oof_p[mask], oof_y[mask]
 
 
+def fit_calibrator(method: str, probabilities: np.ndarray, labels: np.ndarray):
+    if method == "platt":
+        calibrator = LogisticRegression(max_iter=1000, random_state=42)
+        calibrator.fit(logit(probabilities), labels)
+        return calibrator
+    if method == "isotonic":
+        calibrator = IsotonicRegression(
+            y_min=0.0,
+            y_max=1.0,
+            increasing=True,
+            out_of_bounds="clip",
+        )
+        calibrator.fit(np.asarray(probabilities, dtype=float), labels)
+        return calibrator
+    raise ValueError(f"Unsupported calibration method: {method}")
+
+
+def apply_calibrator(method: str, calibrator: Any, probabilities: np.ndarray) -> np.ndarray:
+    raw = np.asarray(probabilities, dtype=float)
+    if method == "platt":
+        return calibrator.predict_proba(logit(raw))[:, 1]
+    if method == "isotonic":
+        return np.asarray(calibrator.predict(raw), dtype=float)
+    raise ValueError(f"Unsupported calibration method: {method}")
+
+
+def metric_bundle(y: np.ndarray, p: np.ndarray) -> dict[str, float]:
+    return {
+        "brier": float(brier_score_loss(y, p)),
+        "log_loss": float(log_loss(y, p, labels=[0, 1])),
+        "ece": ece_score(y, p),
+    }
+
+
+def select_calibration_method(
+    train: pd.DataFrame,
+    validation: pd.DataFrame,
+    features: list[str],
+    splits: int,
+) -> tuple[str, dict[str, Any]]:
+    oof_p, oof_y, oof_details = fit_oof(train, features, splits, return_details=True)
+    pipeline = make_pipeline()
+    pipeline.fit(train[features], train["target_home_win"].to_numpy(dtype=int))
+    raw_validation = pipeline.predict_proba(validation[features])[:, 1]
+    y_validation = validation["target_home_win"].to_numpy(dtype=int)
+
+    candidates: dict[str, Any] = {}
+    for method in ("platt", "isotonic"):
+        calibrator = fit_calibrator(method, oof_p, oof_y)
+        calibrated = apply_calibrator(method, calibrator, raw_validation)
+        candidates[method] = metric_bundle(y_validation, calibrated)
+
+    selected = min(
+        candidates,
+        key=lambda method: (
+            candidates[method]["brier"],
+            candidates[method]["ece"],
+            candidates[method]["log_loss"],
+            method,
+        ),
+    )
+    return selected, {
+        "selected_method": selected,
+        "selection_metric": "brier_then_ece_then_log_loss",
+        "training_rows": len(train),
+        "validation_rows": len(validation),
+        "validation_first_as_of": validation["as_of"].min().isoformat(),
+        "validation_last_as_of": validation["as_of"].max().isoformat(),
+        "candidate_metrics": candidates,
+        "oof_folds": oof_details["folds"],
+    }
+
+
 def portable_model(
     sport: str,
     pipeline: Pipeline,
-    calibrator: LogisticRegression,
+    calibrator: Any,
+    calibration_method: str,
     features: list[str],
     evidence: dict[str, Any],
 ) -> dict[str, Any]:
@@ -223,11 +330,29 @@ def portable_model(
     coefs = [float(x) for x in clf.coef_[0]]
     intercept = float(clf.intercept_[0])
 
+    if calibration_method == "platt":
+        calibration_payload = {
+            "type": "platt_logit_logistic",
+            "coefficient": float(calibrator.coef_[0][0]),
+            "intercept": float(calibrator.intercept_[0]),
+            "fit_source": "chronological_out_of_fold_predictions_only",
+        }
+    elif calibration_method == "isotonic":
+        calibration_payload = {
+            "type": "isotonic",
+            "x_thresholds": [float(x) for x in calibrator.X_thresholds_],
+            "y_thresholds": [float(y) for y in calibrator.y_thresholds_],
+            "out_of_bounds": "clip",
+            "fit_source": "chronological_out_of_fold_predictions_only",
+        }
+    else:
+        raise ValueError(f"Unsupported calibration method: {calibration_method}")
+
     artifact = {
-        "schema_version": 2,
+        "schema_version": 3,
         "sport": sport,
-        "model_id": f"{sport.lower()}-governed-logreg-v1",
-        "model_type": "logistic_regression_oof_platt",
+        "model_id": f"{sport.lower()}-governed-logreg-{calibration_method}-v2",
+        "model_type": f"logistic_regression_oof_{calibration_method}",
         "portable": True,
         "trained_weights": True,
         "status": "CANDIDATE_ELIGIBLE_FOR_STRICT_CHECKS" if evidence["promotion_pass"] else "CANDIDATE_SHADOW",
@@ -242,12 +367,7 @@ def portable_model(
         "probability": {
             "coefficients": coefs,
             "intercept": intercept,
-            "calibrator": {
-                "type": "platt_logit_logistic",
-                "coefficient": float(calibrator.coef_[0][0]),
-                "intercept": float(calibrator.intercept_[0]),
-                "fit_source": "chronological_out_of_fold_predictions_only",
-            },
+            "calibrator": calibration_payload,
             "output": "home_win_probability",
         },
         "promotion_evidence": evidence["promotion_evidence"],
@@ -271,29 +391,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     min_rows = int(args.min_rows or SPORT_MIN_ROWS[sport])
 
     dev, holdout = chronological_holdout(df, args.holdout_fraction)
+    selector_train, selector_validation = chronological_holdout(dev, 0.25)
+    selected_method, selection_evidence = select_calibration_method(
+        selector_train,
+        selector_validation,
+        features,
+        args.splits,
+    )
 
     oof_p, oof_y, oof_details = fit_oof(dev, features, args.splits, return_details=True)
-    calibrator = LogisticRegression(max_iter=1000, random_state=42)
-    calibrator.fit(logit(oof_p), oof_y)
+    calibrator = fit_calibrator(selected_method, oof_p, oof_y)
 
     final_pipeline = make_pipeline()
     final_pipeline.fit(dev[features], dev["target_home_win"].to_numpy(dtype=int))
     raw_holdout = final_pipeline.predict_proba(holdout[features])[:, 1]
-    candidate = calibrator.predict_proba(logit(raw_holdout))[:, 1]
+    candidate = apply_calibrator(selected_method, calibrator, raw_holdout)
 
     y = holdout["target_home_win"].to_numpy(dtype=int)
     baseline = holdout["market_home_probability"].to_numpy(dtype=float)
 
-    cand_metrics = {
-        "brier": float(brier_score_loss(y, candidate)),
-        "log_loss": float(log_loss(y, candidate, labels=[0, 1])),
-        "ece": ece_score(y, candidate),
-    }
-    market_metrics = {
-        "brier": float(brier_score_loss(y, baseline)),
-        "log_loss": float(log_loss(y, baseline, labels=[0, 1])),
-        "ece": ece_score(y, baseline),
-    }
+    cand_metrics = metric_bundle(y, candidate)
+    market_metrics = metric_bundle(y, baseline)
 
     source_manifest = {}
     if args.source_manifest:
@@ -322,6 +440,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "chronology": True,
         "walk_forward_oof": True,
         "calibration_oof_only": True,
+        "calibration_method_selection": True,
         "separate_holdout": True,
         "leakage_audit": True,
         "schema_compatibility": True,
@@ -343,15 +462,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "first_holdout_as_of": holdout["as_of"].min().isoformat(),
                 "dataset_rows": len(df),
                 "dev_rows": len(dev),
+                "selection_training_rows": len(selector_train),
+                "selection_validation_rows": len(selector_validation),
                 "holdout_rows": len(holdout),
             },
             "calibration": {
                 "oof_only": True,
+                "method": selected_method,
+                "method_selection": selection_evidence,
                 **cand_metrics,
                 "ece_max": ECE_MAX,
             },
             "holdout": {
                 "separate_from_calibration": True,
+                "untouched_during_method_selection": True,
                 "resolved_games": len(holdout),
                 "candidate": cand_metrics,
                 "market": market_metrics,
@@ -361,6 +485,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "as_of_lt_event_time": True,
                 "forbidden_feature_names": [],
                 "exact_target_proxies": [],
+                **provenance["temporal_feature_audit"],
             },
             "market_baseline_comparison": {
                 "passed": brier_ok and logloss_ok,
@@ -388,7 +513,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         },
     }
 
-    artifact = portable_model(sport, final_pipeline, calibrator, features, evidence)
+    artifact = portable_model(
+        sport,
+        final_pipeline,
+        calibrator,
+        selected_method,
+        features,
+        evidence,
+    )
     model_core = {
         "features": artifact["features"],
         "preprocessing": artifact["preprocessing"],
@@ -398,7 +530,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         canonical_json(model_core)
     )
     artifact["promotion_evidence"] = evidence["promotion_evidence"]
-    artifact["artifact_format"] = "philthysports_portable_logistic_platt_v1"
+    artifact["artifact_format"] = "philthysports_portable_logistic_calibrated_v2"
     artifact["artifact_sha256"] = sha256_bytes(
         canonical_json({k: v for k, v in artifact.items() if k != "artifact_sha256"})
     )
@@ -413,6 +545,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     joblib.dump({
         "pipeline": final_pipeline,
         "calibrator": calibrator,
+        "calibration_method": selected_method,
         "features": features,
         "artifact_sha256": artifact["artifact_sha256"],
     }, joblib_path)
@@ -422,6 +555,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "status": artifact["status"],
         "promotion_pass": promotion_pass,
         "promotion_checks": checks,
+        "calibration_method": selected_method,
+        "calibration_selection": selection_evidence,
         "candidate_metrics": cand_metrics,
         "market_metrics": market_metrics,
         "dataset_rows": len(df),

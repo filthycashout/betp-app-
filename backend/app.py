@@ -4101,3 +4101,10 @@ def multisport_parlays(legs: int = Query(7), date: str | None = None):
         410,
         "Legacy 7/10/14-leg cards were removed. Use /v1/parlays/best3 for two three-leg parlays per sport.",
     )
+
+
+# Register on the canonical app used by existing Render start commands too.
+from evidence.runtime import SignalEvidenceMiddleware, router as evidence_router
+
+app.add_middleware(SignalEvidenceMiddleware)
+app.include_router(evidence_router)

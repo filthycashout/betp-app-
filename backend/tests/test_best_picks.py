@@ -69,7 +69,7 @@ def _prop(game, player="Test Player", probability=0.61):
 
 
 def test_new_best_pick_routes_are_registered():
-    paths = {route.path for route in runtime.app.routes}
+    paths = {getattr(route, "path", None) for route in runtime.app.routes}
     assert "/v1/picks/best12" in paths
     assert "/v1/parlays/best3" in paths
     assert "/v1/games/{sport}/{event_id}/best9" in paths

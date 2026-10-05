@@ -1,0 +1,71 @@
+name: Unified Evidence CI
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "mobile_dashboard/**"
+      - "render.yaml"
+      - ".github/workflows/unified-evidence-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-validation.txt
+      - name: Install runtime, test and governed-calibration dependencies
+        run: |
+          pip install -r backend/requirements.txt -r backend/requirements-validation.txt
+          pip install "pandas>=2.2,<3" "numpy>=2.0,<3" "scikit-learn>=1.5,<2" "joblib>=1.4,<2"
+      - name: Compile backend
+        run: python -m compileall -q backend
+      - name: Evidence regression tests
+        run: PYTHONPATH=backend pytest -q backend/tests/test_signal_log.py backend/tests/test_runtime_evidence.py
+      - name: Calibration selection and portable parity tests
+        run: PYTHONPATH=backend:backend/training pytest -q backend/training/test_calibration_selection.py
+      - name: Verify deployment wrapper registers evidence routes
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from philthysports_main import app
+          paths=set(app.openapi()["paths"])
+          required={
+              "/v1/evidence/signals",
+              "/v1/evidence/signals/{signal_id}",
+              "/v1/evidence/verify/{signal_id}",
+              "/v1/evidence/roots/{date}",
+          }
+          missing=required-paths
+          if missing:
+              raise SystemExit(f"missing evidence routes: {sorted(missing)}")
+          print("Evidence routes registered")
+          PY
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package.json
+      - name: Install dashboard dependencies
+        working-directory: mobile_dashboard
+        run: npm install --no-audit --no-fund
+      - name: Type-check dashboard
+        working-directory: mobile_dashboard
+        run: npx tsc --noEmit
+      - name: Build bundled dashboard
+        working-directory: mobile_dashboard
+        run: npm run build

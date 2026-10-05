@@ -1,6 +1,6 @@
 import React,{useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
-import Dashboard from './app/sports-dashboard';
+import Dashboard from './app/evidence-shell';
 import {GET as scores} from './app/api/scores/route';
 import {GET as powerhouse} from './app/api/powerhouse/route';
 import './app/globals.css';

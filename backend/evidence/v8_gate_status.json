@@ -1,71 +1,80 @@
 {
-  "schema_version": 1,
-  "verified_at_utc": "2026-10-04T17:35:01Z",
-  "evidence_capture": {
-    "verified": true,
-    "workflow_name": "PhilthySports v8 Evidence Capture",
-    "workflow_run_id": 37221041798,
-    "workflow_conclusion": "success",
-    "captured_at_utc": "2026-10-04T17:34:57Z",
-    "branch": "evidence-snapshots",
-    "workflow_source_commit": "485b235c160a12605869e4ed85ca12b86c185a92",
-    "secrets_embedded": false,
-    "canonical_rows": {
-      "NFL": 1,
-      "NBA": 0,
-      "MLB": 4,
-      "NHL": 13
-    },
-    "canonical_sha256": {
-      "NFL": "e2b8803b3b4ab2237f5f08b146da5b4d51a83917ca4c5d559c021600111e7ad7",
-      "NBA": "530ac5dd2c7cb4071dff6730655104fa163beaa7eb26068abf4308f23f1ac77c",
-      "MLB": "d26ebe6a237dd20ac8f2b5a87a08374dc100e09a2652d9c47f894ebb66295224",
-      "NHL": "0bf179f52d1a0bfccebc7883f5ef7f9aa45c377cc1810ee2c981b61dd24d79dd"
-    },
-    "pregame_source_manifest_sha256": "3c64223e7da4fb14fa162bc3332b4ad2ae19e31377727864444c53ea8c8cd8c5",
-    "chronology_contract": "as_of < event_time",
-    "promotion_ready": false,
-    "note": "Capture and settlement history are verified and checksummed. Row counts remain below strict v8 promotion thresholds."
-  },
-  "gate_assessment": {
-    "chronology": "IMPLEMENTED_CAPTURE_VERIFIED_PROMOTION_SAMPLE_INSUFFICIENT",
-    "calibration": "IMPLEMENTED_OOF_ONLY_EVIDENCE_INSUFFICIENT",
-    "leakage": "IMPLEMENTED_FAIL_CLOSED_PROMOTION_EVIDENCE_INSUFFICIENT",
-    "provenance": "CAPTURE_HASHES_VERIFIED_PROMOTED_MODEL_PROVENANCE_MISSING",
-    "four_sport_model_promotion": "BLOCKED_SAMPLE_SUFFICIENCY",
-    "credential_core_keyless": "PASS",
-    "credential_live_odds_props": "PRIMARY_ROTATED_KEY_AND_LIVE_CANARY_EVIDENCE_REQUIRED",
-    "stable_android_signing": "PASS",
-    "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY"
-  },
-  "sample_policy": {
-    "NFL": {
-      "minimum_total_rows": 1200,
-      "minimum_oof_rows": 600,
-      "minimum_holdout_rows": 240
-    },
-    "NBA": {
-      "minimum_total_rows": 2500,
-      "minimum_oof_rows": 1200,
-      "minimum_holdout_rows": 500
-    },
-    "MLB": {
-      "minimum_total_rows": 4000,
-      "minimum_oof_rows": 2000,
-      "minimum_holdout_rows": 800
-    },
-    "NHL": {
-      "minimum_total_rows": 2500,
-      "minimum_oof_rows": 1200,
-      "minimum_holdout_rows": 500
-    }
-  },
   "android_signing": {
-    "verified": true,
+    "apk_sha256": "b807192965729d85a2dcf9520c0b3a069683c421c039d6777f8d9acafe0eb619",
     "apk_version": "1.6.3",
     "build": 26,
-    "apk_sha256": "b807192965729d85a2dcf9520c0b3a069683c421c039d6777f8d9acafe0eb619",
+    "note": "Latest APK package/signature verification passed against the pinned release-signing path.",
     "signature_scheme": "v2",
-    "note": "Latest APK package/signature verification passed against the pinned release-signing path."
-  }
+    "verified": true
+  },
+  "evidence_capture": {
+    "branch": "evidence-snapshots",
+    "canonical_rows": {
+      "MLB": 1008,
+      "NBA": 616,
+      "NFL": 241,
+      "NHL": 530
+    },
+    "canonical_sha256": {
+      "MLB": "e224a7660a0bc71bb80578d651c485e23a7ca9e9e5cb213c4eac953cd1f7e69f",
+      "NBA": "acfe3d0e880e0c5200f17d6dcb77c67bee6bbe1914e1d779e8d4fb90f0f88f06",
+      "NFL": "4f0fbabd0c99b8da4f1fb3083d9e4c2b183950f431def7d2997f6ba29e239948",
+      "NHL": "e0be0fbe4991c71e574427a4060bd273809593b6b2b0930ad90704fb726f6c35"
+    },
+    "canonical_source_manifest_sha256": {
+      "MLB": "c52d86c944e668f9dc051ebdce902bf46612c23aba380ab1f8e633260cb6aa7d",
+      "NBA": "fcadb05f92d1b1b801dcc4aaf4c707077beb5bd48ed069d941f254e99cfe1603",
+      "NFL": "710f6366d18cb97f60bb22685f6dc1932e67adc93c33cdaba9d11f5a5bc32a0d",
+      "NHL": "ec769bfc9361db91390fe3241c18afacf00a43b9bcca45ace982fa331dfcd0ad"
+    },
+    "canonical_verified_at_utc": "2026-10-05T19:54:15.295137+00:00",
+    "captured_at_utc": "2026-10-05T16:01:50Z",
+    "chronology_contract": "as_of < event_time",
+    "evidence_snapshot_commit": "77b954dde36b5f25cf1adb96583972140f510413",
+    "historical_backfill_merge": true,
+    "note": "Canonical counts, chronology, unique events and referenced source/provenance hashes verified against the pinned evidence branch. All sports remain below strict promotion minimums.",
+    "pregame_source_manifest_sha256": "3c64223e7da4fb14fa162bc3332b4ad2ae19e31377727864444c53ea8c8cd8c5",
+    "promotion_ready": false,
+    "secrets_embedded": false,
+    "verified": true,
+    "workflow_conclusion": "success",
+    "workflow_name": "PhilthySports v8 Evidence Capture",
+    "workflow_run_id": 37221041798,
+    "workflow_source_commit": "aeff2bf79e92268b91537c732311b3733e942687"
+  },
+  "gate_assessment": {
+    "calibration": "IMPLEMENTED_OOF_ONLY_EVIDENCE_INSUFFICIENT",
+    "chronology": "IMPLEMENTED_CAPTURE_VERIFIED_PROMOTION_SAMPLE_INSUFFICIENT",
+    "credential_core_keyless": "PASS",
+    "credential_live_odds_props": "PRIMARY_ROTATED_KEY_AND_LIVE_CANARY_EVIDENCE_REQUIRED",
+    "four_sport_model_promotion": "BLOCKED_SAMPLE_SUFFICIENCY",
+    "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY",
+    "leakage": "IMPLEMENTED_FAIL_CLOSED_PROMOTION_EVIDENCE_INSUFFICIENT",
+    "provenance": "CAPTURE_HASHES_VERIFIED_PROMOTED_MODEL_PROVENANCE_MISSING",
+    "stable_android_signing": "PASS"
+  },
+  "sample_policy": {
+    "MLB": {
+      "minimum_holdout_rows": 800,
+      "minimum_oof_rows": 2000,
+      "minimum_total_rows": 4000
+    },
+    "NBA": {
+      "minimum_holdout_rows": 500,
+      "minimum_oof_rows": 1200,
+      "minimum_total_rows": 2500
+    },
+    "NFL": {
+      "minimum_holdout_rows": 240,
+      "minimum_oof_rows": 600,
+      "minimum_total_rows": 1200
+    },
+    "NHL": {
+      "minimum_holdout_rows": 500,
+      "minimum_oof_rows": 1200,
+      "minimum_total_rows": 2500
+    }
+  },
+  "schema_version": 1,
+  "verified_at_utc": "2026-10-05T19:54:15.295137+00:00"
 }

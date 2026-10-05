@@ -33,7 +33,7 @@ def test_api_prefix_compatibility():
     assert props.status_code == 200
     assert set(props.json()['sports']) == {'NFL', 'NBA', 'MLB', 'NHL'}
 
-    paths = {route.path for route in runtime.app.routes}
+    paths = {getattr(route, "path", None) for route in runtime.app.routes}
     for path in {
         '/api/v1/games/{sport}',
         '/api/v1/predictions/{sport}',
@@ -166,7 +166,7 @@ def test_keyless_four_sport_live_gateway_contracts():
         for sport_payload in payload['sports'].values()
     )
 
-    paths = {route.path for route in runtime.app.routes}
+    paths = {getattr(route, "path", None) for route in runtime.app.routes}
     assert '/v1/live/{sport}/scoreboard' in paths
     assert '/v1/live/{sport}/game/{event_id}' in paths
     assert '/api/v1/live/{sport}/scoreboard' in paths
