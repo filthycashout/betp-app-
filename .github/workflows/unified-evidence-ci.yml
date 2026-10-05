@@ -37,7 +37,7 @@ jobs:
       - name: Verify deployment wrapper registers evidence routes
         run: |
           PYTHONPATH=backend python - <<'PY'
-          from main import app
+          from philthysports_main import app
           paths={getattr(route,"path",None) for route in app.routes}
           required={
               "/v1/evidence/signals",
