@@ -1,11 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "metric_policy": {
     "ece_max": 0.01,
     "minimum_brier_improvement": 0.001,
     "maximum_log_loss_regression": 0,
-    "calibration_method": "platt_logit_logistic_from_walk_forward_oof_only",
-    "holdout_policy": "final_20_percent_chronological_untouched"
+    "calibration_method": "select_platt_or_isotonic_on_chronological_validation_then_refit_from_walk_forward_oof",
+    "calibration_selection_metric": "brier_then_ece_then_log_loss",
+    "holdout_policy": "final_20_percent_chronological_untouched",
+    "selection_validation_policy": "preceding_20_percent_chronological"
   },
   "sample_policy": {
     "NFL": {
@@ -67,7 +69,7 @@
     "settled"
   ],
   "artifact_policy": {
-    "format": "philthysports_portable_logistic_platt_v1",
+    "format": "philthysports_portable_logistic_calibrated_v2",
     "hash": "sha256",
     "signature": "ed25519",
     "signing_key_id": "a67a761f26b543ab",
