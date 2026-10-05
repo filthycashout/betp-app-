@@ -70,6 +70,21 @@ def main():
                         if x2>x1 and y2>y1:
                             call('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2));return
             raise RuntimeError('Dashboard control missing: '+label)
+        def open_view(label, expected, evidence_name):
+            # WebView accessibility can retain only the visible viewport. Retry the
+            # semantic tap and reset the document scroll before asserting page text.
+            last=''
+            for _ in range(3):
+                tap_label(label)
+                time.sleep(1)
+                call('shell','input','swipe','160','220','160','500','300',check=False)
+                time.sleep(1)
+                last=dump()
+                if expected in last:
+                    (args.output/(evidence_name+'.xml')).write_text(last)
+                    return last
+            (args.output/(evidence_name+'-failure.xml')).write_text(last)
+            raise RuntimeError('Dashboard did not expose after navigation: '+expected)
         wait_for('Live')
         logs=call('logcat','-d','--pid='+pid.split()[0])
         if 'PHILTHY_DASHBOARD_READY' not in logs:raise RuntimeError('Bundled React dashboard did not signal readiness')
@@ -89,22 +104,18 @@ def main():
             (args.output/(sport.lower()+'-scoreboard.xml')).write_text(value)
             (args.output/(sport.lower()+'-scoreboard.png')).write_bytes(call('exec-out','screencap','-p',binary=True))
             report['sport_tabs'][sport]='PASS_FRESH_FEED_RECEIVED'
-        tap_label('Picks')
-        wait_for('BEST 12 PICKS')
+        open_view('Picks','BEST 12 PICKS','picks')
         (args.output/'picks.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best12_navigation']='PASS'
 
-        tap_label('Parlay')
-        wait_for('BEST 1 & BEST 2 — 3 LEG PARLAYS')
+        open_view('Parlay','BEST 1 & BEST 2 — 3 LEG PARLAYS','parlays')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
-        tap_label('Settings')
-        wait_for('Settings')
+        open_view('Settings','Settings','settings')
         (args.output/'settings.png').write_bytes(call('exec-out','screencap','-p',binary=True))
 
-        tap_label('Live')
-        wait_for('Live')
+        open_view('Live','Live','live-return')
         (args.output/'app-logcat.txt').write_text(call('logcat','-d','--pid='+pid.split()[0]))
         report.update(launch='PASS',process_alive=True,passed=True,physical_test=args.require_physical and not virtual,
                       interactive_end_to_end_verified=False,scoreboard_navigation_verified=True,live_props_verified=False)
