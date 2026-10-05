@@ -100,6 +100,7 @@ def test_merkle_proofs_verify_for_every_leaf():
     anchored, manifest = anchor_batch([_signal(1), _signal(2), _signal(3)])
     assert manifest["leaf_count"] == 3
     for row in anchored:
+        assert verify_signal(row)
         assert verify_merkle_proof(
             row["record_sha256"],
             row["merkle_proof"],
