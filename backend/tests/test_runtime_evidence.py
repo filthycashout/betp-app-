@@ -69,7 +69,7 @@ def test_search_payload_gets_immutable_evidence(tmp_path, monkeypatch):
 
 
 def test_evidence_routes_registered_on_deployment_app():
-    from main import app
+    from philthysports_main import app
 
     paths = {getattr(route, "path", None) for route in app.routes}
     assert "/v1/evidence/signals" in paths
