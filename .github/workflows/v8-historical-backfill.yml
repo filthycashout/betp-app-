@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/training/historical_backfill.py"
       - "backend/training/historical_resolution_recover.py"
+      - "backend/training/evidence_pipeline.py"
       - ".github/workflows/v8-historical-backfill.yml"
   workflow_dispatch:
 
@@ -75,6 +76,13 @@ jobs:
             --db /tmp/sports_data.db \
             --output-dir "$TARGET" \
             --min-match-score 0.90
+
+      - name: Rebuild live-only canonical baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python backend/training/evidence_pipeline.py build \
+            --root evidence_checkout/evidence
 
       - name: Merge checksum-verified historical evidence into canonical sets
         run: |
