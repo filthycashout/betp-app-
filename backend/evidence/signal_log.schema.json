@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://philthysports.local/schemas/signal-log.schema.json",
+  "title": "PhilthySports Unified Signal Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signal_id",
+    "match_id",
+    "league",
+    "season",
+    "home_team",
+    "away_team",
+    "timestamp_utc",
+    "snapshot_time_utc",
+    "event_time_utc",
+    "data_latency_ms",
+    "market_type",
+    "selection",
+    "line",
+    "odds_decimal",
+    "engine_version",
+    "schema_version",
+    "model_family",
+    "reason_codes",
+    "record_sha256"
+  ],
+  "properties": {
+    "signal_id": {"type": "string", "format": "uuid"},
+    "match_id": {"type": "string", "minLength": 1},
+    "league": {"type": "string", "enum": ["NFL", "NBA", "MLB", "NHL"]},
+    "season": {"type": "string", "minLength": 1},
+    "home_team": {"type": "string", "minLength": 1},
+    "away_team": {"type": "string", "minLength": 1},
+    "timestamp_utc": {"type": "string", "format": "date-time"},
+    "snapshot_time_utc": {"type": "string", "format": "date-time"},
+    "event_time_utc": {"type": "string", "format": "date-time"},
+    "data_latency_ms": {"type": "integer", "minimum": 0},
+    "market_type": {"type": "string", "enum": ["moneyline", "spread", "total", "player_prop"]},
+    "selection": {"type": "string", "minLength": 1},
+    "line": {"type": ["number", "null"]},
+    "odds_decimal": {"type": "number", "exclusiveMinimum": 1.0},
+    "raw_probability": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+    "calibrated_probability": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+    "engine_version": {"type": "string", "minLength": 1},
+    "schema_version": {"type": "string", "const": "2"},
+    "model_family": {"type": "string", "minLength": 1},
+    "model_id": {"type": ["string", "null"]},
+    "model_artifact_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "dataset_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "feature_schema_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "reason_codes": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+      "uniqueItems": true
+    },
+    "source": {"type": ["string", "null"]},
+    "source_observed_at_utc": {"type": ["string", "null"], "format": "date-time"},
+    "record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "merkle_root": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "merkle_leaf_index": {"type": ["integer", "null"], "minimum": 0},
+    "merkle_proof": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["side", "sha256"],
+        "properties": {
+          "side": {"type": "string", "enum": ["left", "right"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}
