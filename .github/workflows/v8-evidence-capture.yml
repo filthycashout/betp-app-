@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/training/evidence_pipeline.py"
       - "backend/training/prediction_ledger.py"
+      - "backend/training/historical_backfill.py"
       - ".github/workflows/v8-evidence-capture.yml"
   schedule:
     - cron: "17 * * * *"
@@ -34,6 +35,7 @@ jobs:
         run: |
           cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
           cp backend/training/prediction_ledger.py /tmp/prediction_ledger.py
+          cp backend/training/historical_backfill.py /tmp/historical_backfill.py
 
       - name: Capture strict pregame evidence from live Powerhouse
         run: |
@@ -79,6 +81,9 @@ jobs:
           python /tmp/evidence_pipeline.py build \
             --root evidence
 
+          python /tmp/historical_backfill.py merge \
+            --root evidence
+
           PYTHONPATH=/tmp python /tmp/prediction_ledger.py verify \
             --root evidence
 
@@ -89,6 +94,7 @@ jobs:
             "source_backend": "https://philthysports-api-v9.onrender.com",
             "workflow_source_commit": "${GITHUB_SHA}",
             "branch": "evidence-snapshots",
+            "historical_backfill_merge": true,
             "secrets_embedded": false
           }
           EOF
