@@ -141,6 +141,8 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
     if parity_error is None:
         parity_error = parity.get("max_abs_error_python_portable_vs_sklearn")
     calibrator = (artifact.get("probability") or {}).get("calibrator") or {}
+    calibration_type = calibrator.get("type")
+    calibration_selection = calibration.get("method_selection") or {}
 
     checks = {
         "sport_matches": artifact.get("sport") == sport,
@@ -161,6 +163,12 @@ def promotion_gate(artifact: dict[str, Any], sport: str) -> dict[str, Any]:
             calibration.get("oof_only") is True
             and calibrator.get("fit_source")
             == "chronological_out_of_fold_predictions_only"
+        ),
+        "calibration_supported": calibration_type in {"platt_logit_logistic", "isotonic"},
+        "calibration_method_selected_before_holdout": (
+            calibration_selection.get("selected_method") in {"platt", "isotonic"}
+            and int(calibration_selection.get("validation_rows") or 0) > 0
+            and holdout.get("untouched_during_method_selection") is True
         ),
         "separate_holdout": holdout.get("separate_from_calibration") is True,
         "brier_improvement": (
@@ -228,11 +236,30 @@ def _sigmoid(value: float) -> float:
     return 1.0 / (1.0 + math.exp(-value))
 
 
+def _isotonic_interpolate(raw_probability: float, calibrator: dict[str, Any]) -> float:
+    xs = [float(x) for x in calibrator.get("x_thresholds") or []]
+    ys = [float(y) for y in calibrator.get("y_thresholds") or []]
+    if not xs or len(xs) != len(ys):
+        raise ValueError("isotonic thresholds are missing or misaligned")
+    if raw_probability <= xs[0]:
+        return ys[0]
+    if raw_probability >= xs[-1]:
+        return ys[-1]
+    for idx in range(1, len(xs)):
+        if raw_probability <= xs[idx]:
+            x0, x1 = xs[idx - 1], xs[idx]
+            y0, y1 = ys[idx - 1], ys[idx]
+            if x1 == x0:
+                return y1
+            ratio = (raw_probability - x0) / (x1 - x0)
+            return y0 + ratio * (y1 - y0)
+    return ys[-1]
+
+
 def predict_home_probability(
     artifact: dict[str, Any],
     feature_values: dict[str, float | None],
 ) -> float:
-    # v8 portable Platt-calibrated contract.
     if artifact.get("preprocessing") and artifact.get("probability"):
         features = list(artifact.get("features") or [])
         prep = artifact["preprocessing"]
@@ -262,14 +289,19 @@ def predict_home_probability(
             linear += float(coefficient) * value
         raw_probability = _sigmoid(linear)
 
-        clipped = max(1e-6, min(1.0 - 1e-6, raw_probability))
-        raw_logit = math.log(clipped / (1.0 - clipped))
         cal = prob.get("calibrator") or {}
-        calibrated_logit = (
-            raw_logit * float(cal.get("coefficient") or 0.0)
-            + float(cal.get("intercept") or 0.0)
-        )
-        return _sigmoid(calibrated_logit)
+        calibration_type = cal.get("type")
+        if calibration_type == "platt_logit_logistic":
+            clipped = max(1e-6, min(1.0 - 1e-6, raw_probability))
+            raw_logit = math.log(clipped / (1.0 - clipped))
+            calibrated_logit = (
+                raw_logit * float(cal.get("coefficient") or 0.0)
+                + float(cal.get("intercept") or 0.0)
+            )
+            return _sigmoid(calibrated_logit)
+        if calibration_type == "isotonic":
+            return _isotonic_interpolate(raw_probability, cal)
+        raise ValueError(f"unsupported portable calibration type: {calibration_type}")
 
     # Legacy isotonic envelope support is kept only for previously signed artifacts.
     features = artifact["features"]
@@ -282,10 +314,10 @@ def predict_home_probability(
         scale = float(model["scaler_scale"][index]) or 1.0
         values.append((value - mean) / scale)
 
-    logit = float(model["logistic_intercept"])
+    logit_value = float(model["logistic_intercept"])
     for coefficient, value in zip(model["logistic_coef"], values):
-        logit += float(coefficient) * value
-    raw_probability = _sigmoid(logit)
+        logit_value += float(coefficient) * value
+    raw_probability = _sigmoid(logit_value)
 
     xs = [float(x) for x in model.get("isotonic_x") or []]
     ys = [float(y) for y in model.get("isotonic_y") or []]
