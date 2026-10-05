@@ -11,6 +11,7 @@ from typing import Any, Iterable
 SCHEMA_VERSION = "2"
 SPORTS = {"NFL", "NBA", "MLB", "NHL"}
 MARKETS = {"moneyline", "spread", "total", "player_prop"}
+_HASH_EXCLUDED = {"record_sha256", "merkle_root", "merkle_leaf_index", "merkle_proof"}
 
 
 def canonical_json(value: Any) -> bytes:
@@ -26,6 +27,14 @@ def canonical_json(value: Any) -> bytes:
 def sha256_hex(value: Any) -> str:
     payload = value if isinstance(value, (bytes, bytearray)) else canonical_json(value)
     return hashlib.sha256(payload).hexdigest()
+
+
+def signal_hash_payload(record: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in record.items() if k not in _HASH_EXCLUDED}
+
+
+def signal_commitment(record: dict[str, Any]) -> str:
+    return sha256_hex(signal_hash_payload(record))
 
 
 def parse_utc(value: Any) -> datetime:
@@ -152,16 +161,13 @@ def make_signal(
         "merkle_leaf_index": None,
         "merkle_proof": [],
     }
-    record["record_sha256"] = sha256_hex(record)
+    record["record_sha256"] = signal_commitment(record)
     return record
 
 
 def verify_signal(record: dict[str, Any]) -> bool:
     expected = record.get("record_sha256")
-    if not isinstance(expected, str):
-        return False
-    payload = {k: v for k, v in record.items() if k != "record_sha256"}
-    return sha256_hex(payload) == expected
+    return isinstance(expected, str) and signal_commitment(record) == expected
 
 
 def _pair_hash(left: str, right: str) -> str:
