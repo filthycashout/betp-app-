@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 from pathlib import Path
 
 import joblib
@@ -27,6 +26,14 @@ def _sigmoid(value: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(value, -40.0, 40.0)))
 
 
+def _portable_isotonic(raw: np.ndarray, cal: dict) -> np.ndarray:
+    xs = np.asarray(cal.get("x_thresholds") or [], dtype=float)
+    ys = np.asarray(cal.get("y_thresholds") or [], dtype=float)
+    if not len(xs) or len(xs) != len(ys):
+        raise ValueError("portable isotonic thresholds are missing or misaligned")
+    return np.interp(np.asarray(raw, dtype=float), xs, ys, left=ys[0], right=ys[-1])
+
+
 def portable_predict(artifact: dict, matrix: np.ndarray) -> np.ndarray:
     prep = artifact["preprocessing"]
     prob = artifact["probability"]
@@ -45,13 +52,30 @@ def portable_predict(artifact: dict, matrix: np.ndarray) -> np.ndarray:
 
     z = (x - means) / np.where(scales == 0.0, 1.0, scales)
     raw = _sigmoid(z @ coefs + intercept)
-    clipped = np.clip(raw, 1e-6, 1 - 1e-6)
-    logits = np.log(clipped / (1.0 - clipped))
 
     cal = prob["calibrator"]
-    return _sigmoid(
-        logits * float(cal["coefficient"]) + float(cal["intercept"])
-    )
+    calibration_type = cal.get("type")
+    if calibration_type == "platt_logit_logistic":
+        clipped = np.clip(raw, 1e-6, 1 - 1e-6)
+        logits = np.log(clipped / (1.0 - clipped))
+        return _sigmoid(
+            logits * float(cal["coefficient"]) + float(cal["intercept"])
+        )
+    if calibration_type == "isotonic":
+        return _portable_isotonic(raw, cal)
+    raise ValueError(f"unsupported portable calibration type: {calibration_type}")
+
+
+def _server_calibrated_probability(local_model: dict, raw: np.ndarray) -> np.ndarray:
+    method = str(local_model.get("calibration_method") or "platt")
+    calibrator = local_model["calibrator"]
+    if method == "platt":
+        clipped = np.clip(raw, 1e-6, 1 - 1e-6)
+        logits = np.log(clipped / (1.0 - clipped)).reshape(-1, 1)
+        return calibrator.predict_proba(logits)[:, 1]
+    if method == "isotonic":
+        return np.asarray(calibrator.predict(raw), dtype=float)
+    raise ValueError(f"unsupported server calibration method: {method}")
 
 
 def enforce(args: argparse.Namespace) -> dict:
@@ -76,9 +100,7 @@ def enforce(args: argparse.Namespace) -> dict:
 
     local_model = joblib.load(joblib_path)
     server_raw = local_model["pipeline"].predict_proba(holdout[features])[:, 1]
-    server_clipped = np.clip(server_raw, 1e-6, 1 - 1e-6)
-    server_logit = np.log(server_clipped / (1.0 - server_clipped)).reshape(-1, 1)
-    server_prob = local_model["calibrator"].predict_proba(server_logit)[:, 1]
+    server_prob = _server_calibrated_probability(local_model, server_raw)
     portable_prob = portable_predict(
         artifact,
         holdout[features].to_numpy(dtype=float),
@@ -89,6 +111,14 @@ def enforce(args: argparse.Namespace) -> dict:
     market = report["market_metrics"]
     brier_improvement = float(market["brier"]) - float(candidate["brier"])
     allowed_logloss_regression = float(metric_policy["maximum_log_loss_regression"])
+    calibration = artifact.get("promotion_evidence", {}).get("calibration", {})
+    selection = calibration.get("method_selection") or {}
+    selected_method = selection.get("selected_method")
+    artifact_calibrator = artifact.get("probability", {}).get("calibrator", {})
+    expected_type = {
+        "platt": "platt_logit_logistic",
+        "isotonic": "isotonic",
+    }.get(selected_method)
 
     strict_checks = {
         "minimum_total_rows": int(report["dataset_rows"]) >= int(min_policy["minimum_total_rows"]),
@@ -106,10 +136,16 @@ def enforce(args: argparse.Namespace) -> dict:
             .get("in_fold_preprocessing") is True
         ),
         "calibration_oof_only": (
-            artifact.get("probability", {})
-            .get("calibrator", {})
-            .get("fit_source")
+            artifact_calibrator.get("fit_source")
             == "chronological_out_of_fold_predictions_only"
+        ),
+        "calibration_method_selection": (
+            selected_method in {"platt", "isotonic"}
+            and artifact_calibrator.get("type") == expected_type
+            and int(selection.get("validation_rows") or 0) > 0
+            and artifact.get("promotion_evidence", {})
+            .get("holdout", {})
+            .get("untouched_during_method_selection") is True
         ),
         "separate_holdout": (
             artifact.get("promotion_evidence", {})
