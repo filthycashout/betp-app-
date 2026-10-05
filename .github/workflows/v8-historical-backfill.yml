@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/training/historical_backfill.py"
+      - "backend/training/historical_resolution_recover.py"
       - ".github/workflows/v8-historical-backfill.yml"
   workflow_dispatch:
 
@@ -63,6 +64,16 @@ jobs:
             --source-url "https://github.com/ADnocap/taut-arb-backtest/releases/download/v3.0-sports/sports_data.db.gz" \
             --source-asset-sha256 "67c1db827dc310e8bed13783e4139164784dedf40abb4faf2eeb8ebd212a6ee0" \
             --source-release "v3.0-sports" \
+            --min-match-score 0.90
+
+      - name: Recover labels from unambiguous post-event market resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="evidence_checkout/evidence/historical/approved/taut-arb-v3"
+          python backend/training/historical_resolution_recover.py \
+            --db /tmp/sports_data.db \
+            --output-dir "$TARGET" \
             --min-match-score 0.90
 
       - name: Merge checksum-verified historical evidence into canonical sets
