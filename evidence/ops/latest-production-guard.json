@@ -1,7 +1,7 @@
 {
   "api_version": "1.6.3",
   "base_url": "https://philthysports-api-v9.onrender.com",
-  "checked_at": "2026-10-05T00:48:00.062400+00:00",
+  "checked_at": "2026-10-05T01:19:34.814997+00:00",
   "checks": {
     "core_keyless": true,
     "health_ok": true,
