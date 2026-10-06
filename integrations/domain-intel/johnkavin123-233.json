@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "source_repository": "johnkavin123/domains",
+  "source_path": "233.txt",
+  "source_commit": "8308d23bebbcecc2db8375279cdf19139ef090c5",
+  "source_git_blob_sha1": "705fa57081ca90b0a27f8b6fe1c3eb8802b78c8d",
+  "source_url": "https://raw.githubusercontent.com/johnkavin123/domains/8308d23bebbcecc2db8375279cdf19139ef090c5/233.txt",
+  "role": "reference_only_ag_domain_corpus_for_release_apk_static_audit",
+  "trust": "untrusted_external_reference",
+  "vendored": false,
+  "notes": [
+    "The source is a domain list, not executable provider code and not an authoritative malicious-domain feed.",
+    "PhilthySports must not use entries from this corpus as live sportsbook/provider endpoints.",
+    "CI may use the pinned corpus only to flag unexpected .ag domain literals embedded in the release APK.",
+    "The upstream repository currently declares no license, so the corpus is fetched read-only at audit time and is not redistributed in this repository."
+  ]
+}
