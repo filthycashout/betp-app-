@@ -1,0 +1,26 @@
+{
+  "canonical_file": "mlb.csv",
+  "canonical_sha256": "462ae66789a12cba19a1f15655867a11b0fa553fe373f2a7c07aa330d5bf20b1",
+  "chronology_verified": true,
+  "eligibility_rule": "snapshot_ts < commence_time AND an observed post-event resolved Polymarket price timestamp consistent with the stored winner",
+  "independent_publication_timestamp_verified": false,
+  "label_availability_verified": true,
+  "label_timestamp_role": "research_only_market_resolution_proxy",
+  "minimum_match_score": 0.9,
+  "missing_feature_policy": "leave_missing_for_in_fold_imputation;never_fabricate",
+  "missing_runtime_features": [
+    "home_spread",
+    "consensus_total"
+  ],
+  "promotion_eligible": false,
+  "promotion_ready": false,
+  "provenance_file": "mlb_provenance.jsonl",
+  "provenance_sha256": "86220a9cbb257f611ce001ff969bc477203c0476787434f4735f27152eff4d68",
+  "rows": 1002,
+  "schema_version": 1,
+  "source_asset_sha256": "67c1db827dc310e8bed13783e4139164784dedf40abb4faf2eeb8ebd212a6ee0",
+  "source_database_sha256": "cc8a1b5ad37145111f1e2debdf201b5fcc0fbd86b1d5f70d60cae24e9e4799f7",
+  "source_release": "v3.0-sports",
+  "source_url": "https://github.com/ADnocap/taut-arb-backtest/releases/download/v3.0-sports/sports_data.db.gz",
+  "sport": "MLB"
+}

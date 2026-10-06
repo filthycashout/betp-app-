@@ -1,0 +1,26 @@
+{
+  "canonical_file": "nba.csv",
+  "canonical_sha256": "acfe3d0e880e0c5200f17d6dcb77c67bee6bbe1914e1d779e8d4fb90f0f88f06",
+  "chronology_verified": true,
+  "eligibility_rule": "snapshot_ts < commence_time AND an observed post-event resolved Polymarket price timestamp consistent with the stored winner",
+  "independent_publication_timestamp_verified": false,
+  "label_availability_verified": true,
+  "label_timestamp_role": "research_only_market_resolution_proxy",
+  "minimum_match_score": 0.9,
+  "missing_feature_policy": "leave_missing_for_in_fold_imputation;never_fabricate",
+  "missing_runtime_features": [
+    "home_spread",
+    "consensus_total"
+  ],
+  "promotion_eligible": false,
+  "promotion_ready": false,
+  "provenance_file": "nba_provenance.jsonl",
+  "provenance_sha256": "d3255a5b9a5363a590f417b77c76d471f427aabcc104e41ee515e4a3c3db3ac9",
+  "rows": 616,
+  "schema_version": 1,
+  "source_asset_sha256": "67c1db827dc310e8bed13783e4139164784dedf40abb4faf2eeb8ebd212a6ee0",
+  "source_database_sha256": "cc8a1b5ad37145111f1e2debdf201b5fcc0fbd86b1d5f70d60cae24e9e4799f7",
+  "source_release": "v3.0-sports",
+  "source_url": "https://github.com/ADnocap/taut-arb-backtest/releases/download/v3.0-sports/sports_data.db.gz",
+  "sport": "NBA"
+}

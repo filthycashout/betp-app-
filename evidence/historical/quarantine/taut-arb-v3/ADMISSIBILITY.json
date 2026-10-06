@@ -1,0 +1,11 @@
+{
+  "blocking_reason": "The legacy label_available_at value is derived from a post-event 0.99/0.01 market-price crossing. A price crossing is not independent proof that an authoritative final result was publicly observable at that timestamp.",
+  "independent_publication_timestamp_verified": false,
+  "pregame_odds_use": "research_only_until_label_publication_evidence_is_repaired",
+  "promotion_eligible": false,
+  "promotion_ready": false,
+  "required_repair": "Join every retained event to an independently timestamped authoritative final-result publication, preserve the raw result receipt and hash, and require as_of < event_time < label_available_at.",
+  "schema_version": 2,
+  "source": "ADnocap/taut-arb-backtest v3.0-sports",
+  "status": "QUARANTINED_NOT_PROMOTION_ELIGIBLE"
+}
