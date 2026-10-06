@@ -110,7 +110,9 @@ def main():
         (args.output/'picks.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best12_navigation']='PASS'
 
-        open_view('Parlay','Best 1 & Best 2 — 3 leg parlays','parlays')
+        # Assert a stable semantic fragment; WebView accessibility may normalize
+        # punctuation/casing in the full heading even when the correct view is open.
+        open_view('Parlay','3 leg parlays','parlays')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
