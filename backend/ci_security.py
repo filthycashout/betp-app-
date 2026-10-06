@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import os
+import urllib.request
+from contextvars import ContextVar
 from functools import lru_cache
 from typing import Any
 
@@ -25,6 +27,14 @@ P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16
 )
 ANDROID_KEY_CONTEXT = b"philthysports-android-release-v1"
+ANDROID_PUBLIC_SPKI_SHA256_PIN = "0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
+DEFAULT_ANDROID_SIGNING_FALLBACK = "https://philthysports-powerhouse-v8.onrender.com"
+_SIGNING_BEARER_TOKEN: ContextVar[str | None] = ContextVar(
+    "philthy_signing_bearer_token", default=None
+)
+_SIGNING_FALLBACK_PAYLOAD: ContextVar[dict[str, Any] | None] = ContextVar(
+    "philthy_signing_fallback_payload", default=None
+)
 
 
 @lru_cache(maxsize=1)
@@ -55,6 +65,12 @@ def verify_github_oidc(authorization: str | None) -> dict[str, Any]:
     workflow_ref = str(claims.get("workflow_ref") or "")
     if workflow_ref not in TRUSTED_WORKFLOWS:
         raise PermissionError("untrusted workflow")
+
+    # Keep the validated token only in this request context. If the primary
+    # runtime does not hold the release seed, the Android-only helper below can
+    # forward the same trusted OIDC assertion to the dedicated signer service.
+    _SIGNING_BEARER_TOKEN.set(token)
+    _SIGNING_FALLBACK_PAYLOAD.set(None)
     return claims
 
 
@@ -66,6 +82,10 @@ def _root_seed() -> bytes:
     if len(seed) != 32:
         raise RuntimeError("MODEL_SIGNING_PRIVATE_KEY_B64 must decode to 32 bytes")
     return seed
+
+
+def _local_root_seed_configured() -> bool:
+    return bool(os.getenv("MODEL_SIGNING_PRIVATE_KEY_B64", "").strip())
 
 
 def model_public_key_b64() -> str:
@@ -101,7 +121,61 @@ def _android_private_key() -> ec.EllipticCurvePrivateKey:
     return ec.derive_private_key(scalar, ec.SECP256R1())
 
 
+def _android_signing_fallback_payload() -> dict[str, Any]:
+    cached = _SIGNING_FALLBACK_PAYLOAD.get()
+    if cached is not None:
+        return cached
+
+    token = _SIGNING_BEARER_TOKEN.get()
+    if not token:
+        raise RuntimeError("validated GitHub OIDC token unavailable for signing fallback")
+
+    fallback_base = os.getenv(
+        "PHILTHY_SIGNING_FALLBACK_URL", DEFAULT_ANDROID_SIGNING_FALLBACK
+    ).strip().rstrip("/")
+    if not fallback_base:
+        raise RuntimeError("Android signing fallback URL is not configured")
+
+    current_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
+    fallback_host = fallback_base.split("://", 1)[-1].split("/", 1)[0].lower()
+    if current_host and current_host == fallback_host:
+        raise RuntimeError("Android signing seed unavailable on fallback signer")
+
+    request = urllib.request.Request(
+        f"{fallback_base}/v1/ci/android-signing-material",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "PhilthySports-signing-failover/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if response.status != 200:
+            raise RuntimeError(f"signing fallback returned HTTP {response.status}")
+        payload = json.loads(response.read().decode("utf-8"))
+
+    if payload.get("algorithm") != "EC_P256":
+        raise RuntimeError("signing fallback returned unexpected algorithm")
+    if payload.get("public_spki_sha256") != ANDROID_PUBLIC_SPKI_SHA256_PIN:
+        raise RuntimeError("signing fallback key does not match pinned release identity")
+
+    encoded_private = str(payload.get("private_key_pkcs8_b64") or "")
+    if not encoded_private:
+        raise RuntimeError("signing fallback omitted private key material")
+    private_der = base64.b64decode(encoded_private, validate=True)
+    private_key = serialization.load_der_private_key(private_der, password=None)
+    if not isinstance(private_key, ec.EllipticCurvePrivateKey) or not isinstance(
+        private_key.curve, ec.SECP256R1
+    ):
+        raise RuntimeError("signing fallback returned an invalid P-256 private key")
+
+    _SIGNING_FALLBACK_PAYLOAD.set(payload)
+    return payload
+
+
 def android_private_pkcs8_b64() -> str:
+    if not _local_root_seed_configured():
+        return str(_android_signing_fallback_payload()["private_key_pkcs8_b64"])
     key = _android_private_key()
     payload = key.private_bytes(
         serialization.Encoding.DER,
@@ -112,6 +186,8 @@ def android_private_pkcs8_b64() -> str:
 
 
 def android_public_spki_sha256() -> str:
+    if not _local_root_seed_configured():
+        return str(_android_signing_fallback_payload()["public_spki_sha256"])
     key = _android_private_key()
     spki = key.public_key().public_bytes(
         serialization.Encoding.DER,
