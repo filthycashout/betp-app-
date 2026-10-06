@@ -164,9 +164,9 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
         raise RuntimeError("signing fallback omitted private key material")
     private_der = base64.b64decode(encoded_private, validate=True)
     private_key = serialization.load_der_private_key(private_der, password=None)
-    if not isinstance(private_key, ec.EllipticCurvePrivateKey) or not isinstance(
-        private_key.curve, ec.SECP256R1
-    ):
+    if not isinstance(private_key, ec.EllipticCurvePrivateKey):
+        raise RuntimeError("signing fallback returned an invalid P-256 private key")
+    if getattr(private_key.curve, "name", "") != "secp256r1":
         raise RuntimeError("signing fallback returned an invalid P-256 private key")
 
     _SIGNING_FALLBACK_PAYLOAD.set(payload)
