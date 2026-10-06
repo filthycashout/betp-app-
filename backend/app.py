@@ -20,6 +20,11 @@ from keyless_sportsbook import (
     keyless_sportsbook_status,
 )
 from public_context import game_weather_context, sports_news, weather_context
+from odds_api_net import (
+    configured as odds_api_net_configured,
+    events_for_date as odds_api_net_events_for_date,
+    status as odds_api_net_status,
+)
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -1533,29 +1538,60 @@ def _espn_market_events(sport: str, d: date_cls) -> list[dict]:
     return events
 
 def _odds(sport: str, d: date_cls) -> list[dict]:
+    # No single sportsbook provider is allowed to make the Powerhouse board fail.
+    # Credentialled providers are attempted independently, then keyless read-only
+    # sources fill coverage. Every downstream pick still has to pass freshness and
+    # two-sided evidence validation.
+    events: list[dict[str, Any]] = []
     key = os.getenv("ODDS_API_KEY", "").strip()
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
-    if key and rotation:
-        start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
-        end = start + timedelta(hours=36)
-        params = {
-            "apiKey": key, "regions": "us", "markets": "h2h,spreads,totals",
-            "oddsFormat": "american", "dateFormat": "iso",
-            "commenceTimeFrom": start.isoformat().replace("+00:00", "Z"),
-            "commenceTimeTo": end.isoformat().replace("+00:00", "Z"),
-        }
-        return _timed(
-            f"{sport}.odds.the_odds_api",
-            lambda: _json(
-                f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/odds/",
-                params=params,
-                timeout=12,
-            ),
-        )
 
-    # Prefer a current read-only sportsbook snapshot. No user credential is
-    # embedded or required. If the direct source is unavailable, fall back to
-    # ESPN's current game-line snapshot.
+    if key and rotation:
+        try:
+            start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+            end = start + timedelta(hours=36)
+            params = {
+                "apiKey": key,
+                "regions": "us",
+                "markets": "h2h,spreads,totals",
+                "oddsFormat": "american",
+                "dateFormat": "iso",
+                "commenceTimeFrom": start.isoformat().replace("+00:00", "Z"),
+                "commenceTimeTo": end.isoformat().replace("+00:00", "Z"),
+            }
+            primary = _timed(
+                f"{sport}.odds.the_odds_api",
+                lambda: _json(
+                    f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/odds/",
+                    params=params,
+                    timeout=12,
+                ),
+            )
+            if isinstance(primary, list):
+                events.extend(
+                    {
+                        **row,
+                        "market_source": "THE_ODDS_API_V4",
+                        "data_quality": "PREGAME_CREDENTIALLED",
+                    }
+                    for row in primary
+                    if isinstance(row, dict)
+                )
+        except Exception:
+            # Keep the board available through the next validated provider.
+            pass
+
+    if odds_api_net_configured():
+        try:
+            events.extend(
+                _timed(
+                    f"{sport}.odds.odds_api_net",
+                    lambda: odds_api_net_events_for_date(sport, d),
+                )
+            )
+        except Exception:
+            pass
+
     try:
         direct = _timed(
             f"{sport}.odds.public_sportsbook_keyless",
@@ -1570,7 +1606,7 @@ def _odds(sport: str, d: date_cls) -> list[dict]:
         )
     except Exception:
         espn = []
-    return [*direct, *espn]
+    return [*events, *direct, *espn]
 
 def _norm(s: str | None) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
@@ -1582,10 +1618,14 @@ def _same_team(a: str | None, b: str | None) -> bool:
 def _market_source_rank(event: dict[str, Any]) -> int:
     source = str(event.get("market_source") or "").upper()
     if "THE_ODDS" in source:
-        return 30
+        return 40
+    if "ODDS_API_NET" in source:
+        return 35
     if "BOVADA" in source:
         return 25
     if "DRAFTKINGS" in source:
+        return 20
+    if "FANDUEL" in source:
         return 20
     if "ESPN" in source:
         return 10
@@ -4115,14 +4155,41 @@ def _build_multisport_parlay(
     }
 
 
+@app.get("/api/v1/data/external-providers", include_in_schema=False)
+@app.get("/v1/data/external-providers")
+def external_provider_status():
+    rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
+    return {
+        "odds_api_net": odds_api_net_status(),
+        "the_odds_api": {
+            "configured": bool(os.getenv("ODDS_API_KEY", "").strip()) and rotation,
+            "credential_env": "ODDS_API_KEY",
+        },
+        "sportradar": {
+            "configured": bool(os.getenv("SPORTRADAR_API_KEY", "").strip()) and rotation,
+            "credential_env": "SPORTRADAR_API_KEY",
+            "role": "optional verification/feed adapter; not allowed to bypass v8 promotion gates",
+        },
+        "draftfast": {
+            "runtime_role": "optional DFS optimizer only",
+            "prediction_model": False,
+            "wager_execution": False,
+        },
+        "fanduel": {
+            "direct_unofficial_client_enabled": False,
+            "normalized_bookmaker_source": "odds-api.net when configured",
+        },
+    }
+
+
 @app.get("/api/parlays/multisport", include_in_schema=False)
 @app.get("/api/v1/parlays/multisport", include_in_schema=False)
 @app.get("/v1/parlays/multisport")
 def multisport_parlays(legs: int = Query(7), date: str | None = None):
-    raise HTTPException(
-        410,
-        "Legacy 7/10/14-leg cards were removed. Use /v1/parlays/best3 for two three-leg parlays per sport.",
-    )
+    try:
+        return _build_multisport_parlay(legs, date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
 
 
 # Register on the canonical app used by existing Render start commands too.
