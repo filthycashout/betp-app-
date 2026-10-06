@@ -1,4 +1,5 @@
 # Release validation builds the signed APK consumed by emulator smoke.
+# v1.6.6 validates the durable-evidence/provider-status reliability update.
 name: PhilthyParleys Full CI
 
 on:
@@ -99,7 +100,7 @@ jobs:
             https://philthysports-powerhouse-v8.onrender.com
           do
             if CANDIDATE="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
-              -H "Authorization: Bearer $OIDC_TOKEN" \
+              -H "Authorization: Bearer $OIDIDC_TOKEN" \
               "$SIGNING_BASE/v1/ci/android-signing-material")"; then
               SIGNING_JSON="$CANDIDATE"
               break
