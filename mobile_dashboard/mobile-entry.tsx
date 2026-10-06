@@ -11,7 +11,7 @@ window.__philthyReply=(value)=>{const p=pending.get(value.id);if(!p)return;pendi
 const nativeFetch=(url:string,signal?:AbortSignal|null)=>new Promise<Response>((resolve,reject)=>{
  if(signal?.aborted){reject(new DOMException('Request cancelled','AbortError'));return;}
  const id=String(++counter);const cleanup=()=>signal?.removeEventListener('abort',onAbort);const onAbort=()=>{const p=pending.get(id);if(p){clearTimeout(p.timer);pending.delete(id);cleanup();reject(new DOMException('Request cancelled','AbortError'));}};
- const timer=setTimeout(()=>{pending.delete(id);cleanup();reject(new Error('Data service timed out.'));},50000);
+ const timer=setTimeout(()=>{pending.delete(id);cleanup();reject(new Error('Data service timed out.'));},90000);
  pending.set(id,{resolve,reject,timer,cleanup});signal?.addEventListener('abort',onAbort,{once:true});
  try{window.PhilthyNetwork.postMessage(JSON.stringify({id,url}));}catch{clearTimeout(timer);pending.delete(id);cleanup();reject(new Error('Android network connection unavailable.'));}
 });
