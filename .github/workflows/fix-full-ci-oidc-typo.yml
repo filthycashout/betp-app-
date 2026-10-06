@@ -1,0 +1,30 @@
+name: Fix Full CI OIDC Typo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-full-ci-oidc-typo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Repair OIDC token variable
+        run: |
+          sed -i 's/OIDIDC_TOKEN/OIDC_TOKEN/g' .github/workflows/philthysports-full-ci.yml
+          grep -q 'Bearer $OIDC_TOKEN' .github/workflows/philthysports-full-ci.yml
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/philthysports-full-ci.yml
+          git commit -m 'Fix release validation OIDC token variable'
+          git push origin HEAD:main
