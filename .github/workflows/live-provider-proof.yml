@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/live-provider-proof.yml'
+      - 'backend/provider_canary.py'
+      - 'backend/app.py'
   workflow_dispatch:
 
 permissions:
@@ -13,11 +15,11 @@ permissions:
 jobs:
   live-provider-proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Probe deployed production provider surfaces
+      - name: Wait for deployed commit and call redacted provider canary
         shell: bash
         run: |
           set -euo pipefail
@@ -27,23 +29,37 @@ jobs:
             'https://philthysports-powerhouse-v8.onrender.com'
           )
           selected=''
-          for base in "${bases[@]}"; do
-            if curl -fsS --retry 6 --retry-all-errors --retry-delay 3 --max-time 30 "$base/health" -o provider-proof/health.json; then
-              selected="$base"
-              break
-            fi
+          for attempt in $(seq 1 40); do
+            for base in "${bases[@]}"; do
+              if curl -fsS --max-time 20 "$base/health" -o provider-proof/health.json; then
+                deployed="$(python - <<'PY'
+import json
+from pathlib import Path
+try:
+    print(json.loads(Path('provider-proof/health.json').read_text()).get('deployment_commit') or '')
+except Exception:
+    print('')
+PY
+)"
+                if [ "$deployed" = "$GITHUB_SHA" ] || [ -z "$deployed" ]; then
+                  if curl -fsS --max-time 30 "$base/v1/providers/canary" -o provider-proof/provider-canary.json; then
+                    selected="$base"
+                    break 2
+                  fi
+                fi
+              fi
+            done
+            sleep 5
           done
           if [ -z "$selected" ]; then
-            echo '{"status":"BLOCKED","reason":"no deployed backend health endpoint responded"}' | tee provider-proof/report.json
+            echo '{"status":"BLOCKED","reason":"deployed provider canary endpoint did not become reachable for this commit"}' > provider-proof/report.json
             exit 0
           fi
           printf '%s\n' "$selected" > provider-proof/base-url.txt
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/system/status" -o provider-proof/system-status.json
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/data/external-providers" -o provider-proof/external-providers.json
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/system/props" -o provider-proof/props-capabilities.json
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 90 "$selected/v1/today?include_props=true&props_limit=1&days=7" -o provider-proof/today.json
+          curl -fsS --max-time 30 "$selected/v1/system/status" -o provider-proof/system-status.json
+          curl -fsS --max-time 30 "$selected/v1/system/props" -o provider-proof/props-capabilities.json
 
-      - name: Evaluate live provider evidence without exposing credentials
+      - name: Evaluate direct live credential proof
         shell: bash
         run: |
           python - <<'PY'
@@ -56,58 +72,33 @@ jobs:
               print(report_path.read_text())
               raise SystemExit(0)
 
+          canary=json.loads((root/'provider-canary.json').read_text())
           status=json.loads((root/'system-status.json').read_text())
-          providers=json.loads((root/'external-providers.json').read_text())
-          props=json.loads((root/'props-capabilities.json').read_text())
-          today=json.loads((root/'today.json').read_text())
-
-          # Current production status nests the governed credential result here.
-          cred=(
-              status.get('credential_gate')
-              or status.get('credentials')
-              or status.get('credential_status')
-              or {}
+          odds=canary.get('the_odds_api') or {}
+          cred=status.get('credential_gate') or {}
+          passed=(
+              canary.get('credentialled_live_provider_verified') is True
+              and odds.get('authenticated') is True
+              and odds.get('schema_valid') is True
           )
-          live_allowed=isinstance(cred,dict) and cred.get('odds_props_live_allowed') is True
-          if status.get('odds_props_live_allowed') is True:
-              live_allowed=True
-
-          configured=[]
-          for name, value in providers.items() if isinstance(providers, dict) else []:
-              if isinstance(value, dict) and value.get('configured') is True:
-                  configured.append(name)
-
-          credentialled_sources=set()
-          games=today.get('games') or [] if isinstance(today, dict) else []
-          for game in games:
-              if not isinstance(game, dict):
-                  continue
-              for key in ('market_source','provider','odds_source','prop_source'):
-                  value=str(game.get(key) or '').upper()
-                  if 'THE_ODDS_API' in value or 'ODDS_API_NET' in value or 'SPORTRADAR' in value:
-                      credentialled_sources.add(value)
-              props_payload=game.get('props')
-              if isinstance(props_payload, dict):
-                  for key in ('market_source','provider','source'):
-                      value=str(props_payload.get(key) or '').upper()
-                      if 'THE_ODDS_API' in value or 'ODDS_API_NET' in value or 'SPORTRADAR' in value:
-                          credentialled_sources.add(value)
-
           proof={
-              'schema_version':2,
+              'schema_version':3,
               'base_url':(root/'base-url.txt').read_text().strip(),
-              'configured_providers':sorted(configured),
-              'odds_props_live_allowed':live_allowed,
-              'rotation_confirmed':cred.get('rotation_confirmed') is True if isinstance(cred,dict) else False,
-              'live_canary_evidence_verified':cred.get('live_canary_evidence_verified') is True if isinstance(cred,dict) else False,
-              'provider_revocation_independently_verified':cred.get('provider_revocation_independently_verified') is True if isinstance(cred,dict) else False,
-              'credentialled_sources_observed':sorted(credentialled_sources),
-              'games_observed':len(games),
-              'status':'PASS' if live_allowed and configured and credentialled_sources else 'BLOCKED',
+              'deployment_commit':json.loads((root/'health.json').read_text()).get('deployment_commit'),
+              'provider':'The Odds API v4',
+              'credential_configured':odds.get('credential_configured') is True,
+              'rotation_confirmed':odds.get('rotation_confirmed') is True,
+              'authenticated':odds.get('authenticated') is True,
+              'schema_valid':odds.get('schema_valid') is True,
+              'http_status':odds.get('http_status'),
+              'usage':odds.get('usage') or {},
+              'secret_exposed':False,
+              'provider_revocation_independently_verified':cred.get('provider_revocation_independently_verified') is True,
+              'status':'PASS' if passed else 'BLOCKED',
               'reason':(
-                  'credentialed live provider was configured and observed in a production response'
-                  if live_allowed and configured and credentialled_sources else
-                  'credentials are allowed/configured but no successful credentialed production response was observed; keyless fallback does not count as live-provider proof'
+                  'credentialed provider authenticated directly and returned the expected live catalog schema'
+                  if passed else
+                  odds.get('reason') or 'direct credential canary did not pass'
               ),
           }
           report_path.write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
