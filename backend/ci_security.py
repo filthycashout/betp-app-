@@ -118,3 +118,27 @@ def android_public_spki_sha256() -> str:
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
     return hashlib.sha256(spki).hexdigest()
+
+
+# app.py imports this module before constructing its FastAPI instance. Register
+# the additive /mcp router at construction time while leaving all existing v8
+# routes, gates, signing functions and deployment commands unchanged.
+def _register_mcp_router_on_fastapi() -> None:
+    try:
+        from fastapi import FastAPI
+        from mcp_server import router as philthy_mcp_router
+    except Exception:
+        return
+    if getattr(FastAPI, "_philthy_mcp_registered", False):
+        return
+    original_init = FastAPI.__init__
+
+    def governed_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.include_router(philthy_mcp_router)
+
+    FastAPI.__init__ = governed_init
+    FastAPI._philthy_mcp_registered = True
+
+
+_register_mcp_router_on_fastapi()
