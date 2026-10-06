@@ -27,6 +27,7 @@ from odds_api_net import (
 )
 
 import requests
+from provider_canary import live_provider_canaries
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from ci_security import (
@@ -2201,6 +2202,12 @@ def ready():
         "hybrid_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
         "baseline_fallback_sports": [sport for sport, gate in gates.items() if not gate["passed"]],
     }
+
+
+@app.get("/api/v1/providers/canary", include_in_schema=False)
+@app.get("/v1/providers/canary")
+def provider_canary(historical_probe: bool = False):
+    return live_provider_canaries(historical_probe=historical_probe)
 
 @app.get("/api/system/status", include_in_schema=False)
 @app.get("/api/v1/system/status", include_in_schema=False)
