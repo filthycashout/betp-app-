@@ -1,0 +1,71 @@
+name: Apply Runtime Reliability Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_runtime_reliability_fix.py
+      - .github/workflows/apply-runtime-reliability-fix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply source fix
+        run: python scripts/apply_runtime_reliability_fix.py
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
+
+      - name: Verify backend source and regression suite
+        run: |
+          python -m py_compile backend/app.py backend/evidence/runtime.py backend/odds_api_net.py
+          PYTHONPATH=backend pytest -q backend/tests
+          (cd backend && python odds_api_net_smoke.py)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package-lock.json
+
+      - name: Verify dashboard
+        working-directory: mobile_dashboard
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+
+      - name: Commit verified runtime fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            backend/app.py \
+            backend/evidence/runtime.py \
+            backend/requirements.txt \
+            mobile_dashboard/app/sports-dashboard.tsx \
+            mobile_dashboard/package.json \
+            mobile_dashboard/package-lock.json \
+            pubspec.yaml
+          if git diff --cached --quiet; then
+            echo 'No runtime fix changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Fix durable evidence storage, provider status, and gate display (1.6.6)'
+          git push origin HEAD:main
