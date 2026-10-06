@@ -89,6 +89,16 @@ jobs:
           flutter build apk --release
           ls -l build/app/outputs/flutter-apk/
 
+      - name: Audit release APK against pinned .ag domain corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ci/apk_domain_audit.py \
+            --apk build/app/outputs/flutter-apk/app-release.apk \
+            --report apk-domain-audit.json \
+            --fail-on-ag \
+            --fail-on-corpus-match
+
       - name: Install Android platform tools for adb audit
         uses: android-actions/setup-android@v3
 
@@ -124,4 +134,5 @@ jobs:
           name: requested-command-audit
           path: |
             build/app/outputs/flutter-apk/*.apk
+            apk-domain-audit.json
             device-report-physical/
