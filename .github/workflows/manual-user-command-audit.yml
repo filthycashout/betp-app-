@@ -89,6 +89,9 @@ jobs:
           flutter build apk --release
           ls -l build/app/outputs/flutter-apk/
 
+      - name: Install Android platform tools for adb audit
+        uses: android-actions/setup-android@v3
+
       - name: Physical-device smoke eligibility
         shell: bash
         run: |
