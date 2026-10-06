@@ -1,0 +1,59 @@
+name: PhilthySports Historical Access Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/historical-access-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-access-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe one paid historical-events request
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p historical-access-proof
+          curl -fsS --max-time 30 \
+            'https://philthysports-api-v9.onrender.com/v1/providers/canary?historical_probe=true' \
+            -o historical-access-proof/canary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          src = json.loads(Path('historical-access-proof/canary.json').read_text())
+          odds = src.get('the_odds_api') or {}
+          hist = odds.get('historical_access_probe') or {}
+          report = {
+              'schema_version': 1,
+              'provider': 'The Odds API v4',
+              'live_authenticated': odds.get('authenticated') is True,
+              'historical_access_status': hist.get('status'),
+              'historical_http_status': hist.get('http_status'),
+              'historical_schema_valid': hist.get('schema_valid') is True,
+              'historical_events_returned': hist.get('events_returned'),
+              'historical_probe_date': hist.get('probe_date'),
+              'usage': hist.get('usage') or {},
+              'secret_exposed': False,
+              'safe_for_bulk_backfill': False,
+              'reason': hist.get('reason') or 'historical access probe returned no result',
+          }
+          # Bulk backfill remains false here by design. A separate hard budget and
+          # sufficient remaining quota are required before historical odds capture.
+          Path('historical-access-proof/report.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+      - name: Upload proof
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: historical-access-proof
+          path: historical-access-proof/
+          retention-days: 90
