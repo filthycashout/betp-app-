@@ -1,0 +1,72 @@
+name: PhilthySports MCP v2 CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/mcp_service.py'
+      - 'backend/requirements-mcp.txt'
+      - '.github/workflows/mcp-v2-ci.yml'
+      - 'integrations/philthysports-mcp-skills/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned MCP service dependencies
+        run: pip install -r backend/requirements-mcp.txt
+      - name: Compile MCP service
+        run: python -m py_compile backend/mcp_service.py
+      - name: Verify modern MCP discovery and six-skill tool surface in process
+        env:
+          PYTHONPATH: backend
+        run: |
+          python - <<'PY'
+          import asyncio
+          from mcp import Client
+          from mcp_service import mcp
+
+          async def main():
+              async with Client(mcp) as client:
+                  assert str(client.protocol_version) == '2026-07-28', client.protocol_version
+                  listed = await client.list_tools()
+                  names = {tool.name for tool in listed.tools}
+                  required = {
+                      'philthy_health',
+                      'philthy_system_status',
+                      'philthy_provider_status',
+                      'philthy_search',
+                      'philthy_best12',
+                      'philthy_best3',
+                      'philthy_evidence',
+                      'philthy_capability_inventory',
+                      'philthy_dfs_optimize',
+                  }
+                  missing = sorted(required - names)
+                  assert not missing, f'missing MCP tools: {missing}'
+                  result = await client.call_tool('philthy_capability_inventory', {})
+                  assert not result.is_error
+                  text = ''.join(getattr(item, 'text', '') for item in result.content)
+                  for skill in (
+                      'sports-mcp-router',
+                      'sportradar-sports-data',
+                      'odds-api-research',
+                      'draftfast-lineup-optimizer',
+                      'fanduel-api-research',
+                      'bytecode-viewer-analysis',
+                  ):
+                      assert skill in text, skill
+                  print('protocol=', client.protocol_version)
+                  print('tools=', sorted(names))
+
+          asyncio.run(main())
+          PY
