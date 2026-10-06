@@ -148,6 +148,15 @@ jobs:
           version,code=re.search(r'^version:\s*(\S+)\+(\d+)\s*$',Path('pubspec.yaml').read_text(),re.M).groups()
           Path('build-metadata.json').write_text(json.dumps({'app_name':'PhilthyParleys','version':version,'version_code':int(code),'package_id':'com.philthysports.philthysports','commit':os.environ['GITHUB_SHA'],'physical_device_test':'NOT_RUN'},indent=2)+'\n')
           PY
+      - name: Audit exact signed APK against pinned .ag domain corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ci/apk_domain_audit.py \
+            --apk PhilthyParleys.apk \
+            --report apk-domain-audit.json \
+            --fail-on-ag \
+            --fail-on-corpus-match
       - uses: actions/upload-artifact@v4
         with:
           name: PhilthyParleys-android
@@ -156,6 +165,7 @@ jobs:
             PhilthyParleys.apk.sha256
             apk-signature.txt
             build-metadata.json
+            apk-domain-audit.json
 
   emulator:
     runs-on: ubuntu-latest
