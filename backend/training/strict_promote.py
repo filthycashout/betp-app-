@@ -14,6 +14,19 @@ import governed_train as base
 POLICY = json.loads((Path(__file__).resolve().parent / "policy.json").read_text())
 
 
+def source_quarantine_reasons(manifest: dict) -> list[str]:
+    """Honor explicit upstream holds; absence is not independent verification.
+
+    The existing checksum and provenance checks still apply. This guard only
+    prevents a research/held source from being promoted despite its own flags.
+    """
+    flags = (
+        "promotion_ready", "promotion_eligible",
+        "independent_publication_timestamp_verified",
+    )
+    return [f"{name}=false" for name in flags if manifest.get(name) is False]
+
+
 def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
@@ -80,6 +93,8 @@ def _server_calibrated_probability(local_model: dict, raw: np.ndarray) -> np.nda
 
 def enforce(args: argparse.Namespace) -> dict:
     report = base.run(args)
+    source_manifest = json.loads(Path(args.source_manifest).read_text())
+    quarantine_reasons = source_quarantine_reasons(source_manifest)
     sport = args.sport.upper()
     min_policy = POLICY["sample_policy"][sport]
     metric_policy = POLICY["metric_policy"]
@@ -166,6 +181,7 @@ def enforce(args: argparse.Namespace) -> dict:
             and report.get("feature_schema_sha256") == provenance["feature_schema_sha256"]
         ),
         "source_manifest_checksum": bool(report.get("source_manifest_sha256")),
+        "source_not_quarantined": not quarantine_reasons,
         "portable_parity": parity_max_abs <= 1e-10,
     }
     eligible = all(strict_checks.values())
@@ -193,6 +209,7 @@ def enforce(args: argparse.Namespace) -> dict:
     artifact_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n")
 
     report["strict_policy_pass"] = eligible
+    report["source_quarantine_reasons"] = quarantine_reasons
     report["strict_checks"] = strict_checks
     report["brier_improvement"] = brier_improvement
     report["oof_rows"] = oof_rows

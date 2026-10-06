@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-10-06T07:49:00Z",
+  "generated_utc": "2026-10-06T21:30:00Z",
   "repositories": [
     {
       "name": "draftfast",
@@ -28,6 +28,13 @@
       "branch": "master",
       "commit": "b23e020a29ce7eb792c637ff8e6d34940e1587f1",
       "role": "sportradar_adapter_reference"
+    },
+    {
+      "name": "bytecode-viewer",
+      "url": "https://github.com/Konloch/bytecode-viewer.git",
+      "branch": "master",
+      "commit": "31430e0033fa220db566b5ef461256727ff6793b",
+      "role": "authorized_apk_static_analysis_reference"
     }
   ]
 }

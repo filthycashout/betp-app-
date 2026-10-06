@@ -1,0 +1,55 @@
+name: NFL Archive Research Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/training/NFL_ARCHIVE_RESEARCH.md'
+      - 'backend/training/nflverse_archive_backfill.py'
+      - 'backend/training/test_nflverse_archive_backfill.py'
+      - 'backend/training/strict_promote.py'
+      - '.github/workflows/nfl-archive-research-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install training dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
+      - name: Compile research and promotion modules
+        run: |
+          python -m py_compile \
+            backend/training/nflverse_archive_backfill.py \
+            backend/training/strict_promote.py \
+            backend/training/test_nflverse_archive_backfill.py
+      - name: Run NFL archive safety tests
+        env:
+          PYTHONPATH: backend/training
+        run: python -m unittest discover -s backend/training -p 'test_nflverse_archive_backfill.py' -v
+      - name: Confirm research path cannot silently certify source holds
+        env:
+          PYTHONPATH: backend/training
+        run: |
+          python - <<'PY'
+          from strict_promote import source_quarantine_reasons
+          expected = [
+              'promotion_ready=false',
+              'independent_publication_timestamp_verified=false',
+          ]
+          actual = source_quarantine_reasons({
+              'promotion_ready': False,
+              'independent_publication_timestamp_verified': False,
+          })
+          if actual != expected:
+              raise SystemExit(f'quarantine guard mismatch: {actual!r}')
+          print('PASS: explicit research/source holds block strict promotion')
+          PY
