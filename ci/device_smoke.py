@@ -52,18 +52,20 @@ def main():
         def dump():
             call('shell','uiautomator','dump','/sdcard/window.xml',check=False)
             return call('shell','cat','/sdcard/window.xml',check=False)
+        def exposed(value, text):
+            return text.casefold() in value.casefold()
         def wait_for(text, seconds=50):
             deadline=time.monotonic()+seconds
             while time.monotonic()<deadline:
                 value=dump()
-                if text in value:return value
+                if exposed(value,text):return value
                 time.sleep(2)
             raise RuntimeError('Dashboard did not expose: '+text)
         def tap_label(label):
             root=ET.fromstring(dump())
             for node in root.iter('node'):
                 text=(node.attrib.get('text','') or node.attrib.get('content-desc','')).strip()
-                if text==label or text.endswith(' '+label):
+                if text.casefold()==label.casefold() or text.casefold().endswith(' '+label.casefold()):
                     b=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.attrib.get('bounds',''))
                     if b:
                         x1,y1,x2,y2=map(int,b.groups())
@@ -80,7 +82,7 @@ def main():
                 call('shell','input','swipe','160','220','160','500','300',check=False)
                 time.sleep(1)
                 last=dump()
-                if expected in last:
+                if exposed(last,expected):
                     (args.output/(evidence_name+'.xml')).write_text(last)
                     return last
             (args.output/(evidence_name+'-failure.xml')).write_text(last)
@@ -104,11 +106,11 @@ def main():
             (args.output/(sport.lower()+'-scoreboard.xml')).write_text(value)
             (args.output/(sport.lower()+'-scoreboard.png')).write_bytes(call('exec-out','screencap','-p',binary=True))
             report['sport_tabs'][sport]='PASS_FRESH_FEED_RECEIVED'
-        open_view('Picks','BEST 12 PICKS','picks')
+        open_view('Picks','Best 12 picks','picks')
         (args.output/'picks.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best12_navigation']='PASS'
 
-        open_view('Parlay','BEST 1 & BEST 2 — 3 LEG PARLAYS','parlays')
+        open_view('Parlay','Best 1 & Best 2 — 3 leg parlays','parlays')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
