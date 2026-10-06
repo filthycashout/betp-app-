@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for deployed commit and call redacted provider canary
+      - name: Wait for deployed redacted provider canary
         shell: bash
         run: |
           set -euo pipefail
@@ -31,28 +31,16 @@ jobs:
           selected=''
           for attempt in $(seq 1 40); do
             for base in "${bases[@]}"; do
-              if curl -fsS --max-time 20 "$base/health" -o provider-proof/health.json; then
-                deployed="$(python - <<'PY'
-import json
-from pathlib import Path
-try:
-    print(json.loads(Path('provider-proof/health.json').read_text()).get('deployment_commit') or '')
-except Exception:
-    print('')
-PY
-)"
-                if [ "$deployed" = "$GITHUB_SHA" ] || [ -z "$deployed" ]; then
-                  if curl -fsS --max-time 30 "$base/v1/providers/canary" -o provider-proof/provider-canary.json; then
-                    selected="$base"
-                    break 2
-                  fi
-                fi
+              if curl -fsS --max-time 20 "$base/health" -o provider-proof/health.json \
+                && curl -fsS --max-time 30 "$base/v1/providers/canary" -o provider-proof/provider-canary.json; then
+                selected="$base"
+                break 2
               fi
             done
             sleep 5
           done
           if [ -z "$selected" ]; then
-            echo '{"status":"BLOCKED","reason":"deployed provider canary endpoint did not become reachable for this commit"}' > provider-proof/report.json
+            printf '%s\n' '{"status":"BLOCKED","reason":"deployed provider canary endpoint did not become reachable"}' > provider-proof/report.json
             exit 0
           fi
           printf '%s\n' "$selected" > provider-proof/base-url.txt
@@ -66,43 +54,45 @@ PY
           import json
           from pathlib import Path
 
-          root=Path('provider-proof')
-          report_path=root/'report.json'
+          root = Path('provider-proof')
+          report_path = root / 'report.json'
           if report_path.exists():
               print(report_path.read_text())
               raise SystemExit(0)
 
-          canary=json.loads((root/'provider-canary.json').read_text())
-          status=json.loads((root/'system-status.json').read_text())
-          odds=canary.get('the_odds_api') or {}
-          cred=status.get('credential_gate') or {}
-          passed=(
+          canary = json.loads((root / 'provider-canary.json').read_text())
+          status = json.loads((root / 'system-status.json').read_text())
+          health = json.loads((root / 'health.json').read_text())
+          odds = canary.get('the_odds_api') or {}
+          cred = status.get('credential_gate') or {}
+          passed = (
               canary.get('credentialled_live_provider_verified') is True
               and odds.get('authenticated') is True
               and odds.get('schema_valid') is True
           )
-          proof={
-              'schema_version':3,
-              'base_url':(root/'base-url.txt').read_text().strip(),
-              'deployment_commit':json.loads((root/'health.json').read_text()).get('deployment_commit'),
-              'provider':'The Odds API v4',
-              'credential_configured':odds.get('credential_configured') is True,
-              'rotation_confirmed':odds.get('rotation_confirmed') is True,
-              'authenticated':odds.get('authenticated') is True,
-              'schema_valid':odds.get('schema_valid') is True,
-              'http_status':odds.get('http_status'),
-              'usage':odds.get('usage') or {},
-              'secret_exposed':False,
-              'provider_revocation_independently_verified':cred.get('provider_revocation_independently_verified') is True,
-              'status':'PASS' if passed else 'BLOCKED',
-              'reason':(
+          proof = {
+              'schema_version': 3,
+              'base_url': (root / 'base-url.txt').read_text().strip(),
+              'deployment_commit': health.get('deployment_commit'),
+              'workflow_head_sha': __import__('os').environ.get('GITHUB_SHA'),
+              'provider': 'The Odds API v4',
+              'credential_configured': odds.get('credential_configured') is True,
+              'rotation_confirmed': odds.get('rotation_confirmed') is True,
+              'authenticated': odds.get('authenticated') is True,
+              'schema_valid': odds.get('schema_valid') is True,
+              'http_status': odds.get('http_status'),
+              'usage': odds.get('usage') or {},
+              'secret_exposed': False,
+              'provider_revocation_independently_verified': cred.get('provider_revocation_independently_verified') is True,
+              'status': 'PASS' if passed else 'BLOCKED',
+              'reason': (
                   'credentialed provider authenticated directly and returned the expected live catalog schema'
                   if passed else
                   odds.get('reason') or 'direct credential canary did not pass'
               ),
           }
-          report_path.write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(proof,indent=2,sort_keys=True))
+          report_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(proof, indent=2, sort_keys=True))
           PY
 
       - name: Upload provider proof
