@@ -1,7 +1,7 @@
 {
   "api_version": "1.6.3",
   "base_url": "https://philthysports-api-v9.onrender.com",
-  "checked_at": "2026-10-06T00:52:05.651429+00:00",
+  "checked_at": "2026-10-06T01:37:09.261196+00:00",
   "checks": {
     "core_keyless": true,
     "health_ok": true,
@@ -14,7 +14,7 @@
   "credential_gate": {
     "core_runtime_requires_secret": false,
     "live_canary_evidence_verified": false,
-    "odds_api_key_configured": false,
+    "odds_api_key_configured": true,
     "odds_props_live_allowed": false,
     "provider_revocation_independently_verified": false,
     "rotation_confirmed": false
