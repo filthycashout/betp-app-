@@ -1,7 +1,7 @@
 {
-  "api_version": "1.6.3",
+  "api_version": "1.6.4",
   "base_url": "https://philthysports-api-v9.onrender.com",
-  "checked_at": "2026-10-06T04:18:00.769185+00:00",
+  "checked_at": "2026-10-06T06:51:09.520776+00:00",
   "checks": {
     "core_keyless": true,
     "health_ok": true,
@@ -23,7 +23,7 @@
     "calibration": "BLOCKED_EVIDENCE",
     "chronology": "BLOCKED_EVIDENCE",
     "credential_core_keyless": "PASS",
-    "credential_live_odds_props": "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+    "credential_live_odds_props": "BLOCKED_ROTATION_CONFIRMATION_REQUIRED",
     "four_sport_model_promotion": "BLOCKED_EVIDENCE",
     "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY",
     "leakage": "BLOCKED_EVIDENCE",
