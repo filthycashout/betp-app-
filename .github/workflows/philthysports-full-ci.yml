@@ -1,4 +1,4 @@
-name: PhilthyParleys Full CI
+# Release validation workflow: builds the exact signed APK consumed by emulator smoke.\nname: PhilthyParleys Full CI
 
 on:
   push:
