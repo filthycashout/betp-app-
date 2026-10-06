@@ -43,7 +43,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.5"
+APP_VERSION = "1.6.6"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2207,7 +2207,12 @@ def ready():
 @app.get("/v1/system/status")
 def system_status():
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
-    odds_key = bool(os.getenv("ODDS_API_KEY", "").strip())
+    provider_key_state = {
+        "the_odds_api": bool(os.getenv("ODDS_API_KEY", "").strip()),
+        "odds_api_net": bool(os.getenv("ODDS_API_NET_KEY", "").strip()),
+        "sportradar": bool(os.getenv("SPORTRADAR_API_KEY", "").strip()),
+    }
+    odds_key = any(provider_key_state.values())
     credential_status = (
         "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key
         else "BLOCKED_ROTATION_CONFIRMATION_REQUIRED" if odds_key
@@ -2245,10 +2250,20 @@ def system_status():
         and bool(capture.get("canonical_sha256"))
     )
 
+    evidence_storage = evidence_storage_status()
+    counts = capture.get("canonical_rows") or {}
+    policy = V8_GATE_STATUS.get("sample_policy") or {}
+    sample_summary = "; ".join(
+        f"{sport} {int(counts.get(sport) or 0)}/{int((policy.get(sport) or {}).get("minimum_total_rows") or 0)}"
+        for sport in SPORTS
+    )
+
     remaining = [
         "physical Android-device end-to-end smoke testing",
-        "durable runtime prediction ledger plus rollback/alert validation",
+        "rollback drill and alert validation",
     ]
+    if not evidence_storage.get("durable"):
+        remaining.insert(0, "durable runtime prediction ledger storage")
     remaining.insert(0, "fresh live odds/props provider canary and provider-side revocation evidence")
     if not promotion_pass:
         remaining.insert(0, "four sport trained model promotion evidence")
@@ -2273,13 +2288,50 @@ def system_status():
                 else "CONFIGURED_LAST_RUN_VERIFICATION_REQUIRED"
             ),
         },
+        "gate_display": {
+            "chronology": "Passed" if chronology_pass else (
+                "Capture verified · promotion pending" if capture_verified else "Evidence needed"
+            ),
+            "calibration": "Passed" if calibration_pass else "Control implemented · promotion pending",
+            "leakage": "Passed" if leakage_pass else "Control implemented · promotion pending",
+            "provenance": "Passed" if provenance_pass else (
+                "Dataset hashes verified · model provenance pending" if capture_verified else "Evidence needed"
+            ),
+            "four_sport_model_promotion": "Passed" if promotion_pass else "Sample threshold pending",
+            "credential_core_keyless": "Passed",
+            "credential_live_odds_props": (
+                "Canary pending" if rotation and odds_key else
+                "Rotation confirmation pending" if odds_key else
+                "Fresh credential pending"
+            ),
+            "stable_android_signing": "Passed",
+            "immutable_pregame_evidence_capture": "Passed" if capture_verified else "Verification needed",
+        },
         "gate_details": {
+            "chronology": (
+                "Canonical pregame capture is checksum-verified under as_of < event_time. "
+                "Per-sport promoted-model chronology remains part of the strict promotion gate."
+            ),
+            "calibration": (
+                "Chronological OOF-only calibration and ECE/log-loss/Brier gates are implemented. "
+                "No sport has enough canonical settled rows yet to produce a promoted calibration artifact."
+            ),
+            "leakage": (
+                "Temporal leakage checks are implemented fail-closed. A promoted sport artifact still requires "
+                "its own successful leakage evidence."
+            ),
+            "provenance": (
+                "Canonical dataset and source-manifest hashes are verified. Signed promoted-model artifact "
+                "provenance remains pending until a sport passes promotion."
+            ),
             "credential_live_odds_props": credential_action,
             "four_sport_model_promotion": (
                 "All four trained models passed their promotion checks." if promotion_pass else
-                "Trained models have not passed every data, chronology and accuracy check. Available fresh market baselines remain usable."
+                f"Current canonical settled rows versus strict minimums: {sample_summary}. "
+                "Fresh governed market baselines remain active until each sport passes."
             ),
         },
+        "evidence_storage": evidence_storage,
         "evidence_capture_gate": {
             **capture,
             "verified_by_runtime_manifest": capture_verified,
@@ -2287,13 +2339,21 @@ def system_status():
         "credential_gate": {
             "core_runtime_requires_secret": False,
             "rotation_confirmed": rotation,
-            "odds_api_key_configured": odds_key,
+            "odds_api_key_configured": provider_key_state["the_odds_api"],
+            "odds_api_net_key_configured": provider_key_state["odds_api_net"],
+            "sportradar_api_key_configured": provider_key_state["sportradar"],
+            "any_credentialed_provider_configured": odds_key,
             "odds_props_live_allowed": rotation and odds_key,
             "provider_revocation_independently_verified": False,
             "live_canary_evidence_verified": False,
         },
         "production_ready": False,
-        "production_ready_reason": "The backend has HTTPS, pinned Android signing, four-sport adapters, and a verified checksummed pregame evidence history. Production-ready remains blocked until four sport-specific trained models accumulate sufficient resolved samples and pass every v8 promotion gate, live provider canaries and credential revocation are evidenced, the runtime prediction ledger/rollback alerts are validated, and a physical-device end-to-end smoke run is recorded.",
+        "production_ready_reason": (
+            "The backend has HTTPS, pinned Android signing, four-sport adapters, and a verified checksummed pregame evidence history. "
+            "Production-ready remains blocked until four sport-specific trained models accumulate sufficient resolved samples and pass every v8 promotion gate, "
+            "live provider canaries and credential revocation are evidenced, rollback/alert validation is recorded, and a physical-device end-to-end smoke run is recorded."
+            + (" Durable runtime ledger storage is active." if evidence_storage.get("durable") else " Durable runtime ledger storage is not active yet.")
+        ),
         "remaining_external_gates": remaining,
         "source_telemetry": _SOURCE,
         "drive_reconstruction": {sport: (DRIVE_RECONSTRUCTION.get("sports") or {}).get(sport, {}).get("status", "NO_EVIDENCE") for sport in SPORTS},
@@ -4193,7 +4253,11 @@ def multisport_parlays(legs: int = Query(7), date: str | None = None):
 
 
 # Register on the canonical app used by existing Render start commands too.
-from evidence.runtime import SignalEvidenceMiddleware, router as evidence_router
+from evidence.runtime import (
+    SignalEvidenceMiddleware,
+    router as evidence_router,
+    storage_status as evidence_storage_status,
+)
 
 app.add_middleware(SignalEvidenceMiddleware)
 app.include_router(evidence_router)

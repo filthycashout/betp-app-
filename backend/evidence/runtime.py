@@ -5,6 +5,13 @@ import os
 import threading
 import time
 import uuid
+
+try:
+    import psycopg
+    from psycopg.types.json import Jsonb
+except Exception:  # optional until backend requirements are installed
+    psycopg = None
+    Jsonb = None
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +36,98 @@ router = APIRouter(prefix="/v1/evidence", tags=["evidence"])
 _LOCK = threading.RLock()
 _DEFAULT_ROOT = Path(__file__).resolve().parent / "runtime_signals"
 SIGNAL_ROOT = Path(os.environ.get("PHILTHY_SIGNAL_LOG_DIR", str(_DEFAULT_ROOT)))
+
+
+_DB_LOCK = threading.RLock()
+_DB_READY = False
+_DB_ERROR_TYPE: str | None = None
+_DB_LOG_STATE: str | None = None
+
+
+def _database_url() -> str:
+    return (
+        os.getenv("PHILTHY_EVIDENCE_DATABASE_URL", "").strip()
+        or os.getenv("DATABASE_URL", "").strip()
+    )
+
+
+def _log_storage_state(state: str) -> None:
+    global _DB_LOG_STATE
+    if state != _DB_LOG_STATE:
+        print(f"PHILTHY_EVIDENCE_STORAGE:{state}", flush=True)
+        _DB_LOG_STATE = state
+
+
+def _mark_db_failed(exc: Exception) -> None:
+    global _DB_READY, _DB_ERROR_TYPE
+    _DB_READY = False
+    _DB_ERROR_TYPE = type(exc).__name__
+    _log_storage_state(f"server_runtime_fallback:{_DB_ERROR_TYPE}")
+
+
+def _ensure_database() -> bool:
+    global _DB_READY, _DB_ERROR_TYPE
+    if _DB_READY:
+        return True
+    url = _database_url()
+    if not url:
+        _DB_ERROR_TYPE = "DATABASE_URL_MISSING"
+        _log_storage_state("server_runtime_fallback:DATABASE_URL_MISSING")
+        return False
+    if psycopg is None or Jsonb is None:
+        _DB_ERROR_TYPE = "PSYCOPG_UNAVAILABLE"
+        _log_storage_state("server_runtime_fallback:PSYCOPG_UNAVAILABLE")
+        return False
+    with _DB_LOCK:
+        if _DB_READY:
+            return True
+        try:
+            with psycopg.connect(url, autocommit=True, connect_timeout=5) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS philthy_evidence_signals (
+                            signal_id TEXT PRIMARY KEY,
+                            event_date DATE NOT NULL,
+                            league TEXT NOT NULL,
+                            payload JSONB NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                        """
+                    )
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS philthy_evidence_signals_date_idx "
+                        "ON philthy_evidence_signals (event_date DESC, league, created_at DESC)"
+                    )
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS philthy_evidence_manifests (
+                            id BIGSERIAL PRIMARY KEY,
+                            evidence_date DATE NOT NULL,
+                            merkle_root TEXT,
+                            payload JSONB NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            UNIQUE (evidence_date, merkle_root)
+                        )
+                        """
+                    )
+            _DB_READY = True
+            _DB_ERROR_TYPE = None
+            _log_storage_state("render_postgres")
+            return True
+        except Exception as exc:
+            _mark_db_failed(exc)
+            return False
+
+
+def storage_status() -> dict[str, Any]:
+    durable = _ensure_database()
+    return {
+        "mode": "render_postgres" if durable else "server_runtime_fallback",
+        "durable": durable,
+        "database_configured": bool(_database_url()),
+        "database_error_type": _DB_ERROR_TYPE,
+    }
 
 
 def _safe_sha(value: Any) -> str | None:
@@ -161,6 +260,38 @@ def _persist_batch(records: list[dict[str, Any]], snapshot: datetime) -> list[di
         return []
     anchored, manifest = anchor_batch(records)
     day = snapshot.strftime("%Y-%m-%d")
+
+    if _ensure_database():
+        try:
+            with psycopg.connect(_database_url(), autocommit=False, connect_timeout=5) as conn:
+                with conn.cursor() as cur:
+                    for row in anchored:
+                        event_date = str(row.get("event_time_utc") or day)[:10]
+                        cur.execute(
+                            """
+                            INSERT INTO philthy_evidence_signals
+                                (signal_id, event_date, league, payload)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (signal_id) DO NOTHING
+                            """,
+                            (row["signal_id"], event_date, row.get("league") or "", Jsonb(row)),
+                        )
+                    cur.execute(
+                        """
+                        INSERT INTO philthy_evidence_manifests
+                            (evidence_date, merkle_root, payload)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (evidence_date, merkle_root) DO NOTHING
+                        """,
+                        (day, manifest.get("merkle_root"), Jsonb(manifest)),
+                    )
+                conn.commit()
+            return anchored
+        except Exception as exc:
+            _mark_db_failed(exc)
+
+    # Fail available: preserve the previous append-only runtime JSONL path. The
+    # status endpoint explicitly reports that this fallback is not durable.
     with _LOCK:
         append_jsonl(SIGNAL_ROOT / day / "signals.jsonl", anchored)
         append_jsonl(SIGNAL_ROOT / day / "manifests.jsonl", [manifest])
@@ -255,6 +386,31 @@ def _iter_signal_files() -> list[Path]:
 
 def _read_signals(*, sport: str | None = None, date: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
     wanted_sport = sport.upper() if sport else None
+    if _ensure_database():
+        try:
+            clauses: list[str] = []
+            params: list[Any] = []
+            if wanted_sport:
+                clauses.append("league = %s")
+                params.append(wanted_sport)
+            if date:
+                clauses.append("event_date = %s")
+                params.append(date)
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            params.append(int(limit))
+            query = (
+                "SELECT payload FROM philthy_evidence_signals"
+                + where
+                + " ORDER BY created_at DESC LIMIT %s"
+            )
+            with psycopg.connect(_database_url(), autocommit=True, connect_timeout=5) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, params)
+                    values = cur.fetchall()
+            return [value[0] if isinstance(value[0], dict) else json.loads(value[0]) for value in values]
+        except Exception as exc:
+            _mark_db_failed(exc)
+
     rows: list[dict[str, Any]] = []
     for path in _iter_signal_files():
         try:
@@ -292,12 +448,15 @@ def list_signals(
     limit: int = Query(default=100, ge=1, le=1000),
 ):
     rows = _read_signals(sport=sport, date=date, limit=limit)
+    storage = storage_status()
     return {
         "schema_version": "2",
         "signals": rows,
         "count": len(rows),
         "append_only_runtime_log": True,
-        "storage_root": "server_runtime",
+        "storage_root": storage["mode"],
+        "durable_storage": storage["durable"],
+        "storage_status": storage,
     }
 
 
@@ -332,9 +491,36 @@ def verify_signal_endpoint(signal_id: str):
 
 @router.get("/roots/{date}")
 def roots_for_date(date: str):
+    if _ensure_database():
+        try:
+            with psycopg.connect(_database_url(), autocommit=True, connect_timeout=5) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT payload FROM philthy_evidence_manifests "
+                        "WHERE evidence_date = %s ORDER BY created_at ASC",
+                        (date,),
+                    )
+                    values = cur.fetchall()
+            roots = [value[0] if isinstance(value[0], dict) else json.loads(value[0]) for value in values]
+            return {
+                "date": date,
+                "roots": roots,
+                "count": len(roots),
+                "storage_root": "render_postgres",
+                "durable_storage": True,
+            }
+        except Exception as exc:
+            _mark_db_failed(exc)
+
     path = SIGNAL_ROOT / date / "manifests.jsonl"
     if not path.exists():
-        return {"date": date, "roots": [], "count": 0}
+        return {
+            "date": date,
+            "roots": [],
+            "count": 0,
+            "storage_root": "server_runtime_fallback",
+            "durable_storage": False,
+        }
     roots: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
@@ -342,4 +528,10 @@ def roots_for_date(date: str):
                 roots.append(json.loads(line))
             except ValueError:
                 continue
-    return {"date": date, "roots": roots, "count": len(roots)}
+    return {
+        "date": date,
+        "roots": roots,
+        "count": len(roots),
+        "storage_root": "server_runtime_fallback",
+        "durable_storage": False,
+    }
