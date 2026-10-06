@@ -1,4 +1,4 @@
-# Release validation workflow: builds the exact signed APK consumed by emulator smoke.\nname: PhilthyParleys Full CI
+# Release validation workflow: builds the exact signed APK consumed by emulator smoke.\n# Launcher icon full-bleed release rebuild.\nname: PhilthyParleys Full CI
 
 on:
   push:
