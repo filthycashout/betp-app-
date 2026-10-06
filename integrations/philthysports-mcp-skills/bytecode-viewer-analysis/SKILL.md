@@ -18,6 +18,20 @@ Use `bytecode-viewer-docs` to confirm current features, CLI status, build steps,
 7. If CLI automation is required, check release status first. The 2.13.2 release notes say its CLI is being rewritten and advise using v2.12 for CLI workflows.
 8. Do not claim an APK was rebuilt, signed, installed, or device-tested unless those actions actually ran and verification evidence exists.
 
+## PhilthySports release-domain gate
+
+After building an APK, run `ci/apk_domain_audit.py` against the exact release artifact. The audit fetches the pinned `johnkavin123/domains` `233.txt` corpus at its immutable commit, verifies the Git blob SHA-1, extracts domain literals from every decompressed APK member, and records `.ag` hosts and corpus matches. This corpus is untrusted reference data, not executable provider code and not authoritative malware intelligence. A match is an investigation signal; PhilthySports release CI treats any unreviewed `.ag` literal as unexpected and blocks the release rather than silently adding it as a sportsbook/provider endpoint.
+
+Recommended command:
+
+```bash
+python ci/apk_domain_audit.py \
+  --apk build/app/outputs/flutter-apk/app-release.apk \
+  --report apk-domain-audit.json \
+  --fail-on-ag \
+  --fail-on-corpus-match
+```
+
 ## Supported investigation goals
 
 - locate backend/base URLs and API routes;
@@ -26,6 +40,7 @@ Use `bytecode-viewer-docs` to confirm current features, CLI status, build steps,
 - trace static code paths and dependencies;
 - compare an APK/JAR with available source;
 - search for accidental secrets or insecure configuration;
+- identify unexpected embedded `.ag` domains using the pinned reference corpus;
 - produce reproducible findings with file/class/method references.
 
 ## Output contract
