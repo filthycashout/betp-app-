@@ -1,0 +1,67 @@
+name: Apply Powerhouse Provider Fix
+
+on:
+  push:
+    branches:
+      - integration/external-sports-repos
+    paths:
+      - scripts/apply_powerhouse_provider_fix.py
+      - backend/odds_api_net.py
+      - backend/odds_api_net_smoke.py
+      - .github/workflows/apply-powerhouse-provider-fix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration/external-sports-repos
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend requirements
+        run: pip install -r backend/requirements.txt
+
+      - name: Apply source patch
+        run: python scripts/apply_powerhouse_provider_fix.py
+
+      - name: Verify Python sources
+        run: |
+          python -m py_compile backend/app.py backend/odds_api_net.py
+          (cd backend && python odds_api_net_smoke.py)
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package-lock.json
+
+      - name: Verify mobile dashboard
+        working-directory: mobile_dashboard
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Commit verified integration changes
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app.py mobile_dashboard/app/api/powerhouse/route.ts mobile_dashboard/app/sports-dashboard.tsx
+          git commit -m "Integrate resilient sportsbook providers and restore multisport parlays"
+          git push origin HEAD:integration/external-sports-repos

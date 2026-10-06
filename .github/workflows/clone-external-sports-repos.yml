@@ -1,0 +1,55 @@
+name: Clone External Sports Repositories
+
+on:
+  push:
+    branches:
+      - integration/external-sports-repos
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clone-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PhilthySports integration branch
+        uses: actions/checkout@v4
+
+      - name: Clone pinned upstream repositories
+        run: bash scripts/clone_external_sports_repos.sh
+
+      - name: Record cloned source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "PhilthySports external source bundle"
+            echo "Created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            cat integrations/upstreams.lock.json
+            echo
+            echo "Source file counts:"
+            for d in integrations/vendor/*; do
+              printf '%s: ' "$(basename "$d")"
+              find "$d" -type f | wc -l
+            done
+          } > integrations/vendor/CLONE_EVIDENCE.txt
+
+      - name: Scan cloned trees for obvious secret files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find integrations/vendor -type f \( -name '.env' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa' \) -print | grep -q .; then
+            echo "Potential secret-bearing files found in upstream trees; refusing to package." >&2
+            find integrations/vendor -type f \( -name '.env' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa' \) -print
+            exit 1
+          fi
+
+      - name: Package verified clones
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhilthySports-external-sports-repos
+          path: integrations/vendor
+          if-no-files-found: error
+          retention-days: 14
