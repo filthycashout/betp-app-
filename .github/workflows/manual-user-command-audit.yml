@@ -1,0 +1,124 @@
+name: Manual User Command Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/manual-user-command-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  requested-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Main checkout pull and status
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout main
+          git pull --ff-only origin main
+          git status
+
+      - name: Clone pinned external sports repositories and list MCP skills
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/clone_external_sports_repos.sh
+          ls -R integrations/philthysports-mcp-skills
+
+      - name: Install Python dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt -r backend/requirements-mcp.txt
+
+      - name: Backend tests selftest and MCP compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=backend pytest -q backend/tests
+          PYTHONPATH=backend python backend/selftest.py
+          python -m py_compile backend/mcp_v2_service.py
+
+      - name: Generate Android host used by current CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter create --platforms=android --org com.philthysports --project-name philthysports .
+          rm -f test/widget_test.dart
+          if [ -f ci/apply_android_branding.py ]; then python ci/apply_android_branding.py; fi
+
+      - name: Flutter package analyze and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --debug
+          ls -l build/app/outputs/flutter-apk/
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --release
+          ls -l build/app/outputs/flutter-apk/
+
+      - name: Physical-device smoke eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p device-report-physical
+          adb devices -l | tee device-report-physical/adb-devices.txt
+          SERIAL="$(adb devices | awk 'NR>1 && $2=="device" && $1 !~ /^emulator-/ {print $1; exit}')"
+          if [ -z "$SERIAL" ]; then
+            printf '%s\n' 'BLOCKED: GitHub-hosted runner has no attached physical Android device; --require-physical was not falsified.' | tee device-report-physical/status.txt
+            exit 0
+          fi
+          python ci/device_smoke.py \
+            --apk build/app/outputs/flutter-apk/app-release.apk \
+            --output device-report-physical \
+            --serial "$SERIAL" \
+            --require-physical
+
+      - name: Android emulator integration test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: flutter test integration_test/app_test.dart -d emulator-5554
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: requested-command-audit
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            device-report-physical/
