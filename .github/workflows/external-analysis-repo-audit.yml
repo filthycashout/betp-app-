@@ -1,0 +1,42 @@
+name: External Analysis Repo Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/clone_external_analysis_repos.sh'
+      - 'integrations/upstreams.lock.json'
+      - 'integrations/philthysports-mcp-skills/bytecode-viewer-analysis/SKILL.md'
+      - '.github/workflows/external-analysis-repo-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bytecode-viewer-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned authorized analysis source
+        shell: bash
+        run: bash scripts/clone_external_analysis_repos.sh
+      - name: Record clone evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST=integrations/vendor/bytecode-viewer
+          {
+            printf 'repository=Konloch/bytecode-viewer\n'
+            printf 'commit=%s\n' "$(git -C "$DEST" rev-parse HEAD)"
+            sha256sum \
+              "$DEST/pom.xml" \
+              "$DEST/README.md" \
+              "$DEST/src/main/java/the/bytecode/club/bytecodeviewer/api/BCV.java" \
+              "$DEST/src/main/java/the/bytecode/club/bytecodeviewer/api/Plugin.java"
+          } | tee bytecode-viewer-clone-proof.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bytecode-viewer-clone-proof
+          path: bytecode-viewer-clone-proof.txt
