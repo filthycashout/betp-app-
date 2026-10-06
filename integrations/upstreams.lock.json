@@ -1,0 +1,33 @@
+{
+  "generated_utc": "2026-10-06T07:49:00Z",
+  "repositories": [
+    {
+      "name": "draftfast",
+      "url": "https://github.com/BenBrostoff/draftfast.git",
+      "branch": "master",
+      "commit": "0f5f1f2eb6e2ba7cb4cb6813ee36a3a079369a9b",
+      "role": "dfs_optimizer_reference"
+    },
+    {
+      "name": "odds-api",
+      "url": "https://github.com/odds-api/odds-api.git",
+      "branch": "main",
+      "commit": "1b8d4bdddf01c610eb725dc610f12ab53a20dba8",
+      "role": "odds_provider_sdk_mcp_reference"
+    },
+    {
+      "name": "fanduel-api",
+      "url": "https://github.com/Setfive/fanduel-api.git",
+      "branch": "master",
+      "commit": "c4b9b746555b2f7d5b4a15a747cc82c724109db4",
+      "role": "legacy_reference_only"
+    },
+    {
+      "name": "SportradarAPIs",
+      "url": "https://github.com/johnwmillr/SportradarAPIs.git",
+      "branch": "master",
+      "commit": "b23e020a29ce7eb792c637ff8e6d34940e1587f1",
+      "role": "sportradar_adapter_reference"
+    }
+  ]
+}
