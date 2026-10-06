@@ -59,7 +59,7 @@ class MobileNetwork {
         return <String, dynamic>{'id':id,'status':response.statusCode,'body':utf8.decode(bytes)};
       })().timeout(timeoutFor(uri));
     } catch (_) {
-      return {'id':id,'error':'Live data is unavailable. Check your connection and retry.'};
+      return {'id':id,'error':'Live data is unavailable. Check your connection and retry.','code':'NETWORK_UNAVAILABLE'};
     } finally {client.close();}
   }
 }

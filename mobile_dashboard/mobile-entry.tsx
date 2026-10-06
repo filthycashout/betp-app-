@@ -4,16 +4,16 @@ import Dashboard from './app/evidence-shell';
 import {GET as scores} from './app/api/scores/route';
 import {GET as powerhouse} from './app/api/powerhouse/route';
 import './app/globals.css';
-declare global { interface Window { PhilthyNetwork:{postMessage:(message:string)=>void};PhilthyLifecycle:{postMessage:(message:string)=>void};__philthyReply:(value:{id:string;status?:number;body?:string;error?:string})=>void; } }
+declare global { interface Window { PhilthyNetwork:{postMessage:(message:string)=>void};PhilthyLifecycle:{postMessage:(message:string)=>void};__philthyReply:(value:{id:string;status?:number;body?:string;error?:string;code?:string})=>void; } }
 let counter=0;
 const pending=new Map<string,{resolve:(r:Response)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>;cleanup:()=>void}>();
-window.__philthyReply=(value)=>{const p=pending.get(value.id);if(!p)return;pending.delete(value.id);clearTimeout(p.timer);p.cleanup();if(value.error)p.reject(new Error(value.error));else p.resolve(new Response(value.body||'{}',{status:value.status||200,headers:{'Content-Type':'application/json'}}));};
+window.__philthyReply=(value)=>{const p=pending.get(value.id);if(!p)return;pending.delete(value.id);clearTimeout(p.timer);p.cleanup();if(value.error)p.reject(value.code==='NETWORK_UNAVAILABLE'?new TypeError(value.error):new Error(value.error));else p.resolve(new Response(value.body||'{}',{status:value.status||200,headers:{'Content-Type':'application/json'}}));};
 const nativeFetch=(url:string,signal?:AbortSignal|null)=>new Promise<Response>((resolve,reject)=>{
  if(signal?.aborted){reject(new DOMException('Request cancelled','AbortError'));return;}
  const id=String(++counter);const cleanup=()=>signal?.removeEventListener('abort',onAbort);const onAbort=()=>{const p=pending.get(id);if(p){clearTimeout(p.timer);pending.delete(id);cleanup();reject(new DOMException('Request cancelled','AbortError'));}};
  const timer=setTimeout(()=>{pending.delete(id);cleanup();reject(new Error('Data service timed out.'));},110000);
  pending.set(id,{resolve,reject,timer,cleanup});signal?.addEventListener('abort',onAbort,{once:true});
- try{window.PhilthyNetwork.postMessage(JSON.stringify({id,url}));}catch{clearTimeout(timer);pending.delete(id);cleanup();reject(new Error('Android network connection unavailable.'));}
+ try{window.PhilthyNetwork.postMessage(JSON.stringify({id,url}));}catch{clearTimeout(timer);pending.delete(id);cleanup();reject(new TypeError('Android network connection unavailable.'));}
 });
 // The original Site routes run in the bundle; the Android bridge performs only
 // allowlisted HTTPS GETs, avoiding CORS and avoiding a private Site sign-in wall.

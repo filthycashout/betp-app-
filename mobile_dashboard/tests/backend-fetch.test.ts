@@ -15,6 +15,12 @@ test('does not retry authentication errors or mask invalid JSON',async()=>{
  globalThis.fetch=async()=>new Response('not-json');await assert.rejects(fetchBackendJson('https://backend.test/health'),SyntaxError);}
  finally {globalThis.fetch=original;}
 });
+test('recovers from a transient native network failure',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{if(++calls===1)throw new TypeError('Android network connection unavailable.');return Response.json({status:'ok'});};
+ try {assert.deepEqual(await fetchBackendJson('https://backend.test/health'),{status:'ok'});assert.equal(calls,2);}
+ finally {globalThis.fetch=original;}
+});
 test('a 37-second cold start completes within the backend budget',async(t)=>{
  const original=globalThis.fetch;
  t.mock.timers.enable({apis:['setTimeout','Date']});

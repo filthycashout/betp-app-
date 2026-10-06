@@ -101,6 +101,13 @@ def main():
                 time.sleep(2)
             (args.output/'backend-failure-logcat.txt').write_text(current)
             raise RuntimeError('Android bridge did not receive HTTP 200 for '+path)
+        wait_backend('/health')
+        wait_for('Powerhouse connected')
+        logs=call('logcat','-d','--pid='+pid.split()[0])
+        (args.output/'startup-logcat.txt').write_text(logs)
+        if 'PHILTHY_BRAND_READY' not in logs:raise RuntimeError('Bundled brand image did not load')
+        report['backend_connection_indicator']='PASS_CONNECTED'
+        report['bundled_brand_image']='PASS_LOADED'
         report['sport_tabs']={}
         for sport in ['NFL','NBA','NHL','MLB']:
             call('logcat','-c')

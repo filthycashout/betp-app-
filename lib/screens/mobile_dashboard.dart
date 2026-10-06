@@ -24,6 +24,7 @@ class _MobileDashboardState extends State<MobileDashboard> {
         if (mounted) await _controller.runJavaScript('window.__philthyReply(${jsonEncode(response)});');
       })
       ..addJavaScriptChannel('PhilthyLifecycle',onMessageReceived:(message) {
+        if (message.message == 'BRAND_READY') debugPrint('PHILTHY_BRAND_READY');
         if (RegExp(r'^SCORES:(NFL|NBA|MLB|NHL):\d+$').hasMatch(message.message)) {
           debugPrint('PHILTHY_${message.message}');
         }
