@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'backend/mcp_service.py'
+      - 'backend/mcp_v2_service.py'
       - 'backend/requirements-mcp.txt'
       - '.github/workflows/mcp-v2-remote-smoke.yml'
   workflow_dispatch:
@@ -15,7 +16,7 @@ permissions:
 jobs:
   remote-mcp:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,22 +24,31 @@ jobs:
           python-version: '3.12'
       - name: Install MCP client
         run: pip install 'mcp==2.3.0'
-      - name: Wait for Render MCP health
-        shell: bash
+      - name: Wait for Render MCP protocol endpoint
+        env:
+          MCP_URL: https://philthysports-mcp-v1.onrender.com/mcp
         run: |
-          set -euo pipefail
-          base='https://philthysports-mcp-v1.onrender.com'
-          for i in $(seq 1 48); do
-            code="$(curl -sS -o /tmp/mcp-health.json -w '%{http_code}' --max-time 25 "$base/health" || true)"
-            if [ "$code" = '200' ] && grep -q 'philthysports-mcp' /tmp/mcp-health.json; then
-              cat /tmp/mcp-health.json
-              exit 0
-            fi
-            sleep 15
-          done
-          echo 'Remote MCP health did not become ready' >&2
-          cat /tmp/mcp-health.json 2>/dev/null || true
-          exit 1
+          python - <<'PY'
+          import asyncio, os, time
+          from mcp import Client
+
+          async def probe():
+              async with Client(os.environ['MCP_URL'], read_timeout_seconds=25) as client:
+                  listed = await client.list_tools()
+                  return str(client.protocol_version), len(listed.tools)
+
+          last = None
+          for _ in range(48):
+              try:
+                  version, count = asyncio.run(probe())
+                  print('ready protocol=', version, 'tools=', count)
+                  raise SystemExit(0)
+              except Exception as exc:
+                  last = f'{type(exc).__name__}: {exc}'
+                  print('not ready:', last)
+                  time.sleep(15)
+          raise SystemExit('Remote MCP did not become ready: ' + str(last))
+          PY
       - name: Verify current MCP protocol and governed tools over HTTPS
         env:
           MCP_URL: https://philthysports-mcp-v1.onrender.com/mcp
@@ -78,6 +88,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: philthysports-mcp-v2-remote-evidence
-          path: |
-            /tmp/mcp-health.json
-            /tmp/mcp-v2-remote-evidence.json
+          path: /tmp/mcp-v2-remote-evidence.json
