@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/mcp_server.py'
       - 'backend/sitecustomize.py'
+      - 'backend/ci_security.py'
       - '.github/workflows/mcp-smoke.yml'
   workflow_dispatch:
 
