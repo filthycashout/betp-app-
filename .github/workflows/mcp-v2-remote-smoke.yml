@@ -1,0 +1,83 @@
+name: PhilthySports MCP v2 Remote Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/mcp_service.py'
+      - 'backend/requirements-mcp.txt'
+      - '.github/workflows/mcp-v2-remote-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remote-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install MCP client
+        run: pip install 'mcp==2.3.0'
+      - name: Wait for Render MCP health
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://philthysports-mcp-v1.onrender.com'
+          for i in $(seq 1 48); do
+            code="$(curl -sS -o /tmp/mcp-health.json -w '%{http_code}' --max-time 25 "$base/health" || true)"
+            if [ "$code" = '200' ] && grep -q 'philthysports-mcp' /tmp/mcp-health.json; then
+              cat /tmp/mcp-health.json
+              exit 0
+            fi
+            sleep 15
+          done
+          echo 'Remote MCP health did not become ready' >&2
+          cat /tmp/mcp-health.json 2>/dev/null || true
+          exit 1
+      - name: Verify current MCP protocol and governed tools over HTTPS
+        env:
+          MCP_URL: https://philthysports-mcp-v1.onrender.com/mcp
+        run: |
+          python - <<'PY'
+          import asyncio, json, os
+          from pathlib import Path
+          from mcp import Client
+
+          async def main():
+              evidence = {}
+              async with Client(os.environ['MCP_URL'], read_timeout_seconds=70) as client:
+                  evidence['protocol_version'] = str(client.protocol_version)
+                  evidence['server'] = {
+                      'name': client.server_info.name if client.server_info else None,
+                      'version': client.server_info.version if client.server_info else None,
+                  }
+                  assert evidence['protocol_version'] == '2026-07-28', evidence
+                  listed = await client.list_tools()
+                  names = sorted(tool.name for tool in listed.tools)
+                  evidence['tools'] = names
+                  required = {
+                      'philthy_health','philthy_system_status','philthy_provider_status',
+                      'philthy_search','philthy_best12','philthy_best3','philthy_evidence',
+                      'philthy_capability_inventory','philthy_dfs_optimize'
+                  }
+                  assert not (required - set(names)), sorted(required - set(names))
+                  for name in ('philthy_health','philthy_system_status','philthy_provider_status','philthy_capability_inventory'):
+                      result = await client.call_tool(name, {})
+                      assert not result.is_error, name
+                      evidence[name] = [getattr(item, 'text', '') for item in result.content]
+              Path('/tmp/mcp-v2-remote-evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
+              print(json.dumps(evidence, indent=2))
+
+          asyncio.run(main())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: philthysports-mcp-v2-remote-evidence
+          path: |
+            /tmp/mcp-health.json
+            /tmp/mcp-v2-remote-evidence.json
