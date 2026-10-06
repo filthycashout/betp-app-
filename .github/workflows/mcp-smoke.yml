@@ -1,0 +1,75 @@
+name: PhilthySports MCP Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/mcp_server.py'
+      - 'backend/sitecustomize.py'
+      - '.github/workflows/mcp-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for Render deployment and verify MCP discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://philthysports-powerhouse-v8.onrender.com'
+          for i in $(seq 1 36); do
+            body="$(curl -fsS --max-time 20 "$base/mcp" || true)"
+            if printf '%s' "$body" | grep -q 'philthysports-mcp'; then
+              printf '%s\n' "$body" | tee /tmp/mcp-discovery.json
+              break
+            fi
+            if [ "$i" -eq 36 ]; then
+              echo 'MCP discovery did not become ready in time' >&2
+              exit 1
+            fi
+            sleep 15
+          done
+      - name: Verify MCP initialize
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://philthysports-powerhouse-v8.onrender.com'
+          curl -fsS --max-time 30 -X POST "$base/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"philthy-ci","version":"1"}}}' \
+            | tee /tmp/mcp-init.json
+          grep -q 'philthysports-mcp' /tmp/mcp-init.json
+      - name: Verify MCP tools and governed diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://philthysports-powerhouse-v8.onrender.com'
+          curl -fsS --max-time 30 -X POST "$base/mcp" -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | tee /tmp/mcp-tools.json
+          grep -q 'philthy_health' /tmp/mcp-tools.json
+          grep -q 'philthy_system_status' /tmp/mcp-tools.json
+          grep -q 'philthy_provider_status' /tmp/mcp-tools.json
+          grep -q 'philthy_search' /tmp/mcp-tools.json
+          curl -fsS --max-time 30 -X POST "$base/mcp" -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"philthy_health","arguments":{}}}' \
+            | tee /tmp/mcp-health.json
+          grep -q 'philthysports-runtime' /tmp/mcp-health.json
+          curl -fsS --max-time 30 -X POST "$base/mcp" -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"philthy_system_status","arguments":{}}}' \
+            | tee /tmp/mcp-status.json
+          grep -q 'chronology' /tmp/mcp-status.json
+          grep -q 'calibration' /tmp/mcp-status.json
+          grep -q 'leakage' /tmp/mcp-status.json
+          grep -q 'provenance' /tmp/mcp-status.json
+      - name: Upload MCP verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: philthysports-mcp-smoke
+          path: /tmp/mcp-*.json
