@@ -1,0 +1,117 @@
+name: PhilthySports Live Provider Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-provider-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-provider-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe deployed production provider surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p provider-proof
+          bases=(
+            'https://philthysports-api-v9.onrender.com'
+            'https://philthysports-powerhouse-v8.onrender.com'
+          )
+          selected=''
+          for base in "${bases[@]}"; do
+            if curl -fsS --retry 6 --retry-all-errors --retry-delay 3 --max-time 30 "$base/health" -o provider-proof/health.json; then
+              selected="$base"
+              break
+            fi
+          done
+          if [ -z "$selected" ]; then
+            echo '{"status":"BLOCKED","reason":"no deployed backend health endpoint responded"}' | tee provider-proof/report.json
+            exit 0
+          fi
+          printf '%s\n' "$selected" > provider-proof/base-url.txt
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/system/status" -o provider-proof/system-status.json
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/data/external-providers" -o provider-proof/external-providers.json
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 45 "$selected/v1/system/props" -o provider-proof/props-capabilities.json
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 2 --max-time 90 "$selected/v1/today?include_props=true&props_limit=1&days=7" -o provider-proof/today.json
+
+      - name: Evaluate live provider evidence without exposing credentials
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root=Path('provider-proof')
+          report_path=root/'report.json'
+          if report_path.exists():
+              print(report_path.read_text())
+              raise SystemExit(0)
+
+          status=json.loads((root/'system-status.json').read_text())
+          providers=json.loads((root/'external-providers.json').read_text())
+          props=json.loads((root/'props-capabilities.json').read_text())
+          today=json.loads((root/'today.json').read_text())
+
+          cred=(status.get('credentials') or status.get('credential_status') or {})
+          # System status has evolved; accept only explicit true booleans for proof.
+          live_allowed=False
+          if isinstance(cred, dict):
+              live_allowed=cred.get('odds_props_live_allowed') is True
+          if status.get('odds_props_live_allowed') is True:
+              live_allowed=True
+
+          configured=[]
+          for name, value in providers.items() if isinstance(providers, dict) else []:
+              if isinstance(value, dict) and value.get('configured') is True:
+                  configured.append(name)
+
+          credentialled_sources=set()
+          games=today.get('games') or [] if isinstance(today, dict) else []
+          for game in games:
+              if not isinstance(game, dict):
+                  continue
+              for key in ('market_source','provider','odds_source','prop_source'):
+                  value=str(game.get(key) or '').upper()
+                  if 'THE_ODDS_API' in value or 'ODDS_API_NET' in value or 'SPORTRADAR' in value:
+                      credentialled_sources.add(value)
+              props_payload=game.get('props')
+              if isinstance(props_payload, dict):
+                  for key in ('market_source','provider','source'):
+                      value=str(props_payload.get(key) or '').upper()
+                      if 'THE_ODDS_API' in value or 'ODDS_API_NET' in value or 'SPORTRADAR' in value:
+                          credentialled_sources.add(value)
+
+          proof={
+              'schema_version':1,
+              'base_url':(root/'base-url.txt').read_text().strip(),
+              'configured_providers':sorted(configured),
+              'odds_props_live_allowed':live_allowed,
+              'credentialled_sources_observed':sorted(credentialled_sources),
+              'games_observed':len(games),
+              'status':'PASS' if live_allowed and configured and credentialled_sources else 'BLOCKED',
+              'reason':(
+                  'credentialed live provider was configured and observed in a production response'
+                  if live_allowed and configured and credentialled_sources else
+                  'provider configuration and/or a successful credentialed live response is still missing; keyless fallback does not count as live-provider proof'
+              ),
+          }
+          report_path.write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True))
+          PY
+
+      - name: Upload provider proof
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-provider-proof
+          path: provider-proof/
+          retention-days: 90
