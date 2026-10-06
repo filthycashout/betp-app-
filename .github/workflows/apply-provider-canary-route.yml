@@ -1,0 +1,57 @@
+name: Apply provider canary route
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/provider_canary.py'
+      - '.github/workflows/apply-provider-canary-route.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add provider canary import and route idempotently
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('backend/app.py')
+          s=p.read_text()
+          import_line='from provider_canary import live_provider_canaries\n'
+          if import_line not in s:
+              marker='import requests\n'
+              if marker not in s:
+                  raise SystemExit('app.py import marker missing')
+              s=s.replace(marker, marker+import_line, 1)
+          route='''\n@app.get("/api/v1/providers/canary", include_in_schema=False)\n@app.get("/v1/providers/canary")\ndef provider_canary(historical_probe: bool = False):\n    return live_provider_canaries(historical_probe=historical_probe)\n\n'''
+          route_marker='@app.get("/api/system/status", include_in_schema=False)\n'
+          if 'def provider_canary(historical_probe: bool = False):' not in s:
+              if route_marker not in s:
+                  raise SystemExit('system-status route marker missing')
+              s=s.replace(route_marker, route+route_marker, 1)
+          p.write_text(s)
+          PY
+          python -m py_compile backend/provider_canary.py backend/app.py
+      - name: Commit runtime route if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- backend/app.py; then
+            echo 'Provider canary route already present.'
+            exit 0
+          fi
+          git config user.name 'philthysports-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git add backend/app.py
+          git commit -m 'Expose redacted provider canary endpoint'
+          git pull --rebase origin main
+          git push origin HEAD:main
