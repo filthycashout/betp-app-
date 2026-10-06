@@ -1,0 +1,28 @@
+version: 1
+sources:
+  sportradar:
+    docs_mcp: https://gitmcp.io/johnwmillr/SportradarAPIs
+    repo: https://github.com/johnwmillr/SportradarAPIs
+    role: schedules_rosters_stats_context
+    auth: sport_specific_sportradar_api_key
+  odds_api:
+    docs_mcp: https://gitmcp.io/odds-api/odds-api
+    repo: https://github.com/odds-api/odds-api
+    role: live_odds_bookmakers_fair_price_line_movement_results
+    native_mcp: npx @odds-api/mcp
+    auth: ODDS_API_KEY
+  draftfast:
+    docs_mcp: https://gitmcp.io/BenBrostoff/draftfast
+    repo: https://github.com/BenBrostoff/draftfast
+    role: dfs_lineup_optimization
+    runtime: python_3_12_plus
+  fanduel_api:
+    docs_mcp: https://gitmcp.io/Setfive/fanduel-api
+    repo: https://github.com/Setfive/fanduel-api
+    role: unofficial_fanduel_library_research
+    production_default: disabled_until_compliance_verified
+  bytecode_viewer:
+    docs_mcp: https://gitmcp.io/Konloch/bytecode-viewer
+    repo: https://github.com/Konloch/bytecode-viewer
+    role: java_android_static_reverse_engineering
+    recommended_cli_release: v2.12_if_cli_required

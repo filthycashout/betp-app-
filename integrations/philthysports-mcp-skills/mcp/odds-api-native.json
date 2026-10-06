@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "odds-api-live": {
+      "command": "npx",
+      "args": ["@odds-api/mcp"],
+      "env": {
+        "ODDS_API_KEY": "${ODDS_API_KEY}",
+        "ODDS_API_BASE_URL": "https://api.odds-api.net/v1"
+      }
+    }
+  }
+}

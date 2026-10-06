@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sportradar-docs": {"url": "https://gitmcp.io/johnwmillr/SportradarAPIs"},
+    "odds-api-docs": {"url": "https://gitmcp.io/odds-api/odds-api"},
+    "draftfast-docs": {"url": "https://gitmcp.io/BenBrostoff/draftfast"},
+    "fanduel-api-docs": {"url": "https://gitmcp.io/Setfive/fanduel-api"},
+    "bytecode-viewer-docs": {"url": "https://gitmcp.io/Konloch/bytecode-viewer"}
+  }
+}

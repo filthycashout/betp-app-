@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sportradar-docs": {"command": "npx", "args": ["mcp-remote", "https://gitmcp.io/johnwmillr/SportradarAPIs"]},
+    "odds-api-docs": {"command": "npx", "args": ["mcp-remote", "https://gitmcp.io/odds-api/odds-api"]},
+    "draftfast-docs": {"command": "npx", "args": ["mcp-remote", "https://gitmcp.io/BenBrostoff/draftfast"]},
+    "fanduel-api-docs": {"command": "npx", "args": ["mcp-remote", "https://gitmcp.io/Setfive/fanduel-api"]},
+    "bytecode-viewer-docs": {"command": "npx", "args": ["mcp-remote", "https://gitmcp.io/Konloch/bytecode-viewer"]}
+  }
+}
