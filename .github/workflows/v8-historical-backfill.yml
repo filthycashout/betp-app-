@@ -6,7 +6,7 @@ on:
     paths:
       - "backend/training/historical_backfill.py"
       - "backend/training/historical_resolution_recover.py"
-      - "backend/training/evidence_pipeline.py"
+      - "backend/training/odds_api_historical_backfill.py"
       - ".github/workflows/v8-historical-backfill.yml"
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backfill:
+  audit-historical-source:
     runs-on: ubuntu-latest
     steps:
       - name: Check out current training source
@@ -52,11 +52,11 @@ jobs:
           gzip -dc /tmp/sports_data.db.gz > /tmp/sports_data.db
           test -s /tmp/sports_data.db
 
-      - name: Extract only provable pregame and settled rows
+      - name: Extract source into quarantine only
         shell: bash
         run: |
           set -euo pipefail
-          TARGET="evidence_checkout/evidence/historical/approved/taut-arb-v3"
+          TARGET="evidence_checkout/evidence/historical/quarantine/taut-arb-v3"
           rm -rf "$TARGET"
           mkdir -p "$TARGET"
           python backend/training/historical_backfill.py extract \
@@ -67,90 +67,76 @@ jobs:
             --source-release "v3.0-sports" \
             --min-match-score 0.90
 
-      - name: Recover labels from unambiguous post-event market resolution
+      - name: Record why settlement-price labels are inadmissible
         shell: bash
         run: |
-          set -euo pipefail
-          TARGET="evidence_checkout/evidence/historical/approved/taut-arb-v3"
-          python backend/training/historical_resolution_recover.py \
-            --db /tmp/sports_data.db \
-            --output-dir "$TARGET" \
-            --min-match-score 0.90
-
-      - name: Rebuild live-only canonical baseline
-        shell: bash
-        run: |
-          set -euo pipefail
-          python backend/training/evidence_pipeline.py build \
-            --root evidence_checkout/evidence
-
-      - name: Merge checksum-verified historical evidence into canonical sets
-        run: |
-          python backend/training/historical_backfill.py merge \
-            --root evidence_checkout/evidence
-
-      - name: Verify chronology and promotion sample readiness
-        shell: bash
-        run: |
-          set -euo pipefail
           python - <<'PY'
-          import csv, json
-          from datetime import datetime
+          import json
           from pathlib import Path
-
-          root=Path("evidence_checkout/evidence")
-          policy=json.loads(Path("backend/training/policy.json").read_text())
-          report={"schema_version":1,"sports":{},"ready_sports":[]}
-          for sport in ("NFL","NBA","MLB","NHL"):
-              csv_path=root/"canonical"/f"{sport.lower()}.csv"
-              rows=list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
-              chronology_fail=[]
-              label_fail=[]
-              for row in rows:
-                  as_of=datetime.fromisoformat(row["as_of"].replace("Z","+00:00"))
-                  event=datetime.fromisoformat(row["event_time"].replace("Z","+00:00"))
-                  label=datetime.fromisoformat(row["label_available_at"].replace("Z","+00:00"))
-                  if not as_of < event:
-                      chronology_fail.append(row["event_id"])
-                  if not label > event:
-                      label_fail.append(row["event_id"])
-              minimums=policy["sample_policy"][sport]
-              total=len(rows)
-              ready=total >= int(minimums["minimum_total_rows"])
-              report["sports"][sport]={
-                  "rows":total,
-                  "minimum_total_rows":int(minimums["minimum_total_rows"]),
-                  "minimum_oof_rows":int(minimums["minimum_oof_rows"]),
-                  "minimum_holdout_rows":int(minimums["minimum_holdout_rows"]),
-                  "chronology_failures":chronology_fail,
-                  "label_availability_failures":label_fail,
-                  "sample_ready":ready,
-              }
-              if chronology_fail or label_fail:
-                  raise SystemExit(f"{sport} historical merge failed chronology verification")
-              if ready:
-                  report["ready_sports"].append(sport)
-          out=root/"historical"/"backfill_readiness.json"
-          out.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
+          root=Path('evidence_checkout/evidence/historical/quarantine/taut-arb-v3')
+          report={
+            'schema_version': 2,
+            'status': 'QUARANTINED_NOT_PROMOTION_ELIGIBLE',
+            'source': 'ADnocap/taut-arb-backtest v3.0-sports',
+            'pregame_odds_use': 'research_only_until_label_publication_evidence_is_repaired',
+            'blocking_reason': (
+              'The legacy label_available_at value is derived from a post-event 0.99/0.01 market-price crossing. '
+              'A price crossing is not independent proof that an authoritative final result was publicly observable at that timestamp.'
+            ),
+            'required_repair': (
+              'Join every retained event to an independently timestamped authoritative final-result publication, '
+              'preserve the raw result receipt and hash, and require as_of < event_time < label_available_at.'
+            ),
+            'promotion_ready': False,
+            'promotion_eligible': False,
+            'independent_publication_timestamp_verified': False,
+          }
+          (root/'ADMISSIBILITY.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          for manifest in root.glob('*_source_manifest.json'):
+            data=json.loads(manifest.read_text())
+            data['promotion_ready']=False
+            data['promotion_eligible']=False
+            data['independent_publication_timestamp_verified']=False
+            data['label_timestamp_role']='research_only_market_resolution_proxy'
+            manifest.write_text(json.dumps(data,indent=2,sort_keys=True)+'\n')
           print(json.dumps(report,indent=2,sort_keys=True))
           PY
 
-      - name: Commit immutable historical provenance and rebuilt canonical sets
+      - name: Verify quarantined source cannot enter canonical history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f evidence_checkout/evidence/historical/quarantine/taut-arb-v3/ADMISSIBILITY.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('evidence_checkout/evidence/historical/quarantine/taut-arb-v3')
+          manifests=list(root.glob('*_source_manifest.json'))
+          if not manifests:
+              raise SystemExit('no source manifests were produced')
+          for path in manifests:
+              m=json.loads(path.read_text())
+              assert m.get('promotion_eligible') is False, path
+              assert m.get('independent_publication_timestamp_verified') is False, path
+          print('PASS: taut-arb price-crossing labels are quarantined and fail closed')
+          PY
+
+      - name: Commit quarantine evidence only
         shell: bash
         run: |
           set -euo pipefail
           git -C evidence_checkout config user.name "philthysports-evidence-bot"
           git -C evidence_checkout config user.email "actions@users.noreply.github.com"
-          git -C evidence_checkout add evidence
+          git -C evidence_checkout add evidence/historical/quarantine/taut-arb-v3
           if git -C evidence_checkout diff --cached --quiet; then
-            echo "Historical backfill produced no evidence changes."
+            echo "Historical quarantine audit produced no evidence changes."
             exit 0
           fi
-          git -C evidence_checkout commit -m "Backfill verified timestamped historical evidence"
+          git -C evidence_checkout commit -m "Quarantine historical market-resolution label proxies"
           git -C evidence_checkout pull --rebase origin evidence-snapshots
           git -C evidence_checkout push origin evidence-snapshots
 
-      - name: Explain promotion handoff
+      - name: Confirm canonical history was not rebuilt from quarantined labels
         run: |
-          echo "Historical evidence is now on evidence-snapshots."
-          echo "The existing hourly v8 train/promote workflow will train only sports that satisfy strict sample minimums and will preserve the market baseline for every failure."
+          echo "No historical merge is executed by this workflow."
+          echo "Canonical promotion data remain unchanged until independently timestamped final-result evidence is available."
