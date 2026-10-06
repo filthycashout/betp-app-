@@ -61,11 +61,14 @@ jobs:
           props=json.loads((root/'props-capabilities.json').read_text())
           today=json.loads((root/'today.json').read_text())
 
-          cred=(status.get('credentials') or status.get('credential_status') or {})
-          # System status has evolved; accept only explicit true booleans for proof.
-          live_allowed=False
-          if isinstance(cred, dict):
-              live_allowed=cred.get('odds_props_live_allowed') is True
+          # Current production status nests the governed credential result here.
+          cred=(
+              status.get('credential_gate')
+              or status.get('credentials')
+              or status.get('credential_status')
+              or {}
+          )
+          live_allowed=isinstance(cred,dict) and cred.get('odds_props_live_allowed') is True
           if status.get('odds_props_live_allowed') is True:
               live_allowed=True
 
@@ -91,17 +94,20 @@ jobs:
                           credentialled_sources.add(value)
 
           proof={
-              'schema_version':1,
+              'schema_version':2,
               'base_url':(root/'base-url.txt').read_text().strip(),
               'configured_providers':sorted(configured),
               'odds_props_live_allowed':live_allowed,
+              'rotation_confirmed':cred.get('rotation_confirmed') is True if isinstance(cred,dict) else False,
+              'live_canary_evidence_verified':cred.get('live_canary_evidence_verified') is True if isinstance(cred,dict) else False,
+              'provider_revocation_independently_verified':cred.get('provider_revocation_independently_verified') is True if isinstance(cred,dict) else False,
               'credentialled_sources_observed':sorted(credentialled_sources),
               'games_observed':len(games),
               'status':'PASS' if live_allowed and configured and credentialled_sources else 'BLOCKED',
               'reason':(
                   'credentialed live provider was configured and observed in a production response'
                   if live_allowed and configured and credentialled_sources else
-                  'provider configuration and/or a successful credentialed live response is still missing; keyless fallback does not count as live-provider proof'
+                  'credentials are allowed/configured but no successful credentialed production response was observed; keyless fallback does not count as live-provider proof'
               ),
           }
           report_path.write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
