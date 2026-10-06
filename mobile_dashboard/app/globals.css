@@ -121,3 +121,5 @@
 
 .brand-mark{overflow:hidden;padding:0;background:#0c100f;border:1px solid #6f806f}
 .brand-mark img{width:100%;height:100%;display:block;object-fit:cover;border-radius:7px}
+
+.gate-help{display:block;max-width:34rem;margin-top:6px;font-size:12px;line-height:1.5;font-weight:400;color:#9fb3aa}.gate-row{gap:16px}.gate-row>b{flex-shrink:0}

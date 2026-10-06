@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -37,7 +38,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.3"
+APP_VERSION = "1.6.4"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2098,7 +2099,9 @@ def root_head():
 @app.get("/v1/health", include_in_schema=False)
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION}
+    commit = os.getenv("RENDER_GIT_COMMIT", "")
+    return {"status": "ok", "service": "philthysports-runtime", "version": APP_VERSION,
+            "deployment_commit": commit if re.fullmatch(r"[a-fA-F0-9]{40}", commit) else None}
 
 @app.get("/v1/artifacts/model-signing-key")
 def model_signing_key():
@@ -2163,8 +2166,20 @@ def ready():
 @app.get("/api/v1/system/status", include_in_schema=False)
 @app.get("/v1/system/status")
 def system_status():
-    rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").lower() == "true"
+    rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
     odds_key = bool(os.getenv("ODDS_API_KEY", "").strip())
+    credential_status = (
+        "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key
+        else "BLOCKED_ROTATION_CONFIRMATION_REQUIRED" if odds_key
+        else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED"
+    )
+    credential_action = (
+        "A server-side key is configured and rotation is confirmed. A successful live provider canary and revocation evidence are still required."
+        if rotation and odds_key else
+        "A server-side key is configured, but credential rotation has not been confirmed. Verify issuer-side revocation and replacement before enabling it."
+        if odds_key else
+        "Configure a newly issued server-side odds key after revoking exposed credentials. Keyless feeds remain available."
+    )
     gates = _all_model_gates()
     chronology_pass = all(
         g["checks"]["chronology_as_of_before_event"] and g["checks"]["walk_forward_oof"]
@@ -2210,12 +2225,19 @@ def system_status():
             "provenance": "PASS" if provenance_pass else "BLOCKED_EVIDENCE",
             "four_sport_model_promotion": "PASS" if promotion_pass else "BLOCKED_EVIDENCE",
             "credential_core_keyless": "PASS",
-            "credential_live_odds_props": "CONFIGURED_CANARY_EVIDENCE_REQUIRED" if rotation and odds_key else "BLOCKED_FRESH_ROTATED_KEY_REQUIRED",
+            "credential_live_odds_props": credential_status,
             "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE",
             "immutable_pregame_evidence_capture": (
                 "PASS_VERIFIED_CHECKSUMMED_HISTORY"
                 if capture_verified
                 else "CONFIGURED_LAST_RUN_VERIFICATION_REQUIRED"
+            ),
+        },
+        "gate_details": {
+            "credential_live_odds_props": credential_action,
+            "four_sport_model_promotion": (
+                "All four trained models passed their promotion checks." if promotion_pass else
+                "Trained models have not passed every data, chronology and accuracy check. Available fresh market baselines remain usable."
             ),
         },
         "evidence_capture_gate": {

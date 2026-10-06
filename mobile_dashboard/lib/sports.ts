@@ -10,14 +10,24 @@ export function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(val
 export function number(value: unknown): number | null { if (value === null || value === undefined || value === '') return null; const n = Number(value); return Number.isFinite(n) ? n : null; }
 // Upstream JSON is validated at the adapter boundary. Missing scores remain missing.
 type Row = Record<string, any>;
-export async function fetchJson(url: string, timeout = 10000): Promise<Row> {
- const response = await fetch(url,{cache:'no-store',headers:{Accept:'application/json'},signal:AbortSignal.timeout(timeout)});
- if (!response.ok) throw new Error(`HTTP ${response.status}`);
+export class FeedHttpError extends Error {
+ status: number;
+ constructor(status:number){super(`HTTP ${status}`);this.status=status;}
+}
+export async function fetchJson(url: string, timeout = 10000, signal?:AbortSignal): Promise<Row> {
+ const controller=new AbortController();
+ const cancel=()=>controller.abort(signal?.reason);
+ if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
+ const timer=setTimeout(()=>controller.abort(new DOMException('Request timed out','TimeoutError')),timeout);
+ try {
+ const response = await fetch(url,{cache:'no-store',headers:{Accept:'application/json'},signal:controller.signal});
+ if (!response.ok) throw new FeedHttpError(response.status);
  const body = await response.text();
  if (body.length > 5_000_000) throw new Error('Response exceeds limit');
  const data = JSON.parse(body);
  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid feed');
  return data;
+ } finally {clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
 function safeLogo(value: unknown) { if (typeof value !== 'string') return undefined; try { const u = new URL(value); return u.protocol === 'https:' && ['a.espncdn.com','assets.nhle.com'].includes(u.hostname) ? u.href : undefined; } catch { return undefined; } }
 export function espnGames(data: Row, sport: Sport): Game[] {

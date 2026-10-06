@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class MobileNetwork {
@@ -15,11 +16,19 @@ class MobileNetwork {
       case 'api-web.nhle.com':
         return RegExp(r'^/v1/score/\d{4}-\d{2}-\d{2}$').hasMatch(uri.path);
       case 'philthysports-api-v9.onrender.com':
-        return const ['/health','/v1/system/status','/v1/models/status','/v1/data/providers','/v1/search','/v1/parlays/multisport'].contains(uri.path) ||
-            RegExp(r'^/v1/games/(NFL|NBA|MLB|NHL)/\d{1,20}(/props)?$').hasMatch(uri.path);
+        return const [
+          '/health', '/v1/system/status', '/v1/models/status',
+          '/v1/data/providers', '/v1/search', '/v1/parlays/multisport',
+          '/v1/picks/best12', '/v1/parlays/best3', '/v1/evidence/signals',
+        ].contains(uri.path) ||
+            RegExp(r'^/v1/games/(NFL|NBA|MLB|NHL)/\d{1,20}(/props|/best9)?$').hasMatch(uri.path) ||
+            RegExp(r'^/v1/evidence/verify/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$').hasMatch(uri.path);
       default: return false;
     }
   }
+
+  static Duration timeoutFor(Uri uri) => Duration(
+      seconds: uri.host == 'philthysports-api-v9.onrender.com' ? 95 : 45);
 
   static Future<Map<String, dynamic>> request(String message) async {
     String id = '';
@@ -35,13 +44,20 @@ class MobileNetwork {
       final request = http.Request('GET',uri)
         ..followRedirects = false
         ..headers['Accept'] = 'application/json';
-      final response = await client.send(request).timeout(const Duration(seconds:45));
-      final bytes = <int>[];
-      await for (final chunk in response.stream.timeout(const Duration(seconds:45))) {
-        bytes.addAll(chunk);
-        if (bytes.length > 5000000) throw const FormatException();
-      }
-      return {'id':id,'status':response.statusCode,'body':utf8.decode(bytes)};
+      // One deadline covers headers AND body. Render may be waking from idle.
+      return await (() async {
+        final response = await client.send(request);
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          bytes.addAll(chunk);
+          if (bytes.length > 5000000) throw const FormatException();
+        }
+        if (uri.host == 'philthysports-api-v9.onrender.com') {
+          // Route and status only: no query strings, response content or keys.
+          debugPrint('PHILTHY_BACKEND_HTTP:${uri.path}:${response.statusCode}');
+        }
+        return <String, dynamic>{'id':id,'status':response.statusCode,'body':utf8.decode(bytes)};
+      })().timeout(timeoutFor(uri));
     } catch (_) {
       return {'id':id,'error':'Live data is unavailable. Check your connection and retry.'};
     } finally {client.close();}

@@ -91,6 +91,16 @@ def main():
         logs=call('logcat','-d','--pid='+pid.split()[0])
         if 'PHILTHY_DASHBOARD_READY' not in logs:raise RuntimeError('Bundled React dashboard did not signal readiness')
         report['bundled_dashboard']='PASS'
+        def wait_backend(path):
+            deadline=time.monotonic()+105
+            while time.monotonic()<deadline:
+                current=call('logcat','-d','--pid='+pid.split()[0])
+                if 'PHILTHY_BACKEND_HTTP:'+path+':200' in current:
+                    report.setdefault('backend_routes',{})[path]='PASS_ANDROID_HTTP_200'
+                    return
+                time.sleep(2)
+            (args.output/'backend-failure-logcat.txt').write_text(current)
+            raise RuntimeError('Android bridge did not receive HTTP 200 for '+path)
         report['sport_tabs']={}
         for sport in ['NFL','NBA','NHL','MLB']:
             call('logcat','-c')
@@ -107,17 +117,27 @@ def main():
             (args.output/(sport.lower()+'-scoreboard.png')).write_bytes(call('exec-out','screencap','-p',binary=True))
             report['sport_tabs'][sport]='PASS_FRESH_FEED_RECEIVED'
         open_view('Picks','Best 12 picks','picks')
+        wait_backend('/v1/picks/best12')
         (args.output/'picks.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best12_navigation']='PASS'
 
         # Assert a stable semantic fragment; WebView accessibility may normalize
         # punctuation/casing in the full heading even when the correct view is open.
         open_view('Parlay','3 leg parlays','parlays')
+        wait_backend('/v1/parlays/best3')
         (args.output/'parlays.png').write_bytes(call('exec-out','screencap','-p',binary=True))
         report['best3_navigation']='PASS'
 
         open_view('Settings','Settings','settings')
         (args.output/'settings.png').write_bytes(call('exec-out','screencap','-p',binary=True))
+        try:
+            tap_label('Evidence')
+        except RuntimeError:
+            tap_label('Open Evidence audit')
+        wait_for('AUDIT LEDGER')
+        wait_backend('/v1/evidence/signals')
+        (args.output/'evidence.png').write_bytes(call('exec-out','screencap','-p',binary=True))
+        tap_label('Close')
 
         open_view('Live','Live','live-return')
         (args.output/'app-logcat.txt').write_text(call('logcat','-d','--pid='+pid.split()[0]))

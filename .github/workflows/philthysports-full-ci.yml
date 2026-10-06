@@ -1,4 +1,5 @@
-# Release validation workflow: builds the exact signed APK consumed by emulator smoke.\n# Launcher icon full-bleed release rebuild.\n# Mobile parlay timeout-path validation rebuild.\nname: PhilthyParleys Full CI
+# Release validation builds the signed APK consumed by emulator smoke.
+name: PhilthyParleys Full CI
 
 on:
   push:
@@ -185,12 +186,13 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: mobile_dashboard/package.json
+          cache-dependency-path: mobile_dashboard/package-lock.json
 
       - name: Rebuild bundled dashboard for current backend
         working-directory: mobile_dashboard
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
+          npm test
           npm run build
 
       - name: Flutter dependencies

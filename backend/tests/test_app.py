@@ -8,6 +8,30 @@ def test_health_and_compatibility_aliases():
         assert client.get(path).status_code == 200
     assert client.get('/health').json()['version'] == runtime.APP_VERSION
 
+
+def test_health_identifies_deployed_commit_without_returning_other_configuration(monkeypatch):
+    commit = 'a' * 40
+    monkeypatch.setenv('RENDER_GIT_COMMIT', commit)
+    assert client.get('/health').json()['deployment_commit'] == commit
+    monkeypatch.setenv('RENDER_GIT_COMMIT', 'invalid-value')
+    assert client.get('/health').json()['deployment_commit'] is None
+
+
+def test_status_distinguishes_missing_key_from_unconfirmed_rotation(monkeypatch):
+    monkeypatch.delenv('ODDS_API_KEY', raising=False)
+    monkeypatch.delenv('CREDENTIAL_ROTATION_CONFIRMED', raising=False)
+    missing = client.get('/v1/system/status').json()
+    assert missing['gates']['credential_live_odds_props'] == 'BLOCKED_FRESH_ROTATED_KEY_REQUIRED'
+    monkeypatch.setenv('ODDS_API_KEY', 'test-only-placeholder')
+    held = client.get('/v1/system/status').json()
+    assert held['gates']['credential_live_odds_props'] == 'BLOCKED_ROTATION_CONFIRMATION_REQUIRED'
+    assert held['credential_gate']['odds_props_live_allowed'] is False
+    assert 'test-only-placeholder' not in str(held)
+    monkeypatch.setenv('CREDENTIAL_ROTATION_CONFIRMED', ' true ')
+    configured = client.get('/v1/system/status').json()
+    assert configured['gates']['credential_live_odds_props'] == 'CONFIGURED_CANARY_EVIDENCE_REQUIRED'
+    assert configured['credential_gate']['live_canary_evidence_verified'] is False
+
 def test_four_sport_model_runtime_contract():
     data = client.get('/v1/models/status').json()
     assert set(data) == {'NFL', 'NBA', 'MLB', 'NHL'}
