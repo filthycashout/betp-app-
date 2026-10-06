@@ -1,0 +1,3 @@
+-r requirements.txt
+mcp==2.3.0
+draftfast==3.12.5
