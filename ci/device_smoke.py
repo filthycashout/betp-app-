@@ -112,7 +112,9 @@ def main():
         report['bundled_brand_image']='PASS_LOADED'
         report['sport_tabs']={}
         for sport in ['NFL','NBA','NHL','MLB']:
-            call('logcat','-c')
+            # Keep the process log intact: Picks/Parlays are intentionally prewarmed,
+            # so clearing logcat here would erase a real Android-bridge HTTP 200 and
+            # create a false failure when the cached screen correctly avoids refetching.
             tap_label(sport)
             wait_for(sport+' games')
             deadline=time.monotonic()+50
