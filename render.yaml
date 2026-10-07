@@ -1,17 +1,37 @@
-# Exported from Render on 2026-10-04T07:17:12Z
+# PhilthySports production Render Blueprint
 version: "1"
+
 services:
-- type: web
-  name: philthysports-api-v9
-  runtime: python
-  repo: https://github.com/filthycashout/betp-app-
-  plan: free
-  envVars:
-  - key: PHILTHY_CORS_ORIGINS
-    sync: false
-  - key: CREDENTIAL_ROTATION_CONFIRMED
-    sync: false
-  region: oregon
-  buildCommand: pip install -r backend/requirements.txt
-  startCommand: cd backend && uvicorn philthysports_main:app --host 0.0.0.0 --port $PORT
-  autoDeployTrigger: commit
+  - type: web
+    name: philthysports-api-v9
+    runtime: python
+    repo: https://github.com/filthycashout/betp-app-
+    branch: main
+    plan: free
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port $PORT
+    autoDeployTrigger: commit
+    envVars:
+      - key: PHILTHY_CORS_ORIGINS
+        sync: false
+      - key: CREDENTIAL_ROTATION_CONFIRMED
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: philthysports-ledger-v8
+          property: connectionString
+      - key: PHILTHY_EVIDENCE_DATABASE_URL
+        fromDatabase:
+          name: philthysports-ledger-v8
+          property: connectionString
+
+databases:
+  - name: philthysports-ledger-v8
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+    databaseName: philthysports_ledger_v8
+    user: philthysports_ledger_v8_user
+    connectionPool: none
+    ipAllowList: []
