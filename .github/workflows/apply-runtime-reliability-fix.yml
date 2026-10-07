@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - scripts/apply_runtime_reliability_fix.py
       - scripts/apply_mobile_performance_fix.py
       - .github/workflows/apply-runtime-reliability-fix.yml
   workflow_dispatch:
@@ -25,10 +24,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Apply source fixes
-        run: |
-          python scripts/apply_runtime_reliability_fix.py
-          python scripts/apply_mobile_performance_fix.py
+      - name: Apply cache-first performance fix
+        run: python scripts/apply_mobile_performance_fix.py
 
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
@@ -52,14 +49,12 @@ jobs:
           npm test
           npm run build
 
-      - name: Commit verified runtime and performance fix
+      - name: Commit verified performance release
         shell: bash
         run: |
           set -euo pipefail
           git add \
             backend/app.py \
-            backend/evidence/runtime.py \
-            backend/requirements.txt \
             mobile_dashboard/app/sports-dashboard.tsx \
             mobile_dashboard/lib/fast-cache.ts \
             mobile_dashboard/tests/fast-cache.test.ts \
@@ -68,7 +63,7 @@ jobs:
             assets/dashboard \
             pubspec.yaml
           if git diff --cached --quiet; then
-            echo 'No runtime/performance changes to commit.'
+            echo 'No performance changes to commit.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
