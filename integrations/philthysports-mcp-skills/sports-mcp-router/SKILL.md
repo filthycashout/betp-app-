@@ -5,7 +5,7 @@ description: Route PhilthySports live research, sports-data, sportsbook-odds, DF
 
 # Sports MCP Router
 
-Use this skill as the first decision layer for the six-skill PhilthySports MCP set.
+Use this skill as the first decision layer for the PhilthySports MCP skill set. Use `philthysports-mcp` as the primary production execution skill when the request directly targets the live PhilthySports/PhilthyParleys system.
 
 ## Production MCP
 
@@ -16,7 +16,7 @@ Use this skill as the first decision layer for the six-skill PhilthySports MCP s
 
 ## Routing rules
 
-1. Start with `philthy_health` or `philthy_provider_status` when live backend/provider availability matters.
+1. Start with the core `philthysports-mcp` skill for live PhilthySports execution; use `philthy_health` or `philthy_provider_status` when live backend/provider availability matters.
 2. For NFL/NBA/MLB/NHL schedules, games, teams, rosters, players, stats, or current research, use `philthy_search`; consult `sportradar-docs` when wrapper/API implementation details are needed.
 3. For sportsbook prices, bookmaker comparison, fair/no-vig context, line movement, results, arbitrage research, positive-EV research, or streaming schemas, consult `odds-api-docs` and use authenticated live provider data only when configured. Never substitute docs/mock payloads for production prices.
 4. For DFS lineup construction from explicit salary/projection inputs, use `philthy_dfs_optimize`; consult `draftfast-docs` for rule/constraint details.
@@ -33,16 +33,11 @@ Use this skill as the first decision layer for the six-skill PhilthySports MCP s
 6. Never present mock/test/example data as live production evidence.
 7. Never execute wagers or DFS contest entries.
 8. Keep all provider credentials server-side. Do not expose credentials through MCP results, APK code, logs or committed files.
+9. Treat backend CI, APK signing, emulator smoke, live-provider proof, physical-device smoke and per-sport model promotion as separate evidence gates.
 
-## Provider credential names
+## Provider credential boundaries
 
-Keep similarly named providers isolated:
-
-- The Odds API: `THE_ODDS_API_KEY` in PhilthySports server configuration.
-- odds-api.net/native `@odds-api/mcp`: `ODDS_API_NET_KEY` at the PhilthySports/config boundary, mapped to that child process's required `ODDS_API_KEY` only inside the native MCP launch config.
-- Sportradar: `SPORTRADAR_API_KEY` or sport-specific server-side keys as required by the provider adapter.
-
-Do not alias credentials between providers.
+Keep similarly named providers isolated. Provider secret names and values remain server-side; do not copy credentials into skill files, APK code, logs, examples or committed configuration.
 
 ## Output contract
 
