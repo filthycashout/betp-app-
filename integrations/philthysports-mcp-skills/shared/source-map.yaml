@@ -1,28 +1,50 @@
-version: 1
+version: 2
+production_mcp:
+  endpoint: https://philthysports-mcp-v1.onrender.com/mcp
+  role: governed_research_diagnostics_evidence_dfs
+  mock_substitution: forbidden
+  wagering_execution: disabled
 sources:
   sportradar:
     docs_mcp: https://gitmcp.io/johnwmillr/SportradarAPIs
     repo: https://github.com/johnwmillr/SportradarAPIs
+    branch: master
+    commit: b23e020a29ce7eb792c637ff8e6d34940e1587f1
     role: schedules_rosters_stats_context
-    auth: sport_specific_sportradar_api_key
-  odds_api:
+    auth_boundary: SPORTRADAR_API_KEY_or_sport_specific_server_key
+  odds_api_net:
     docs_mcp: https://gitmcp.io/odds-api/odds-api
     repo: https://github.com/odds-api/odds-api
+    branch: main
+    commit: 1b8d4bdddf01c610eb725dc610f12ab53a20dba8
     role: live_odds_bookmakers_fair_price_line_movement_results
     native_mcp: npx @odds-api/mcp
-    auth: ODDS_API_KEY
+    auth_boundary: ODDS_API_NET_KEY
+    child_process_env: ODDS_API_KEY
+  the_odds_api:
+    role: philthysports_live_odds_provider
+    auth_boundary: THE_ODDS_API_KEY
+    must_not_share_credentials_with: odds_api_net
   draftfast:
     docs_mcp: https://gitmcp.io/BenBrostoff/draftfast
     repo: https://github.com/BenBrostoff/draftfast
+    branch: master
+    commit: 0f5f1f2eb6e2ba7cb4cb6813ee36a3a079369a9b
     role: dfs_lineup_optimization
     runtime: python_3_12_plus
+    contest_entry_execution: disabled
   fanduel_api:
     docs_mcp: https://gitmcp.io/Setfive/fanduel-api
     repo: https://github.com/Setfive/fanduel-api
-    role: unofficial_fanduel_library_research
-    production_default: disabled_until_compliance_verified
+    branch: master
+    commit: c4b9b746555b2f7d5b4a15a747cc82c724109db4
+    role: legacy_unofficial_fanduel_library_research
+    production_default: research_only
+    account_automation: disabled
   bytecode_viewer:
     docs_mcp: https://gitmcp.io/Konloch/bytecode-viewer
     repo: https://github.com/Konloch/bytecode-viewer
-    role: java_android_static_reverse_engineering
-    recommended_cli_release: v2.12_if_cli_required
+    branch: master
+    commit: 31430e0033fa220db566b5ef461256727ff6793b
+    role: authorized_java_android_static_reverse_engineering
+    pinned_interface_version: 2.13.2
