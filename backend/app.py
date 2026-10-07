@@ -44,7 +44,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.6"
+APP_VERSION = "1.6.7"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -3007,7 +3007,7 @@ def parlays(sport: str, event_id: str, date: str | None = None):
 _ROSTER_CACHE: dict[tuple[str, str], tuple[float, set[str]]] = {}
 _ROSTER_TTL_SECONDS = 900
 _BEST_BOARD_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_BEST_BOARD_TTL_SECONDS = 30
+_BEST_BOARD_TTL_SECONDS = 60
 
 
 def _future_pregame(game: dict[str, Any]) -> bool:
