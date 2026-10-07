@@ -77,6 +77,24 @@ async function captureEvidence(sport:'ALL'|Sport,date:string,signal?:AbortSignal
  if(captured===0)throw new Error('Fresh evidence capture failed for every requested sport.');
  return {requested:targets.length,captured};
 }
+async function readEvidenceLedger(sport:'ALL'|Sport,date:string,signal?:AbortSignal):Promise<Row>{
+ // Runtime evidence rows are indexed by the UTC event date. The UI date is
+ // America/Los_Angeles, so an evening Pacific event can live under the following
+ // UTC storage date. Read both possible buckets and normalize back to Pacific.
+ const storageDates=[date,shiftDate(date,1)];
+ const results=await Promise.allSettled(storageDates.map(storageDate=>fetchBackendJson(BACKEND+`/v1/evidence/signals?date=${storageDate}${sport==='ALL'?'':`&sport=${sport}`}&limit=250`,signal)));
+ const fulfilled=results.filter((result):result is PromiseFulfilledResult<Row>=>result.status==='fulfilled');
+ if(!fulfilled.length)throw new Error('Evidence ledger lookup failed.');
+ const rows=fulfilled.flatMap(result=>Array.isArray(result.value?.signals)?result.value.signals:[]);
+ const unique=[...new Map(rows.map((row:Row)=>[String(row.signal_id||row.record_sha256||JSON.stringify(row)),row])).values()]
+  .filter((row:Row)=>{
+   const raw=String(row.event_time_utc||'');
+   const parsed=new Date(raw);
+   return raw&&Number.isFinite(parsed.getTime())&&pacificDate(parsed)===date;
+  });
+ const base=fulfilled[0].value;
+ return {...base,signals:unique,count:unique.length,ui_date_timezone:'America/Los_Angeles',storage_dates_checked:storageDates};
+}
 export async function GET(request: Request) {
  const u=new URL(request.url),kind=u.searchParams.get('kind')||'health',sport=u.searchParams.get('sport')||'NFL',date=u.searchParams.get('date')||pacificDate(),event=u.searchParams.get('event')||'',signal=u.searchParams.get('signal')||'';
  const evidenceKind=['evidence','evidence_verify'].includes(kind);
@@ -89,7 +107,7 @@ export async function GET(request: Request) {
  try {
   let capture:Row|undefined;
   if(kind==='evidence')capture=await captureEvidence(sport as 'ALL'|Sport,date,request.signal);
-  const data=await fetchBackendJson(BACKEND+routes[kind],request.signal);
+  const data=kind==='evidence'?await readEvidenceLedger(sport as 'ALL'|Sport,date,request.signal):await fetchBackendJson(BACKEND+routes[kind],request.signal);
   const safe=kind==='predictions'?{...data,games:(data.games||[]).map((row:Row)=>predictionPolicy(row))}:kind==='props'?propPolicy(data):kind==='best12'?best12Policy(data):kind==='best3'?await expandBest3(data,date,request.signal):kind==='best9'?best9Policy(data):data;
   return Response.json({data:redact(safe),retrievedAt:new Date().toISOString(),...(capture?{capture}: {})},{headers:{'Cache-Control':'no-store'}});
  }
