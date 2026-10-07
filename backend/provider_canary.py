@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -183,7 +185,7 @@ def _historical_access_probe(key: str) -> dict[str, Any]:
     return out
 
 
-def live_provider_canaries(*, historical_probe: bool = False) -> dict[str, Any]:
+def _live_provider_canaries_uncached(*, historical_probe: bool = False) -> dict[str, Any]:
     odds = _the_odds_api_canary(historical_probe=historical_probe)
     sportradar_configured = bool(os.getenv("SPORTRADAR_API_KEY", "").strip())
     return {
@@ -200,3 +202,28 @@ def live_provider_canaries(*, historical_probe: bool = False) -> dict[str, Any]:
             odds.get("authenticated") is True and odds.get("schema_valid") is True
         ),
     }
+
+
+_CANARY_CACHE_LOCK = threading.Lock()
+_CANARY_CACHE_VALUE: dict[str, Any] | None = None
+_CANARY_CACHE_AT = 0.0
+_CANARY_TTL_SECONDS = 300.0
+
+
+def live_provider_canaries(*, historical_probe: bool = False) -> dict[str, Any]:
+    """Return a fresh historical probe or a short-lived cached live canary."""
+    global _CANARY_CACHE_VALUE, _CANARY_CACHE_AT
+    if historical_probe:
+        return _live_provider_canaries_uncached(historical_probe=True)
+    now = time.monotonic()
+    with _CANARY_CACHE_LOCK:
+        if (
+            _CANARY_CACHE_VALUE is not None
+            and now - _CANARY_CACHE_AT < _CANARY_TTL_SECONDS
+        ):
+            return dict(_CANARY_CACHE_VALUE)
+    value = _live_provider_canaries_uncached(historical_probe=False)
+    with _CANARY_CACHE_LOCK:
+        _CANARY_CACHE_VALUE = dict(value)
+        _CANARY_CACHE_AT = time.monotonic()
+    return dict(value)

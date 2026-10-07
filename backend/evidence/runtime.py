@@ -84,17 +84,28 @@ def _ensure_database() -> bool:
         try:
             with psycopg.connect(url, autocommit=True, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
+                    # CREATE TABLE IF NOT EXISTS does not migrate an older table.
+                    # Create the current shape and then add columns introduced by
+                    # later releases before an index or query can reference them.
                     cur.execute(
                         """
                         CREATE TABLE IF NOT EXISTS philthy_evidence_signals (
                             signal_id TEXT PRIMARY KEY,
-                            event_date DATE NOT NULL,
-                            league TEXT NOT NULL,
-                            payload JSONB NOT NULL,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                            event_date DATE,
+                            league TEXT,
+                            payload JSONB,
+                            created_at TIMESTAMPTZ DEFAULT NOW()
                         )
                         """
                     )
+                    for ddl in (
+                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS signal_id TEXT",
+                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS event_date DATE",
+                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS league TEXT",
+                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS payload JSONB",
+                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
+                    ):
+                        cur.execute(ddl)
                     cur.execute(
                         "CREATE INDEX IF NOT EXISTS philthy_evidence_signals_date_idx "
                         "ON philthy_evidence_signals (event_date DESC, league, created_at DESC)"
@@ -103,14 +114,21 @@ def _ensure_database() -> bool:
                         """
                         CREATE TABLE IF NOT EXISTS philthy_evidence_manifests (
                             id BIGSERIAL PRIMARY KEY,
-                            evidence_date DATE NOT NULL,
+                            evidence_date DATE,
                             merkle_root TEXT,
-                            payload JSONB NOT NULL,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            payload JSONB,
+                            created_at TIMESTAMPTZ DEFAULT NOW(),
                             UNIQUE (evidence_date, merkle_root)
                         )
                         """
                     )
+                    for ddl in (
+                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS evidence_date DATE",
+                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS merkle_root TEXT",
+                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS payload JSONB",
+                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
+                    ):
+                        cur.execute(ddl)
             _DB_READY = True
             _DB_ERROR_TYPE = None
             _log_storage_state("render_postgres")
@@ -118,7 +136,6 @@ def _ensure_database() -> bool:
         except Exception as exc:
             _mark_db_failed(exc)
             return False
-
 
 def storage_status() -> dict[str, Any]:
     durable = _ensure_database()
@@ -281,7 +298,7 @@ def _persist_batch(records: list[dict[str, Any]], snapshot: datetime) -> list[di
                         INSERT INTO philthy_evidence_manifests
                             (evidence_date, merkle_root, payload)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (evidence_date, merkle_root) DO NOTHING
+                        ON CONFLICT DO NOTHING
                         """,
                         (day, manifest.get("merkle_root"), Jsonb(manifest)),
                     )

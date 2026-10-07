@@ -44,7 +44,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.7"
+APP_VERSION = "1.6.8"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2307,6 +2307,7 @@ def system_status():
             "four_sport_model_promotion": "Passed" if promotion_pass else "Sample threshold pending",
             "credential_core_keyless": "Passed",
             "credential_live_odds_props": (
+                "Passed" if rotation and odds_key and live_provider_canaries().get("credentialled_live_provider_verified") is True else
                 "Canary pending" if rotation and odds_key else
                 "Rotation confirmation pending" if odds_key else
                 "Fresh credential pending"
