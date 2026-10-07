@@ -1,0 +1,31 @@
+name: PhilthySports MCP Skill Set
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/philthysports-mcp-skills/**'
+      - 'backend/mcp_v2_service.py'
+      - '.github/workflows/philthysports-mcp-skillset.yml'
+  pull_request:
+    paths:
+      - 'integrations/philthysports-mcp-skills/**'
+      - 'backend/mcp_v2_service.py'
+      - '.github/workflows/philthysports-mcp-skillset.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate PhilthySports MCP skill set
+        run: python integrations/philthysports-mcp-skills/validate_skillset.py
+      - name: Compile MCP service
+        run: python -m py_compile backend/mcp_v2_service.py
