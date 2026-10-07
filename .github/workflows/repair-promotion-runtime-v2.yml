@@ -38,15 +38,13 @@ jobs:
           pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
           PYTHONPATH=backend pytest -q backend/tests/test_app.py backend/tests/test_runtime_evidence.py
 
-      - name: Commit verified repair
+      - name: Commit verified backend repair
         shell: bash
         run: |
           set -euo pipefail
-          git add backend/app.py backend/provider_canary.py backend/evidence/runtime.py \
-            .github/workflows/live-provider-proof.yml \
-            .github/workflows/historical-access-probe.yml
+          git add backend/app.py backend/provider_canary.py backend/evidence/runtime.py
           if git diff --cached --quiet; then
-            echo 'Repair already applied.'
+            echo 'Backend repair already applied.'
             exit 0
           fi
           git config user.name 'philthysports-repair-bot'
