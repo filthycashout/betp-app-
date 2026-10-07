@@ -1,0 +1,112 @@
+name: Repair PhilthyParleys Promotion Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-promotion-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-philthyparleys-promotion-runtime
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Patch promotion runtime and evidence storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> bool:
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if new in text:
+                  return False
+              if old not in text:
+                  raise SystemExit(f'patch anchor not found in {path}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              return True
+
+          # 1) Repair migration compatibility for an existing Render Postgres schema.
+          runtime = Path('backend/evidence/runtime.py')
+          text = runtime.read_text(encoding='utf-8')
+          start = text.index('def _ensure_database() -> bool:')
+          end = text.index('\n\ndef storage_status()', start)
+          replacement = '''def _ensure_database() -> bool:\n    global _DB_READY, _DB_ERROR_TYPE\n    if _DB_READY:\n        return True\n    url = _database_url()\n    if not url:\n        _DB_ERROR_TYPE = "DATABASE_URL_MISSING"\n        _log_storage_state("server_runtime_fallback:DATABASE_URL_MISSING")\n        return False\n    if psycopg is None or Jsonb is None:\n        _DB_ERROR_TYPE = "PSYCOPG_UNAVAILABLE"\n        _log_storage_state("server_runtime_fallback:PSYCOPG_UNAVAILABLE")\n        return False\n    with _DB_LOCK:\n        if _DB_READY:\n            return True\n        try:\n            with psycopg.connect(url, autocommit=True, connect_timeout=5) as conn:\n                with conn.cursor() as cur:\n                    # CREATE TABLE IF NOT EXISTS does not migrate older tables.\n                    # Build the current shape, then add any columns missing from a\n                    # legacy deployment before indexes or reads reference them.\n                    cur.execute(\n                        """\n                        CREATE TABLE IF NOT EXISTS philthy_evidence_signals (\n                            signal_id TEXT PRIMARY KEY,\n                            event_date DATE,\n                            league TEXT,\n                            payload JSONB,\n                            created_at TIMESTAMPTZ DEFAULT NOW()\n                        )\n                        """\n                    )\n                    for ddl in (\n                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS signal_id TEXT",\n                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS event_date DATE",\n                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS league TEXT",\n                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS payload JSONB",\n                        "ALTER TABLE philthy_evidence_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",\n                    ):\n                        cur.execute(ddl)\n                    cur.execute(\n                        "CREATE INDEX IF NOT EXISTS philthy_evidence_signals_date_idx "\n                        "ON philthy_evidence_signals (event_date DESC, league, created_at DESC)"\n                    )\n                    cur.execute(\n                        """\n                        CREATE TABLE IF NOT EXISTS philthy_evidence_manifests (\n                            id BIGSERIAL PRIMARY KEY,\n                            evidence_date DATE,\n                            merkle_root TEXT,\n                            payload JSONB,\n                            created_at TIMESTAMPTZ DEFAULT NOW(),\n                            UNIQUE (evidence_date, merkle_root)\n                        )\n                        """\n                    )\n                    for ddl in (\n                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS evidence_date DATE",\n                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS merkle_root TEXT",\n                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS payload JSONB",\n                        "ALTER TABLE philthy_evidence_manifests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",\n                    ):\n                        cur.execute(ddl)\n            _DB_READY = True\n            _DB_ERROR_TYPE = None\n            _log_storage_state("render_postgres")\n            return True\n        except Exception as exc:\n            _mark_db_failed(exc)\n            return False\n'''
+          if text[start:end] != replacement.rstrip('\n'):
+              runtime.write_text(text[:start] + replacement.rstrip('\n') + text[end:], encoding='utf-8')
+
+          # Existing legacy manifest tables might not carry the old composite\n          # unique constraint. Targetless DO NOTHING remains idempotent where a\n          # constraint exists and avoids a ProgrammingError where it does not.
+          text = runtime.read_text(encoding='utf-8')
+          text = text.replace('ON CONFLICT (evidence_date, merkle_root) DO NOTHING', 'ON CONFLICT DO NOTHING')
+          runtime.write_text(text, encoding='utf-8')
+
+          # 2) Cache the live provider canary so Settings can report real proof\n          # without spending provider quota on every status refresh.
+          canary = Path('backend/provider_canary.py')
+          text = canary.read_text(encoding='utf-8')
+          if 'import threading\n' not in text:
+              text = text.replace('import os\n', 'import os\nimport threading\nimport time\n', 1)
+          if 'def _live_provider_canaries_uncached(' not in text:
+              marker = 'def live_provider_canaries(*, historical_probe: bool = False) -> dict[str, Any]:'
+              if marker not in text:
+                  raise SystemExit('provider canary function anchor not found')
+              text = text.replace(marker, 'def _live_provider_canaries_uncached(*, historical_probe: bool = False) -> dict[str, Any]:', 1)
+              text += '''\n\n_CANARY_CACHE_LOCK = threading.Lock()\n_CANARY_CACHE_VALUE: dict[str, Any] | None = None\n_CANARY_CACHE_AT = 0.0\n_CANARY_TTL_SECONDS = 300.0\n\ndef live_provider_canaries(*, historical_probe: bool = False) -> dict[str, Any]:\n    """Return fresh historical probes and a short-lived cached normal canary."""\n    global _CANARY_CACHE_VALUE, _CANARY_CACHE_AT\n    if historical_probe:\n        return _live_provider_canaries_uncached(historical_probe=True)\n    now = time.monotonic()\n    with _CANARY_CACHE_LOCK:\n        if _CANARY_CACHE_VALUE is not None and now - _CANARY_CACHE_AT < _CANARY_TTL_SECONDS:\n            return dict(_CANARY_CACHE_VALUE)\n    value = _live_provider_canaries_uncached(historical_probe=False)\n    with _CANARY_CACHE_LOCK:\n        _CANARY_CACHE_VALUE = dict(value)\n        _CANARY_CACHE_AT = time.monotonic()\n    return dict(value)\n'''
+          canary.write_text(text, encoding='utf-8')
+
+          # 3) Make /v1/system/status consume that redacted canary result instead\n          # of reporting Canary pending forever when credentials are configured.\n          app = Path('backend/app.py')
+          text = app.read_text(encoding='utf-8')
+          text = text.replace('APP_VERSION = "1.6.7"', 'APP_VERSION = "1.6.8"', 1)
+          old = '''            "credential_live_odds_props": (\n                "Canary pending" if rotation and odds_key else\n                "Rotation confirmation pending" if odds_key else\n                "Fresh credential pending"\n            ),'''
+          new = '''            "credential_live_odds_props": (\n                "Passed" if rotation and odds_key and live_provider_canaries().get("credentialled_live_provider_verified") is True else\n                "Canary pending" if rotation and odds_key else\n                "Rotation confirmation pending" if odds_key else\n                "Fresh credential pending"\n            ),'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('app credential status anchor not found')
+              text = text.replace(old, new, 1)
+          app.write_text(text, encoding='utf-8')
+
+          # 4) Keep credential proof current automatically. The normal canary is\n          # cheap and cached; the paid historical-entitlement probe runs daily.\n          replace_once(\n              '.github/workflows/live-provider-proof.yml',\n              '  workflow_dispatch:\n',\n              '  schedule:\n    - cron: "7 * * * *"\n  workflow_dispatch:\n',\n          )
+          replace_once(\n              '.github/workflows/historical-access-probe.yml',\n              '  workflow_dispatch:\n',\n              '  schedule:\n    - cron: "17 9 * * *"\n  workflow_dispatch:\n',\n          )
+          PY
+
+      - name: Validate patched backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile backend/app.py backend/provider_canary.py backend/evidence/runtime.py
+          pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
+          PYTHONPATH=backend pytest -q backend/tests/test_app.py backend/tests/test_runtime_evidence.py
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add backend/app.py backend/provider_canary.py backend/evidence/runtime.py \
+            .github/workflows/live-provider-proof.yml \
+            .github/workflows/historical-access-probe.yml
+          if git diff --cached --quiet; then
+            echo 'Repair already applied.'
+            exit 0
+          fi
+          git config user.name 'philthysports-repair-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Repair promotion runtime evidence and provider canary'
+          git pull --rebase origin main
+          git push origin main
