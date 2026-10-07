@@ -16,7 +16,7 @@ function isBoardKind(kind: string) {
   return kind.startsWith('best') || kind.startsWith('parlay') || kind === 'multiParlays';
 }
 
-function pricedEvidenceStillFresh(value: unknown, now = Date.now()): boolean {
+export function pricedEvidenceStillFresh(value: unknown, now = Date.now()): boolean {
   if (Array.isArray(value)) return value.every(item => pricedEvidenceStillFresh(item, now));
   if (!value || typeof value !== 'object') return true;
 
