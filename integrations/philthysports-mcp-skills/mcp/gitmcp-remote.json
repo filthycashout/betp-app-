@@ -1,5 +1,6 @@
 {
   "mcpServers": {
+    "philthysports-live": {"url": "https://philthysports-mcp-v1.onrender.com/mcp"},
     "sportradar-docs": {"url": "https://gitmcp.io/johnwmillr/SportradarAPIs"},
     "odds-api-docs": {"url": "https://gitmcp.io/odds-api/odds-api"},
     "draftfast-docs": {"url": "https://gitmcp.io/BenBrostoff/draftfast"},
