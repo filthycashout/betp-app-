@@ -1,0 +1,37 @@
+{
+  "skill_name": "philthysports-mcp",
+  "skill_version": "1.1.1",
+  "repository": "filthycashout/betp-app-",
+  "source_file": "backend/mcp_v2_service.py",
+  "source_blob_sha": "45d00ddd8f5060e31ec25a03d0c4125591fde0ff",
+  "mcp_endpoint": "https://philthysports-mcp-v1.onrender.com/mcp",
+  "backend_default": "https://philthysports-api-v9.onrender.com",
+  "transport": "streamable-http",
+  "sports": ["NFL", "NBA", "MLB", "NHL"],
+  "tools": [
+    "philthy_health",
+    "philthy_system_status",
+    "philthy_provider_status",
+    "philthy_search",
+    "philthy_best12",
+    "philthy_best3",
+    "philthy_evidence",
+    "philthy_capability_inventory",
+    "philthy_dfs_optimize"
+  ],
+  "supporting_skills": [
+    "sports-mcp-router",
+    "sportradar-sports-data",
+    "odds-api-research",
+    "draftfast-lineup-optimizer",
+    "fanduel-api-research",
+    "bytecode-viewer-analysis"
+  ],
+  "governance": {
+    "chronology": "as_of < event_time",
+    "production_mock_substitution": false,
+    "automatic_wager_execution": false,
+    "automatic_contest_entry": false,
+    "model_baseline_replacement_requires_v8_promotion": true
+  }
+}
