@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - scripts/apply_runtime_reliability_fix.py
+      - scripts/apply_mobile_performance_fix.py
       - .github/workflows/apply-runtime-reliability-fix.yml
   workflow_dispatch:
 
@@ -24,15 +25,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Apply source fix
-        run: python scripts/apply_runtime_reliability_fix.py
+      - name: Apply source fixes
+        run: |
+          python scripts/apply_runtime_reliability_fix.py
+          python scripts/apply_mobile_performance_fix.py
 
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
 
       - name: Verify backend source and regression suite
         run: |
-          python -m py_compile backend/app.py backend/evidence/runtime.py backend/odds_api_net.py
+          python -m py_compile backend/app.py backend/evidence/runtime.py backend/odds_api_net.py scripts/apply_mobile_performance_fix.py
           PYTHONPATH=backend pytest -q backend/tests
           (cd backend && python odds_api_net_smoke.py)
 
@@ -49,7 +52,7 @@ jobs:
           npm test
           npm run build
 
-      - name: Commit verified runtime fix
+      - name: Commit verified runtime and performance fix
         shell: bash
         run: |
           set -euo pipefail
@@ -58,14 +61,17 @@ jobs:
             backend/evidence/runtime.py \
             backend/requirements.txt \
             mobile_dashboard/app/sports-dashboard.tsx \
+            mobile_dashboard/lib/fast-cache.ts \
+            mobile_dashboard/tests/fast-cache.test.ts \
             mobile_dashboard/package.json \
             mobile_dashboard/package-lock.json \
+            assets/dashboard \
             pubspec.yaml
           if git diff --cached --quiet; then
-            echo 'No runtime fix changes to commit.'
+            echo 'No runtime/performance changes to commit.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Fix durable evidence storage, provider status, and gate display (1.6.6)'
+          git commit -m 'Make picks and parlays cache-first (1.6.7)'
           git push origin HEAD:main
