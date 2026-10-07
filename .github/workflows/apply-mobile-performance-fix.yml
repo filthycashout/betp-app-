@@ -58,3 +58,5 @@ jobs:
           fi
           git commit -m "Make picks and parlays cache-first"
           git push origin HEAD:main
+
+# Re-saving this existing workflow triggers the one-time apply job on main.
