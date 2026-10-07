@@ -11,36 +11,43 @@ function shiftDate(value:string,days:number){const d=new Date(value+'T12:00:00Z'
 function candidateId(row:Row){return `${row.sport||''}|${row.event_id||''}|${row.label||''}`;}
 function cardSignature(legs:Row[]){return legs.map(candidateId).sort().join('||');}
 function buildVerifiedCard(sport:Sport,rank:number,pool:Row[],used:Set<string>):Row|null{
- const deduped=[...new Map(pool.filter(row=>row?.sport===sport&&row?.available!==false).map(row=>[candidateId(row),row])).values()]
-  .sort((a,b)=>Number(b.probability||0)-Number(a.probability||0));
- if(deduped.length<3)return null;
- for(let offset=rank-1;offset<deduped.length;offset++){
-  const ordered=[...deduped.slice(offset),...deduped.slice(0,offset)];
-  const legs:Row[]=[];const eventCounts=new Map<string,number>();
-  for(const row of ordered){
-   const event=String(row.event_id||'');
-   if(!event||legs.some(x=>candidateId(x)===candidateId(row)))continue;
-   if((eventCounts.get(event)||0)>=2)continue;
-   legs.push(row);eventCounts.set(event,(eventCounts.get(event)||0)+1);
-   if(legs.length===3)break;
+ const candidates=[...new Map(pool.filter(row=>row?.sport===sport&&row?.available===true&&typeof row?.best_available_book==='string'&&row.best_available_book.length>0).map(row=>[candidateId(row),row])).values()];
+ const byBook=new Map<string,Row[]>();
+ for(const row of candidates){const book=String(row.best_available_book);byBook.set(book,[...(byBook.get(book)||[]),row]);}
+ const bookPools=[...byBook.entries()]
+  .map(([book,rows])=>[book,rows.sort((a,b)=>Number(b.probability||0)-Number(a.probability||0))] as const)
+  .filter(([,rows])=>rows.length>=3)
+  .sort((a,b)=>Number(b[1][0]?.probability||0)-Number(a[1][0]?.probability||0));
+ for(const [book,deduped] of bookPools){
+  for(let offset=Math.max(0,rank-1);offset<deduped.length;offset++){
+   const ordered=[...deduped.slice(offset),...deduped.slice(0,offset)];
+   const legs:Row[]=[];const eventCounts=new Map<string,number>();
+   for(const row of ordered){
+    const event=String(row.event_id||'');
+    if(!event||legs.some(x=>candidateId(x)===candidateId(row)))continue;
+    if((eventCounts.get(event)||0)>=2)continue;
+    legs.push(row);eventCounts.set(event,(eventCounts.get(event)||0)+1);
+    if(legs.length===3)break;
+   }
+   if(legs.length!==3)continue;
+   const signature=cardSignature(legs);
+   if(used.has(signature))continue;
+   used.add(signature);
+   const dates=[...new Set(legs.map(row=>String(row.date||'')).filter(Boolean))].sort();
+   return {
+    sport,rank,title:`${sport} BEST ${rank} — 3 LEG`,status:'OK',legs,
+    estimated_joint_probability:null,
+    dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',
+    dates_considered:dates,
+    sportsbook:book,
+    reasoning:[
+     `This card uses the nearest upcoming verified ${sport} selections from ${dates[0]||'the selected date'}${dates.length>1?` through ${dates[dates.length-1]}`:''}.`,
+     `All three displayed legs carry fresh offered prices from ${book}; no cross-book or synthetic leg was used.`,
+     'No more than two legs come from the same event, and the second card must have a different three-leg signature from the first.',
+     'Joint hit probability remains withheld until measured cross-leg dependence passes the governed validation gate.'
+    ]
+   };
   }
-  if(legs.length!==3)continue;
-  const signature=cardSignature(legs);
-  if(used.has(signature))continue;
-  used.add(signature);
-  const dates=[...new Set(legs.map(row=>String(row.date||'')).filter(Boolean))].sort();
-  return {
-   sport,rank,title:`${sport} BEST ${rank} — 3 LEG`,status:'OK',legs,
-   estimated_joint_probability:null,
-   dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',
-   dates_considered:dates,
-   reasoning:[
-    `This card uses the nearest upcoming verified ${sport} selections from ${dates[0]||'the selected date'}${dates.length>1?` through ${dates[dates.length-1]}`:''}.`,
-    'Every leg retained its own future event time, sportsbook, offered price and fresh quote timestamp; no missing leg was synthesized.',
-    'No more than two legs come from the same event, and the second card must have a different three-leg signature from the first.',
-    'Joint hit probability remains withheld until measured cross-leg dependence passes the governed validation gate.'
-   ]
-  };
  }
  return null;
 }
@@ -48,8 +55,8 @@ async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row
  const strict=best3Policy(data);
  const strictCards=Array.isArray(strict.cards)?strict.cards:[];
  if(strictCards.length===8&&strictCards.every((card:Row)=>card.status==='OK'))return strict;
- const dates=[0,1,2,3].map(offset=>shiftDate(date,offset));
- const results=await Promise.allSettled(dates.map(d=>fetchBackendJson(BACKEND+`/v1/picks/best12?date=${d}`,signal)));
+ const dates=Array.from({length:7},(_,offset)=>shiftDate(date,offset));
+ const results=await Promise.allSettled(dates.map(d=>fetchBackendJson(BACKEND+`/v1/picks/best12?date=${d}`,signal,25_000)));
  const pool:Row[]=[];
  results.forEach(result=>{
   if(result.status!=='fulfilled')return;
@@ -65,14 +72,14 @@ async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row
    const rebuilt=buildVerifiedCard(s,rank,pool,used);
    if(rebuilt){cards.push(rebuilt);continue;}
    const unavailable=strictCards.find((card:Row)=>card.sport===s&&Number(card.rank)===rank);
-   cards.push(unavailable||{sport:s,rank,title:`${s} BEST ${rank} — 3 LEG`,status:'INSUFFICIENT_VERIFIED_LEGS',legs:[],estimated_joint_probability:null,dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',reasoning:['Three distinct fresh sportsbook-backed legs were not available inside the four-day verified window.','No stale, synthetic or unverified selection was substituted.']});
+   cards.push(unavailable||{sport:s,rank,title:`${s} BEST ${rank} — 3 LEG`,status:'INSUFFICIENT_VERIFIED_LEGS',legs:[],estimated_joint_probability:null,dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',reasoning:['Three distinct fresh, same-sportsbook-backed legs were not available inside the seven-day verified window.','No stale, synthetic, cross-book or unverified selection was substituted.']});
   }
  }
  return best3Policy({...strict,cards,dates_considered:dates,status:cards.length===8&&cards.every(card=>card.status==='OK')?'OK':'PARTIAL_VERIFIED_COVERAGE'});
 }
 async function captureEvidence(sport:'ALL'|Sport,date:string,signal?:AbortSignal){
  const targets:readonly Sport[]=sport==='ALL'?SPORTS:[sport];
- const results=await Promise.allSettled(targets.map(s=>fetchBackendJson(BACKEND+`/v1/search?sport=${s}&date=${date}&include_props=false`,signal)));
+ const results=await Promise.allSettled(targets.map(s=>fetchBackendJson(BACKEND+`/v1/search?sport=${s}&date=${date}&include_props=false`,signal,30_000)));
  const captured=results.filter(result=>result.status==='fulfilled').length;
  if(captured===0)throw new Error('Fresh evidence capture failed for every requested sport.');
  return {requested:targets.length,captured};
@@ -82,7 +89,7 @@ async function readEvidenceLedger(sport:'ALL'|Sport,date:string,signal?:AbortSig
  // America/Los_Angeles, so an evening Pacific event can live under the following
  // UTC storage date. Read both possible buckets and normalize back to Pacific.
  const storageDates=[date,shiftDate(date,1)];
- const results=await Promise.allSettled(storageDates.map(storageDate=>fetchBackendJson(BACKEND+`/v1/evidence/signals?date=${storageDate}${sport==='ALL'?'':`&sport=${sport}`}&limit=250`,signal)));
+ const results=await Promise.allSettled(storageDates.map(storageDate=>fetchBackendJson(BACKEND+`/v1/evidence/signals?date=${storageDate}${sport==='ALL'?'':`&sport=${sport}`}&limit=250`,signal,20_000)));
  const fulfilled=results.filter((result):result is PromiseFulfilledResult<Row>=>result.status==='fulfilled');
  if(!fulfilled.length)throw new Error('Evidence ledger lookup failed.');
  const rows=fulfilled.flatMap(result=>Array.isArray(result.value?.signals)?result.value.signals:[]);
