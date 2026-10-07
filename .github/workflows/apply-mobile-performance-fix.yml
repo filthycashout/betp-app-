@@ -1,0 +1,60 @@
+name: Apply Mobile Performance Fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-mobile-performance-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply cache-first patch
+        run: python scripts/apply_mobile_performance_fix.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        working-directory: mobile_dashboard
+        run: npm ci
+
+      - name: Run dashboard tests
+        working-directory: mobile_dashboard
+        run: npm test
+
+      - name: Build dashboard assets
+        working-directory: mobile_dashboard
+        run: npm run build
+
+      - name: Verify Python syntax
+        run: python -m py_compile backend/app.py scripts/apply_mobile_performance_fix.py
+
+      - name: Verify patch diff
+        run: git diff --check
+
+      - name: Commit generated performance release
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile_dashboard/app/sports-dashboard.tsx mobile_dashboard/lib/fast-cache.ts mobile_dashboard/tests/fast-cache.test.ts assets/dashboard backend/app.py pubspec.yaml
+          if git diff --cached --quiet; then
+            echo "No performance changes to commit."
+            exit 0
+          fi
+          git commit -m "Make picks and parlays cache-first"
+          git push origin HEAD:main
