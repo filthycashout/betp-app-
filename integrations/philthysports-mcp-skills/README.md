@@ -1,32 +1,54 @@
 # PhilthySports MCP Skill Set
 
-A reusable Agent Skills collection for the MCP/GitMCP sources requested on 2026-10-06.
+Production-aligned Agent Skills collection for the six PhilthySports MCP capabilities.
+
+## Production endpoint
+
+`https://philthysports-mcp-v1.onrender.com/mcp`
+
+The production MCP currently exposes governed PhilthySports tools for health/status, provider inventory, four-sport research, Best 12, Best 3 research, evidence inspection, capability inventory and explicit-input DraftFast optimization. Missing or stale production evidence fails closed; mock/test data is never silently substituted.
 
 ## Included skills
 
-1. `sports-mcp-router` — routes sports-data, odds, DFS optimization, FanDuel research, and APK/bytecode tasks to the right source.
-2. `sportradar-sports-data` — works from the `johnwmillr/SportradarAPIs` GitMCP documentation and the Sportradar Python wrapper/API.
-3. `odds-api-research` — uses `odds-api/odds-api` docs and, when configured, its native live MCP server.
-4. `draftfast-lineup-optimizer` — builds/validates DraftKings or FanDuel DFS optimizer workflows with DraftFast.
-5. `fanduel-api-research` — inspects the unofficial Setfive FanDuel library and schemas while keeping production use behind compliance/authorization checks.
-6. `bytecode-viewer-analysis` — guides authorized Java/JAR/Android APK static analysis with Bytecode Viewer.
+1. `sports-mcp-router` — routes PhilthySports live research, sports data, odds, DFS optimization, FanDuel research and Android/bytecode work while enforcing provenance/freshness/V8 governance.
+2. `sportradar-sports-data` — works from `johnwmillr/SportradarAPIs` documentation plus authorized server-side Sportradar access.
+3. `odds-api-research` — uses `odds-api/odds-api` documentation and, when configured, its native live MCP server while keeping provider credentials isolated.
+4. `draftfast-lineup-optimizer` — validates DraftKings/FanDuel DFS optimizer workflows and maps to the production `philthy_dfs_optimize` tool.
+5. `fanduel-api-research` — inspects the legacy unofficial Setfive FanDuel library as research-only context; no production login/account/contest automation.
+6. `bytecode-viewer-analysis` — guides authorized Java/JAR/Android APK static analysis with the pinned Bytecode Viewer source and PhilthySports release-domain audit.
 
-Each skill is a standalone directory containing exactly one `SKILL.md`, compatible with the Agent Skills format.
+Each skill remains a standalone directory containing one `SKILL.md`.
 
-## MCP configuration
+## Production MCP tools
 
-- `mcp/gitmcp-remote.json`: URL-based remote MCP configuration for the five GitMCP documentation servers.
-- `mcp/mcp-remote-stdio.json`: `mcp-remote` configuration for clients that expect a command/stdio bridge.
-- `mcp/odds-api-native.json`: the native `@odds-api/mcp` server. Requires `ODDS_API_KEY` for live data; use mock mode only for development/testing.
+- `philthy_health`
+- `philthy_system_status`
+- `philthy_provider_status`
+- `philthy_search`
+- `philthy_best12`
+- `philthy_best3`
+- `philthy_evidence`
+- `philthy_capability_inventory`
+- `philthy_dfs_optimize`
 
-GitMCP is a documentation/context server for a GitHub repository. It does not automatically turn the underlying repository into executable API actions. The Odds API repository is the exception here because it also ships its own native MCP server.
+These are analysis/research/diagnostic tools. They do not execute wagers or DFS contest entries.
 
-## Recommended PhilthySports routing
+## MCP configuration files
 
-- Pregame schedules, rosters, stats, team/player context: Sportradar.
-- Current sportsbook lines, bookmaker comparison, fair/no-vig context, line movement, results: Odds API native MCP.
-- DFS lineup construction and constraints: DraftFast.
-- FanDuel library/API shape research: Setfive FanDuel GitMCP, with live/account automation disabled unless a compliant supported path is established.
-- APK/JAR/DEX inspection, decompilation, static search, resource analysis: Bytecode Viewer.
+- `mcp/gitmcp-remote.json`: direct remote MCP URLs for PhilthySports plus the five GitMCP documentation servers.
+- `mcp/mcp-remote-stdio.json`: `mcp-remote` command/stdio bridges for the same remote servers.
+- `mcp/odds-api-native.json`: native `@odds-api/mcp` server. The PhilthySports boundary uses `ODDS_API_NET_KEY`, mapped only inside that child process to its required `ODDS_API_KEY` variable.
 
-For predictive training, retain source timestamps and enforce `as_of < event_time`; do not use settled/future information in pregame features.
+GitMCP endpoints provide repository documentation/context; they do not automatically execute the underlying repository or provider API. The production PhilthySports endpoint is the governed execution surface.
+
+## Credential boundaries
+
+- The Odds API: `THE_ODDS_API_KEY`
+- odds-api.net/native MCP: `ODDS_API_NET_KEY` at PhilthySports/config boundary
+- Sportradar: `SPORTRADAR_API_KEY` or provider-required sport-specific server-side keys
+
+Do not alias credentials between providers. Never place provider secrets in the APK or committed config.
+
+## Predictive governance
+
+For predictive/training evidence, preserve source timestamps and enforce `as_of < event_time`. A trained model may replace the explicit market baseline only after chronology, in-fold preprocessing, OOF calibration, sample sufficiency, Brier improvement, non-inferior log loss, ECE <= 0.01, no-leakage, schema-compatibility and artifact-checksum gates pass. Use measured parlay dependence only.
