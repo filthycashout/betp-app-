@@ -1,38 +1,49 @@
 ---
 name: sports-mcp-router
-description: Route sports-data, sportsbook-odds, DFS lineup optimization, FanDuel-library research, and Android/Java bytecode tasks across the configured Sportradar, Odds API, DraftFast, FanDuel API, and Bytecode Viewer MCP documentation sources. Use when a task spans two or more of these sources or the correct source is unclear.
+description: Route PhilthySports live research, sports-data, sportsbook-odds, DFS optimization, FanDuel-library research, and Android/Java bytecode tasks across the production PhilthySports MCP plus the configured Sportradar, Odds API, DraftFast, FanDuel API, and Bytecode Viewer sources. Use when a task spans two or more sources or the correct source is unclear.
 ---
 
 # Sports MCP Router
 
-Use this skill as the first decision layer for the requested MCP set.
+Use this skill as the first decision layer for the six-skill PhilthySports MCP set.
+
+## Production MCP
+
+- Endpoint: `https://philthysports-mcp-v1.onrender.com/mcp`
+- Current service: PhilthySports MCP v1.1.1
+- Live tools: `philthy_health`, `philthy_system_status`, `philthy_provider_status`, `philthy_search`, `philthy_best12`, `philthy_best3`, `philthy_evidence`, `philthy_capability_inventory`, `philthy_dfs_optimize`.
+- The production MCP delegates governed live research to the PhilthySports backend and fails closed when evidence is unavailable.
 
 ## Routing rules
 
-1. For schedules, teams, rosters, player/game statistics, transactions, or general sport-event context, consult `sportradar-docs` and use an authorized Sportradar API integration for live data.
-2. For sportsbook prices, bookmaker comparison, market schemas, fair/no-vig odds, results, line movement, arbitrage research, positive-EV research, or streaming odds, prefer the native `odds-api-live` MCP when configured. Use `odds-api-docs` for contract/schema guidance.
-3. For DFS lineup generation, salary/position rules, stacks, locks, bans, custom constraints, or roster exports, consult `draftfast-docs` and execute DraftFast locally when a runtime is available.
-4. For the Setfive FanDuel library, use `fanduel-api-docs` for source/schema research. Do not assume the GitMCP server can log in or perform FanDuel actions. Do not make production account automation the default; the repository itself warns that its approach conflicts with FanDuel terms.
-5. For JAR/APK/DEX/XAPK/APKM decompilation, bytecode/resource inspection, static search, or Java/Android reverse-engineering workflow guidance, consult `bytecode-viewer-docs` and use Bytecode Viewer locally when available.
+1. Start with `philthy_health` or `philthy_provider_status` when live backend/provider availability matters.
+2. For NFL/NBA/MLB/NHL schedules, games, teams, rosters, players, stats, or current research, use `philthy_search`; consult `sportradar-docs` when wrapper/API implementation details are needed.
+3. For sportsbook prices, bookmaker comparison, fair/no-vig context, line movement, results, arbitrage research, positive-EV research, or streaming schemas, consult `odds-api-docs` and use authenticated live provider data only when configured. Never substitute docs/mock payloads for production prices.
+4. For DFS lineup construction from explicit salary/projection inputs, use `philthy_dfs_optimize`; consult `draftfast-docs` for rule/constraint details.
+5. For Setfive FanDuel source/schema research, use `fanduel-api-docs`. It remains research-only and is not a production login, account, contest-entry, or wager surface.
+6. For JAR/APK/DEX/XAPK/APKM decompilation, bytecode/resource inspection, static search, or Java/Android reverse-engineering guidance, use `bytecode-viewer-docs` plus the authorized local static-analysis workflow.
 
-## Multi-source sports workflow
+## PhilthySports governance contract
 
-When building a PhilthySports-style prediction or research pipeline:
+1. Preserve `source`, `retrieved_at`, `as_of`, `event_id`, provider IDs, bookmaker, market, selection, line and price where applicable.
+2. For predictive features and backtests, enforce `as_of < event_time`; settled/future information must not enter pregame features.
+3. Market data and sports-stat/context data are separate evidence classes and must retain separate provenance.
+4. A trained model may replace the explicit market baseline only after chronology, in-fold preprocessing, OOF calibration, sample sufficiency, Brier improvement, non-inferior log loss, ECE <= 0.01, no-leakage, schema compatibility and artifact-checksum gates pass.
+5. Measured parlay dependence only. Missing dependence evidence must not be replaced with invented correlation.
+6. Never present mock/test/example data as live production evidence.
+7. Never execute wagers or DFS contest entries.
+8. Keep all provider credentials server-side. Do not expose credentials through MCP results, APK code, logs or committed files.
 
-1. Resolve the event identity, league, teams/players, and scheduled start time.
-2. Record a provenance envelope for every observation: `source`, `retrieved_at`, `as_of`, `event_id`, and source-specific identifiers.
-3. For model features or backtests, enforce `as_of < event_time` and reject settled/future information from pregame features.
-4. Obtain market state from the live odds source separately from sport-stat features.
-5. If DFS optimization is requested, build projections first, then pass only explicit projection/salary/position/team fields into DraftFast.
-6. Keep sportsbook/DFS research outputs descriptive. Never label profit, EV, arbitrage, or a lineup as guaranteed.
-7. If a source is unavailable or unauthenticated, report that source as unavailable rather than silently replacing it with fabricated/mock data unless the user explicitly requests development mock mode.
+## Provider credential names
+
+Keep similarly named providers isolated:
+
+- The Odds API: `THE_ODDS_API_KEY` in PhilthySports server configuration.
+- odds-api.net/native `@odds-api/mcp`: `ODDS_API_NET_KEY` at the PhilthySports/config boundary, mapped to that child process's required `ODDS_API_KEY` only inside the native MCP launch config.
+- Sportradar: `SPORTRADAR_API_KEY` or sport-specific server-side keys as required by the provider adapter.
+
+Do not alias credentials between providers.
 
 ## Output contract
 
-Return:
-- sources used;
-- timestamps/freshness for live inputs;
-- normalized event/player identifiers;
-- requested result;
-- unresolved data or authentication blockers;
-- whether any mock/test data was used.
+Return the sources used, source/retrieval timestamps, normalized event/player identifiers, requested result, unresolved data/authentication blockers, model/baseline status when predictive output is involved, and whether any mock/test data was used.
