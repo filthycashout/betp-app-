@@ -110,22 +110,28 @@ jobs:
         if: steps.evidence.outcome != 'success' || steps.backend.outcome != 'success'
         env:
           GH_TOKEN: ${{ github.token }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+          BACKEND_OUTCOME: ${{ steps.backend.outcome }}
         shell: bash
         run: |
           set -euo pipefail
           title="PhilthyParleys production guard failure"
           existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
-          body="$(cat <<EOF
-          Production guard failed for commit `${GITHUB_SHA}`.
+          body="$(python - <<'PY'
+          import os
+          sha = os.environ["GITHUB_SHA"]
+          evidence = os.environ["EVIDENCE_OUTCOME"]
+          backend = os.environ["BACKEND_OUTCOME"]
+          print(f'''Production guard failed for commit `{sha}`.
 
-          Evidence freshness: **${{ steps.evidence.outcome }}**
-          Backend verification: **${{ steps.backend.outcome }}**
+          Evidence freshness: **{evidence}**
+          Backend verification: **{backend}**
 
           The last known-good rollback target is stored on the `evidence-snapshots` branch at:
           `evidence/ops/last_known_good.json`.
 
-          No automatic rollback was performed. Use the audited rollback workflow after reviewing the failure.
-          EOF
+          No automatic rollback was performed. Use the audited rollback workflow after reviewing the failure.''')
+          PY
           )"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
