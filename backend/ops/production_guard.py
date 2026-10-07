@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +14,7 @@ def get_json(url: str, attempts: int = 10, delay: int = 12):
         try:
             req = urllib.request.Request(
                 url,
-                headers={"Accept": "application/json", "User-Agent": "PhilthyParleys-production-guard/1.0"},
+                headers={"Accept": "application/json", "User-Agent": "PhilthyParleys-production-guard/1.1"},
             )
             with urllib.request.urlopen(req, timeout=20) as response:
                 if response.status != 200:
@@ -45,6 +44,8 @@ def main() -> None:
         health = get_json(base + "/health")
         status = get_json(base + "/v1/system/status")
         props = get_json(base + "/v1/system/props")
+        evidence = get_json(base + "/v1/evidence/signals?limit=1")
+        storage = evidence.get("storage_status") or {}
 
         checks = {
             "health_ok": health.get("status") == "ok",
@@ -54,12 +55,21 @@ def main() -> None:
             "immutable_capture": str((status.get("gates") or {}).get("immutable_pregame_evidence_capture") or "").startswith("PASS"),
             "keyless_props_fallback": props.get("keyless_fallback_configured") is True,
             "manual_review_only": status.get("execution_mode") == "MANUAL_REVIEW_ONLY",
+            "evidence_database_configured": storage.get("database_configured") is True,
+            "evidence_durable": evidence.get("durable_storage") is True and storage.get("durable") is True,
+            "evidence_render_postgres": storage.get("mode") == "render_postgres",
+            "evidence_database_error_clear": storage.get("database_error_type") in (None, ""),
         }
         report.update(
             api_version=status.get("api_version"),
             gates=status.get("gates"),
             credential_gate=status.get("credential_gate"),
             props_status=props.get("status"),
+            evidence_storage={
+                "storage_root": evidence.get("storage_root"),
+                "durable_storage": evidence.get("durable_storage"),
+                "storage_status": storage,
+            },
             checks=checks,
             passed=all(checks.values()),
         )
