@@ -12,6 +12,20 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port $PORT
     autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+      ignoredPaths:
+        - android/**
+        - mobile_dashboard/**
+        - test/**
+        - ci/**
+        - .github/**
+        - assets/**
+        - lib/**
+        - pubspec.yaml
+        - pubspec.lock
     envVars:
       - key: PHILTHY_CORS_ORIGINS
         sync: false
