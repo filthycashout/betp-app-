@@ -1,0 +1,56 @@
+name: Repair PhilthyParleys Promotion Runtime v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-promotion-runtime-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-philthyparleys-promotion-runtime-v2
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply repair
+        run: python scripts/repair_promotion_runtime_v2.py
+
+      - name: Validate patched backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile backend/app.py backend/provider_canary.py backend/evidence/runtime.py
+          pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
+          PYTHONPATH=backend pytest -q backend/tests/test_app.py backend/tests/test_runtime_evidence.py
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add backend/app.py backend/provider_canary.py backend/evidence/runtime.py \
+            .github/workflows/live-provider-proof.yml \
+            .github/workflows/historical-access-probe.yml
+          if git diff --cached --quiet; then
+            echo 'Repair already applied.'
+            exit 0
+          fi
+          git config user.name 'philthysports-repair-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Repair promotion runtime evidence and provider canary'
+          git pull --rebase origin main
+          git push origin main
