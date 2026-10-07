@@ -73,18 +73,20 @@ def main():
                             call('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2));return
             raise RuntimeError('Dashboard control missing: '+label)
         def open_view(label, expected, evidence_name):
-            # WebView accessibility can retain only the visible viewport. Retry the
-            # semantic tap and reset the document scroll before asserting page text.
+            # Live verification views can legitimately take longer than the tab
+            # transition itself. Poll the semantic tree after each tap rather than
+            # treating a still-loading view as a navigation failure.
             last=''
             for _ in range(3):
                 tap_label(label)
-                time.sleep(1)
                 call('shell','input','swipe','160','220','160','500','300',check=False)
-                time.sleep(1)
-                last=dump()
-                if exposed(last,expected):
-                    (args.output/(evidence_name+'.xml')).write_text(last)
-                    return last
+                deadline=time.monotonic()+20
+                while time.monotonic()<deadline:
+                    last=dump()
+                    if exposed(last,expected):
+                        (args.output/(evidence_name+'.xml')).write_text(last)
+                        return last
+                    time.sleep(2)
             (args.output/(evidence_name+'-failure.xml')).write_text(last)
             raise RuntimeError('Dashboard did not expose after navigation: '+expected)
         wait_for('Live')
