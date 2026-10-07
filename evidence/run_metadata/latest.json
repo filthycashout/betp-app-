@@ -1,7 +1,7 @@
 {
-  "captured_at_utc": "2026-10-07T08:39:51Z",
+  "captured_at_utc": "2026-10-07T16:29:39Z",
   "source_backend": "https://philthysports-api-v9.onrender.com",
-  "workflow_source_commit": "d6df879d994b3fb44a688a6275f4bc53683a1ce4",
+  "workflow_source_commit": "c951145efec43c031565549620eeaf6fffed61c0",
   "branch": "evidence-snapshots",
   "historical_backfill_merge": true,
   "secrets_embedded": false
