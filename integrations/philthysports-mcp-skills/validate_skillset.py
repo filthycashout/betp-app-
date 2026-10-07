@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -9,6 +11,7 @@ REPO = ROOT.parent.parent
 CORE = ROOT / "philthysports-mcp"
 SERVICE = REPO / "backend" / "mcp_v2_service.py"
 MCP_CONFIG = ROOT / "mcp" / "gitmcp-remote.json"
+CORE_MCP_CONFIG = CORE / "mcp.json"
 
 EXPECTED_SKILLS = {
     "philthysports-mcp",
@@ -45,9 +48,11 @@ for skill in sorted(EXPECTED_SKILLS):
     if not text.startswith("---\n"):
         fail(f"{path.relative_to(REPO)} missing skill frontmatter")
 
+for required in ("SKILL.md", "README.md", "mcp.json", "source-manifest.json", "validate.py"):
+    if not (CORE / required).is_file():
+        fail(f"missing core skill asset: {required}")
+
 manifest_path = CORE / "source-manifest.json"
-if not manifest_path.is_file():
-    fail("missing core source-manifest.json")
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 if manifest.get("mcp_endpoint") != ENDPOINT:
     fail("core manifest endpoint mismatch")
@@ -81,6 +86,12 @@ if 'SERVICE_VERSION = "1.1.1"' not in service_text:
 config = json.loads(MCP_CONFIG.read_text(encoding="utf-8"))
 if config.get("mcpServers", {}).get("philthysports-live", {}).get("url") != ENDPOINT:
     fail("MCP connection config endpoint mismatch")
+
+core_config = json.loads(CORE_MCP_CONFIG.read_text(encoding="utf-8"))
+if core_config.get("mcpServers", {}).get("philthysports", {}).get("url") != ENDPOINT:
+    fail("core MCP connection config endpoint mismatch")
+
+subprocess.run([sys.executable, str(CORE / "validate.py")], cwd=REPO, check=True)
 
 print("PASS PhilthySports MCP skill set")
 print(f"skills={len(EXPECTED_SKILLS)} tools={len(EXPECTED_TOOLS)} endpoint={ENDPOINT}")
