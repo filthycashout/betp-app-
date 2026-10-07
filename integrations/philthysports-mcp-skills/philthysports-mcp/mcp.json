@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "philthysports": {
+      "type": "http",
+      "url": "https://philthysports-mcp-v1.onrender.com/mcp"
+    }
+  }
+}
