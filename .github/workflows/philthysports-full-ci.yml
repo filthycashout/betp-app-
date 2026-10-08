@@ -12,7 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PHILTHY_PRODUCTION_BASE: https://philthysports-api-v9.onrender.com
+  # Prediction/runtime traffic is Floot. Keep the root URL (without /_api) for
+  # the Flutter dart-define because the client maps Floot requests to /_api.
+  PHILTHY_RUNTIME_ROOT: https://philthyparleys.floot.app
+  PHILTHY_RUNTIME_API: https://philthyparleys.floot.app/_api
+  # Temporary signing bridge only. This is NOT the prediction/runtime backend.
+  # Retaining it preserves the pinned Android update certificate until signing
+  # material has been migrated and independently verified on the replacement.
+  PHILTHY_SIGNING_BASE: https://philthysports-api-v9.onrender.com
 
 jobs:
   production-readiness:
@@ -28,45 +35,82 @@ jobs:
         run: |
           python -m py_compile backend/app.py backend/selftest.py backend/evidence/runtime.py backend/odds_api_net.py
           PYTHONPATH=backend pytest -q backend/tests
-      - name: Require durable production evidence storage and prediction readiness
+      - name: Require complete Floot production contract
+        run: |
+          mkdir -p release-evidence
+          python ci/floot_cutover_smoke.py
+          cp floot-cutover-report.json release-evidence/floot-cutover-report.json
+      - name: Require governed NFL and NBA model promotion
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-evidence
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/health" -o release-evidence/health.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/system/status" -o release-evidence/system-status.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/evidence/signals?limit=1" -o release-evidence/storage.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/providers/canary" -o release-evidence/provider-canary.json
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 "$PHILTHY_RUNTIME_API/v1/system/status" -o release-evidence/system-status-envelope.json
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 "$PHILTHY_RUNTIME_API/v1/models/status" -o release-evidence/model-status-envelope.json
           python - <<'PY'
           import json
           from pathlib import Path
+
           root=Path('release-evidence')
-          health=json.loads((root/'health.json').read_text())
-          status=json.loads((root/'system-status.json').read_text())
-          storage=json.loads((root/'storage.json').read_text())
-          canary=json.loads((root/'provider-canary.json').read_text())
-          ss=storage.get('storage_status') or {}
+          def unwrap(path):
+              payload=json.loads(path.read_text())
+              if isinstance(payload,dict) and isinstance(payload.get('json'),dict):
+                  return payload['json']
+              return payload
+
+          status=unwrap(root/'system-status-envelope.json')
+          model_status=unwrap(root/'model-status-envelope.json')
+          required_checks=(
+              'canonical_dataset',
+              'feature_schema',
+              'chronology_as_of_before_event',
+              'walk_forward_oof',
+              'calibration_oof_only',
+              'sample_sufficiency',
+              'brier_improvement',
+              'noninferior_log_loss',
+              'calibration_metrics',
+              'ece_threshold',
+              'separate_holdout',
+              'leakage_audit',
+              'provenance_hashes',
+              'artifact_checksum',
+              'beats_active_market_baseline',
+              'trained_weights',
+              'explicit_promotion',
+          )
+          models=model_status.get('models') if isinstance(model_status,dict) else None
+          if not isinstance(models,dict):
+              models=(status.get('models') if isinstance(status,dict) else None)
           failures=[]
-          if not (ss.get('database_configured') is True and ss.get('durable') is True and ss.get('mode') == 'render_postgres'):
-              failures.append('production evidence storage is not durable Render Postgres')
-          if canary.get('credentialled_live_provider_verified') is not True:
-              failures.append('fresh credentialled live-provider canary has not passed')
-          # The backend remains authoritative: only a signed promoted model may release
-          # model probabilities. Market baseline is valid runtime fallback but not a
-          # model-promotion pass.
-          models=(status.get('models') or status.get('model_registry') or {})
-          promoted=[]
-          for sport in ('NFL','NBA','MLB','NHL'):
-              item=models.get(sport) or models.get(sport.lower()) or {}
-              if isinstance(item, dict) and (item.get('promotion_gate') or {}).get('passed') is True:
-                  promoted.append(sport)
-          (root/'readiness.json').write_text(json.dumps({
-              'storage': ss,
-              'credentialled_live_provider_verified': canary.get('credentialled_live_provider_verified') is True,
-              'promoted_sports': promoted,
+          verified={}
+          for sport in ('NFL','NBA'):
+              item=(models or {}).get(sport) or (models or {}).get(sport.lower())
+              if not isinstance(item,dict):
+                  failures.append(f'{sport}: structured promotion evidence missing')
+                  continue
+              gate=item.get('promotion_gate') or {}
+              checks=gate.get('checks') or {}
+              missing=[name for name in required_checks if checks.get(name) is not True]
+              if gate.get('passed') is not True:
+                  failures.append(f'{sport}: promotion gate is not passed')
+              if missing:
+                  failures.append(f'{sport}: missing/failed checks: {", ".join(missing)}')
+              if not item.get('artifact_checksum') and not item.get('sha256'):
+                  failures.append(f'{sport}: promoted artifact checksum missing')
+              verified[sport]={
+                  'promotion_gate_passed': gate.get('passed') is True,
+                  'required_checks': {name: checks.get(name) is True for name in required_checks},
+                  'artifact_checksum_present': bool(item.get('artifact_checksum') or item.get('sha256')),
+              }
+          readiness={
+              'runtime_host': 'Floot',
+              'durable_database': ((status.get('database') or {}).get('durable') is True) if isinstance(status,dict) else False,
+              'market_baseline_fallback': ((status.get('models') or {}).get('marketBaselineFallback') is True) if isinstance(status,dict) and isinstance(status.get('models'),dict) else None,
+              'verified_model_gates': verified,
               'failures': failures,
               'release_gate_passed': not failures,
-          },indent=2,sort_keys=True)+'\n')
+          }
+          (root/'readiness.json').write_text(json.dumps(readiness,indent=2,sort_keys=True)+'\n')
           if failures:
               raise SystemExit('; '.join(failures))
           PY
@@ -104,14 +148,14 @@ jobs:
               s=s.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    '+permission)
           p.write_text(s)
           PY
-      - name: Fetch pinned release signing material
+      - name: Fetch pinned release signing material from rollback signing bridge
         shell: bash
         run: |
           set -euo pipefail
           AUDIENCE="philthysports-ci"
           OIDC_JSON="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
           OIDC_TOKEN="$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"$OIDC_JSON")"
-          SIGNING_JSON="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 -H "Authorization: Bearer $OIDC_TOKEN" "$PHILTHY_PRODUCTION_BASE/v1/ci/android-signing-material")"
+          SIGNING_JSON="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 -H "Authorization: Bearer $OIDC_TOKEN" "$PHILTHY_SIGNING_BASE/v1/ci/android-signing-material")"
           SIGNING_PATH="$RUNNER_TEMP/philthysports-signing.json"
           umask 077
           printf '%s' "$SIGNING_JSON" > "$SIGNING_PATH"
@@ -155,7 +199,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: mobile_dashboard/package-lock.json
-      - name: Build dashboard and signed APK
+      - name: Build dashboard and signed APK against Floot runtime
         run: |
           cd mobile_dashboard
           npm ci --no-audit --no-fund
@@ -165,7 +209,7 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
-          flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=$PHILTHY_PRODUCTION_BASE
+          flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=$PHILTHY_RUNTIME_ROOT
       - name: Verify signature and stage candidate
         shell: bash
         run: |
@@ -232,7 +276,7 @@ jobs:
           test -f PhilthyParleys.apk
           test -f PhilthyParleys.apk.sha256
           test -d emulator-evidence
-          printf '%s\n' 'Production evidence storage, provider canary, signing, and emulator gates passed.' > RELEASE_READY.txt
+          printf '%s\n' 'Floot production contract, governed NFL/NBA model promotion, stable signing, and emulator gates passed.' > RELEASE_READY.txt
       - uses: actions/upload-artifact@v4
         with:
           name: PhilthyParleys-release-ready
