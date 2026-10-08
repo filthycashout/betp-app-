@@ -3,7 +3,7 @@ import {predictionPolicy,propPolicy,best12Policy,best3Policy,best9Policy} from '
 import {BACKEND,SPORTS,validDate,pacificDate,type Sport} from '@/lib/sports';
 type Row=Record<string,any>;
 const FLOOT_PREDICTION_SPORTS = ['NFL','NBA'] as const;
-function isFlootPredictionSport(value:string):value is typeof FLOOT_PREDICTION_SPORTS[number]{return FLOOT_PREDICTION_SPORTS.includes(value as typeof FLOOT_PREDICTION_SPORTS[number]);}
+function isFlootPredictionSport(value:string):value is (typeof FLOOT_PREDICTION_SPORTS)[number]{return FLOOT_PREDICTION_SPORTS.includes(value as (typeof FLOOT_PREDICTION_SPORTS)[number]);}
 function redact(value: unknown): unknown {
  if(Array.isArray(value))return value.map(redact);
  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>!/(password|secret|token|private_key|api_key)(?!.*(?:configured|present|ready))/i.test(k)).map(([k,v])=>[k,redact(v)]));
@@ -80,7 +80,7 @@ async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row
  return best3Policy({...strict,cards,dates_considered:dates,status:cards.length===4&&cards.every(card=>card.status==='OK')?'OK':'PARTIAL_VERIFIED_COVERAGE'});
 }
 async function captureEvidence(sport:'ALL'|Sport,date:string,signal?:AbortSignal){
- const targets:readonly (typeof FLOOT_PREDICTION_SPORTS[number])[]=sport==='ALL'?FLOOT_PREDICTION_SPORTS:isFlootPredictionSport(sport)?[sport]:[];
+ const targets:readonly (typeof FLOOT_PREDICTION_SPORTS)[number][]=sport==='ALL'?FLOOT_PREDICTION_SPORTS:isFlootPredictionSport(sport)?[sport]:[];
  if(!targets.length)throw new Error('Prediction evidence migration currently supports NFL and NBA only.');
  const results=await Promise.allSettled(targets.map(s=>fetchBackendJson(BACKEND+`/v1/search?sport=${s}&date=${date}&include_props=false`,signal,30_000)));
  const captured=results.filter(result=>result.status==='fulfilled').length;
