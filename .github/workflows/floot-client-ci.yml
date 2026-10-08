@@ -1,0 +1,49 @@
+name: Floot Client CI
+
+on:
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'mobile_dashboard/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/floot-client-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile_dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        working-directory: mobile_dashboard
+        run: npm ci --no-audit --no-fund
+      - name: Test dashboard
+        working-directory: mobile_dashboard
+        run: npm test
+      - name: Build dashboard
+        working-directory: mobile_dashboard
+        run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+      - name: Analyze Flutter client
+        run: flutter analyze
+      - name: Test Flutter client
+        run: flutter test
