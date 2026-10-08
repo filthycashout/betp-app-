@@ -9,9 +9,9 @@ import 'package:philthysports/services/mobile_network.dart';
 
 void main() {
   const goodHealth =
-      '{"status":"ok","service":"philthysports-runtime","product":"PhilthyParleys","host":"Floot"}';
+      '{"json":{"status":"ok","service":"philthysports-runtime","product":"PhilthyParleys","host":"Floot"}}';
 
-  test('Floot base rewrites API paths through /_api', () async {
+  test('Floot base rewrites API paths and unwraps SuperJSON', () async {
     final paths = <String>[];
     final api = PhilthyApi(
       baseUrl: 'https://philthyparleys.floot.app',
@@ -22,7 +22,7 @@ void main() {
           return http.Response(goodHealth, 200);
         }
         if (request.url.path == '/_api/v1/system/status') {
-          return http.Response('{"ok":true}', 200);
+          return http.Response('{"json":{"ok":true}}', 200);
         }
         return http.Response('{"error":"missing"}', 404);
       }),
@@ -58,11 +58,15 @@ void main() {
       delay: (_) async {},
       client: MockClient((request) async {
         seen = request.url;
-        return http.Response('{"prediction_status":"MARKET_BASELINE_FALLBACK"}', 200);
+        return http.Response(
+          '{"json":{"prediction_status":"MARKET_BASELINE_FALLBACK"}}',
+          200,
+        );
       }),
     );
 
-    await api.detail(game);
+    final detail = await api.detail(game);
+    expect(detail['prediction_status'], 'MARKET_BASELINE_FALLBACK');
     expect(seen!.path, '/_api/v1/game');
     expect(seen!.queryParameters['sport'], 'NFL');
     expect(seen!.queryParameters['event_id'], game.eventId);
