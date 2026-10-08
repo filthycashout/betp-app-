@@ -8,6 +8,7 @@ from keyless_sportsbook import keyless_game_events, keyless_prop_events
 
 def main() -> None:
     checks = {}
+    warnings: list[str] = []
     today = backend._pacific_today()
 
     for sport in backend.SPORTS:
@@ -29,6 +30,8 @@ def main() -> None:
     sportsbook = {}
     for sport in backend.SPORTS:
         events = keyless_game_events(sport)
+        if not isinstance(events, list):
+            raise SystemExit(f"{sport}: keyless sportsbook game-market canary returned a non-list")
         market_keys = sorted({
             market.get("key")
             for event in events
@@ -39,16 +42,21 @@ def main() -> None:
         sportsbook[sport] = {
             "events": len(events),
             "market_keys": market_keys,
+            "canary_status": "EVENTS_AVAILABLE" if events else "NO_EVENTS_CURRENTLY_LISTED",
         }
 
+    # Public sportsbook inventory is allowed to be empty on an off-day, during
+    # provider maintenance, or before a market has opened. Empty inventory is a
+    # live-canary warning, not proof that our adapter is broken. When a provider
+    # does return events, however, the expected market schema remains mandatory.
     for sport in ("NFL", "NHL"):
         if sportsbook[sport]["events"] <= 0:
-            raise SystemExit(
-                f"{sport}: keyless sportsbook game-market canary returned no events"
+            warnings.append(
+                f"{sport}: keyless sportsbook currently lists no game-market events"
             )
-        if "h2h" not in sportsbook[sport]["market_keys"]:
+        elif "h2h" not in sportsbook[sport]["market_keys"]:
             raise SystemExit(
-                f"{sport}: keyless sportsbook board did not expose moneyline markets"
+                f"{sport}: non-empty keyless sportsbook board did not expose moneyline markets"
             )
 
     for sport in backend.SPORTS:
@@ -56,6 +64,8 @@ def main() -> None:
             sport,
             backend.PROP_DEFAULT_LIVE_MARKETS[sport],
         )
+        if not isinstance(prop_events, list):
+            raise SystemExit(f"{sport}: keyless sportsbook prop canary returned a non-list")
         sportsbook[sport]["prop_events"] = len(prop_events)
         sportsbook[sport]["prop_markets"] = sorted({
             market.get("key")
@@ -64,14 +74,20 @@ def main() -> None:
             for market in (book.get("markets") or [])
             if market.get("key")
         })
+        sportsbook[sport]["prop_canary_status"] = (
+            "EVENTS_AVAILABLE" if prop_events else "NO_EVENTS_CURRENTLY_LISTED"
+        )
 
     for sport in ("NFL", "NHL"):
         if sportsbook[sport]["prop_events"] <= 0:
-            raise SystemExit(
-                f"{sport}: keyless sportsbook player-prop canary returned no mapped events"
+            warnings.append(
+                f"{sport}: keyless sportsbook currently lists no mapped player-prop events"
             )
 
-    print(json.dumps({"keyless_sportsbook": sportsbook}, indent=2, sort_keys=True))
+    print(json.dumps({
+        "keyless_sportsbook": sportsbook,
+        "live_canary_warnings": warnings,
+    }, indent=2, sort_keys=True))
 
     parlay_board = backend._best_three_leg_parlays(today.isoformat())
     cards = parlay_board.get("cards") or []
