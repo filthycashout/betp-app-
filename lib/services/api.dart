@@ -133,13 +133,17 @@ class PhilthyApi {
               .timeout(timeout);
 
           if (r.statusCode >= 200 && r.statusCode < 300) {
-            final decoded = jsonDecode(r.body);
-            if (decoded is! Map) {
+            final raw = jsonDecode(r.body);
+            if (raw is! Map) {
               throw const FormatException(
                 'Backend returned a non-object JSON response.',
               );
             }
-            return Map<String, dynamic>.from(decoded);
+            final decoded = Map<String, dynamic>.from(raw);
+            if (_isFlootBase(base) && decoded['json'] is Map) {
+              return Map<String, dynamic>.from(decoded['json'] as Map);
+            }
+            return decoded;
           }
 
           final error = Exception('API ${r.statusCode} for ${uri.path}');
