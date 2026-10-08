@@ -1,0 +1,38 @@
+name: Floot Cutover Guard
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'lib/services/**'
+      - 'mobile_dashboard/**'
+      - 'ci/floot_cutover_smoke.py'
+      - '.github/workflows/floot-cutover-guard.yml'
+      - 'docs/FLOOT_CUTOVER_STATUS_2026-10-07.md'
+
+permissions:
+  contents: read
+
+jobs:
+  floot-production-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Floot production contract
+        id: smoke
+        continue-on-error: true
+        run: python ci/floot_cutover_smoke.py
+      - name: Upload cutover evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: floot-cutover-report
+          path: floot-cutover-report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce fail-closed cutover
+        if: steps.smoke.outcome != 'success'
+        run: |
+          echo 'Floot production contract is incomplete; keep Render available as rollback and do not promote this branch.'
+          cat floot-cutover-report.json || true
+          exit 1
