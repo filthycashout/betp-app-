@@ -2,6 +2,8 @@ import {fetchBackendJson} from '@/lib/backend-fetch';
 import {predictionPolicy,propPolicy,best12Policy,best3Policy,best9Policy} from '@/lib/evidence-policy';
 import {BACKEND,SPORTS,validDate,pacificDate,type Sport} from '@/lib/sports';
 type Row=Record<string,any>;
+const FLOOT_PREDICTION_SPORTS = ['NFL','NBA'] as const;
+function isFlootPredictionSport(value:string):value is typeof FLOOT_PREDICTION_SPORTS[number]{return FLOOT_PREDICTION_SPORTS.includes(value as typeof FLOOT_PREDICTION_SPORTS[number]);}
 function redact(value: unknown): unknown {
  if(Array.isArray(value))return value.map(redact);
  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>!/(password|secret|token|private_key|api_key)(?!.*(?:configured|present|ready))/i.test(k)).map(([k,v])=>[k,redact(v)]));
@@ -54,7 +56,7 @@ function buildVerifiedCard(sport:Sport,rank:number,pool:Row[],used:Set<string>):
 async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row>{
  const strict=best3Policy(data);
  const strictCards=Array.isArray(strict.cards)?strict.cards:[];
- if(strictCards.length===8&&strictCards.every((card:Row)=>card.status==='OK'))return strict;
+ if(strictCards.length===4&&strictCards.every((card:Row)=>card.status==='OK'))return strict;
  const dates=Array.from({length:7},(_,offset)=>shiftDate(date,offset));
  const results=await Promise.allSettled(dates.map(d=>fetchBackendJson(BACKEND+`/v1/picks/best12?date=${d}`,signal,25_000)));
  const pool:Row[]=[];
@@ -64,7 +66,7 @@ async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row
   for(const row of Array.isArray(board.picks)?board.picks:[])if(row?.available===true)pool.push(row);
  });
  const cards:Row[]=[];
- for(const s of SPORTS){
+ for(const s of FLOOT_PREDICTION_SPORTS){
   const used=new Set<string>();
   for(const rank of [1,2]){
    const existing=strictCards.find((card:Row)=>card.sport===s&&Number(card.rank)===rank&&card.status==='OK'&&Array.isArray(card.legs)&&card.legs.length===3);
@@ -75,19 +77,17 @@ async function expandBest3(data:Row,date:string,signal?:AbortSignal):Promise<Row
    cards.push(unavailable||{sport:s,rank,title:`${s} BEST ${rank} — 3 LEG`,status:'INSUFFICIENT_VERIFIED_LEGS',legs:[],estimated_joint_probability:null,dependency_method:'UNSCORED_WITHOUT_VALIDATED_DEPENDENCY_MODEL',reasoning:['Three distinct fresh, same-sportsbook-backed legs were not available inside the seven-day verified window.','No stale, synthetic, cross-book or unverified selection was substituted.']});
   }
  }
- return best3Policy({...strict,cards,dates_considered:dates,status:cards.length===8&&cards.every(card=>card.status==='OK')?'OK':'PARTIAL_VERIFIED_COVERAGE'});
+ return best3Policy({...strict,cards,dates_considered:dates,status:cards.length===4&&cards.every(card=>card.status==='OK')?'OK':'PARTIAL_VERIFIED_COVERAGE'});
 }
 async function captureEvidence(sport:'ALL'|Sport,date:string,signal?:AbortSignal){
- const targets:readonly Sport[]=sport==='ALL'?SPORTS:[sport];
+ const targets:readonly (typeof FLOOT_PREDICTION_SPORTS[number])[]=sport==='ALL'?FLOOT_PREDICTION_SPORTS:isFlootPredictionSport(sport)?[sport]:[];
+ if(!targets.length)throw new Error('Prediction evidence migration currently supports NFL and NBA only.');
  const results=await Promise.allSettled(targets.map(s=>fetchBackendJson(BACKEND+`/v1/search?sport=${s}&date=${date}&include_props=false`,signal,30_000)));
  const captured=results.filter(result=>result.status==='fulfilled').length;
  if(captured===0)throw new Error('Fresh evidence capture failed for every requested sport.');
  return {requested:targets.length,captured};
 }
 async function readEvidenceLedger(sport:'ALL'|Sport,date:string,signal?:AbortSignal):Promise<Row>{
- // Runtime evidence rows are indexed by the UTC event date. The UI date is
- // America/Los_Angeles, so an evening Pacific event can live under the following
- // UTC storage date. Read both possible buckets and normalize back to Pacific.
  const storageDates=[date,shiftDate(date,1)];
  const results=await Promise.allSettled(storageDates.map(storageDate=>fetchBackendJson(BACKEND+`/v1/evidence/signals?date=${storageDate}${sport==='ALL'?'':`&sport=${sport}`}&limit=250`,signal,20_000)));
  const fulfilled=results.filter((result):result is PromiseFulfilledResult<Row>=>result.status==='fulfilled');
@@ -106,10 +106,12 @@ export async function GET(request: Request) {
  const u=new URL(request.url),kind=u.searchParams.get('kind')||'health',sport=u.searchParams.get('sport')||'NFL',date=u.searchParams.get('date')||pacificDate(),event=u.searchParams.get('event')||'',signal=u.searchParams.get('signal')||'';
  const evidenceKind=['evidence','evidence_verify'].includes(kind);
  if((!evidenceKind&&!SPORTS.includes(sport as Sport))||(evidenceKind&&sport!=='ALL'&&!SPORTS.includes(sport as Sport))||!validDate(date))return Response.json({error:'Invalid sport or date.'},{status:400});
- if(['detail','props','best9'].includes(kind)&&!/^\d{1,20}$/.test(event))return Response.json({error:'Invalid game identifier.'},{status:400});
+ if(['predictions','detail','props','best9'].includes(kind)&&!isFlootPredictionSport(sport))return Response.json({error:'Floot prediction migration currently supports NFL and NBA only.'},{status:503});
+ if(kind==='evidence'&&sport!=='ALL'&&!isFlootPredictionSport(sport))return Response.json({error:'Floot prediction evidence currently supports NFL and NBA only.'},{status:503});
+ if(['detail','props','best9'].includes(kind)&&!(/^(?:\d{1,20}|[a-f0-9]{32})$/i.test(event)))return Response.json({error:'Invalid game identifier.'},{status:400});
  if(kind==='evidence_verify'&&!/^[0-9a-f-]{36}$/i.test(signal))return Response.json({error:'Invalid signal identifier.'},{status:400});
  const evidenceQuery=`?date=${date}${sport==='ALL'?'':`&sport=${sport}`}&limit=250`;
- const routes:Record<string,string>={health:'/health',status:'/v1/system/status',models:'/v1/models/status',providers:'/v1/data/providers',predictions:`/v1/search?sport=${sport}&date=${date}&include_props=false`,detail:`/v1/games/${sport}/${event}?date=${date}`,props:`/v1/games/${sport}/${event}/props?date=${date}`,best9:`/v1/games/${sport}/${event}/best9?date=${date}`,best12:`/v1/picks/best12?date=${date}`,best3:`/v1/parlays/best3?date=${date}`,parlay7:`/v1/parlays/multisport?legs=7&date=${date}`,parlay10:`/v1/parlays/multisport?legs=10&date=${date}`,parlay14:`/v1/parlays/multisport?legs=14&date=${date}`,providers_external:'/v1/data/external-providers',evidence:`/v1/evidence/signals${evidenceQuery}`,evidence_verify:`/v1/evidence/verify/${signal}`};
+ const routes:Record<string,string>={health:'/health',status:'/v1/system/status',models:'/v1/models/status',providers:'/v1/data/providers',predictions:`/v1/search?sport=${sport}&date=${date}&include_props=false`,detail:`/v1/game?sport=${sport}&event_id=${event}&date=${date}`,props:`/v1/game/props?sport=${sport}&event_id=${event}&date=${date}`,best9:`/v1/game/best9?sport=${sport}&event_id=${event}&date=${date}`,best12:`/v1/picks/best12?date=${date}`,best3:`/v1/parlays/best3?date=${date}`,parlay7:`/v1/parlays/multisport?legs=7&date=${date}`,parlay10:`/v1/parlays/multisport?legs=10&date=${date}`,parlay14:`/v1/parlays/multisport?legs=14&date=${date}`,providers_external:'/v1/data/external-providers',evidence:`/v1/evidence/signals${evidenceQuery}`,evidence_verify:`/v1/evidence/verify?signal=${signal}`};
  if(!routes[kind])return Response.json({error:'Unknown action.'},{status:400});
  try {
   let capture:Row|undefined;
