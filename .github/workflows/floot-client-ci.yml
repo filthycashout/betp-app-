@@ -12,6 +12,7 @@ on:
       - 'pubspec.lock'
       - 'ci/floot_cutover_smoke.py'
       - 'ci/portable_backend_contract.py'
+      - 'ci/governed_release_gate.py'
       - '.github/workflows/floot-client-ci.yml'
       - '.github/workflows/floot-cutover-guard.yml'
       - '.github/workflows/portable-backend-ci.yml'
@@ -32,7 +33,10 @@ jobs:
           python-version: '3.12'
       - name: Validate migration scripts and workflow YAML
         run: |
-          python -m py_compile ci/floot_cutover_smoke.py ci/portable_backend_contract.py
+          python -m py_compile \
+            ci/floot_cutover_smoke.py \
+            ci/portable_backend_contract.py \
+            ci/governed_release_gate.py
           python -m pip install --disable-pip-version-check --quiet pyyaml
           python - <<'PY'
           from pathlib import Path
