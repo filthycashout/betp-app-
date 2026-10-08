@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optimization Loop Visualizer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #0f172a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #f8fafc;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    let particles = [];
+    let bestScore = 0;
+    let iteration = 0;
+
+    function setup() {
+      createCanvas(800, 500);
+      for (let i = 0; i < 30; i++) {
+        particles.push({
+          x: random(width),
+          y: random(height),
+          vx: random(-2, 2),
+          vy: random(-2, 2),
+          score: random(0, 50)
+        });
+      }
+    }
+
+    function draw() {
+      background(15, 23, 42, 25); // Motion blur effect
+
+      // Draw grid lines
+      stroke(30, 41, 59);
+      strokeWeight(1);
+      for (let x = 0; x < width; x += 40) line(x, 0, x, height);
+      for (let y = 0; y < height; y += 40) line(0, y, width, y);
+
+      // Update and display particles (representing candidate states in optimization)
+      for (let p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Bounce off walls
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        // Simulate score evolution
+        p.score += random(-1, 1.2);
+        p.score = constrain(p.score, 0, 100);
+
+        if (p.score > bestScore) {
+          bestScore = p.score;
+        }
+
+        // Draw node
+        noStroke();
+        fill(56, 189, 248, 180);
+        ellipse(p.x, p.y, 8 + p.score / 10);
+      }
+
+      // Draw UI HUD
+      fill(30, 41, 59, 200);
+      rect(20, 20, 260, 90, 8);
+
+      fill(255);
+      textSize(14);
+      text("Optimization Loop Status", 35, 45);
+      textSize(12);
+      fill(148, 163, 184);
+      text("Active Candidates: " + particles.length, 35, 70);
+      text("Peak Fitness Score: " + nf(bestScore, 2, 2), 35, 90);
+    }
+  </script>
+</body>
+</html>
