@@ -1,4 +1,4 @@
-name: Floot Client CI
+name: PhilthyParleys Client & Workflow CI
 
 on:
   pull_request:
@@ -6,11 +6,17 @@ on:
       - 'lib/**'
       - 'test/**'
       - 'mobile_dashboard/**'
+      - 'backend/Dockerfile'
+      - 'deploy/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - 'ci/floot_cutover_smoke.py'
+      - 'ci/portable_backend_contract.py'
       - '.github/workflows/floot-client-ci.yml'
       - '.github/workflows/floot-cutover-guard.yml'
+      - '.github/workflows/portable-backend-ci.yml'
+      - '.github/workflows/backend-ghcr.yml'
+      - '.github/workflows/backend-self-host-deploy.yml'
       - '.github/workflows/philthysports-full-ci.yml'
 
 permissions:
@@ -26,16 +32,20 @@ jobs:
           python-version: '3.12'
       - name: Validate migration scripts and workflow YAML
         run: |
-          python -m py_compile ci/floot_cutover_smoke.py
+          python -m py_compile ci/floot_cutover_smoke.py ci/portable_backend_contract.py
           python -m pip install --disable-pip-version-check --quiet pyyaml
           python - <<'PY'
           from pathlib import Path
           import yaml
-          for name in (
+          workflows=(
               '.github/workflows/floot-client-ci.yml',
               '.github/workflows/floot-cutover-guard.yml',
+              '.github/workflows/portable-backend-ci.yml',
+              '.github/workflows/backend-ghcr.yml',
+              '.github/workflows/backend-self-host-deploy.yml',
               '.github/workflows/philthysports-full-ci.yml',
-          ):
+          )
+          for name in workflows:
               value=yaml.safe_load(Path(name).read_text())
               if not isinstance(value,dict) or 'jobs' not in value:
                   raise SystemExit(f'invalid workflow structure: {name}')
