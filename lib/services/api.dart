@@ -17,8 +17,12 @@ class TodayFeed {
 }
 
 class PhilthyApi {
-  PhilthyApi({http.Client? client, String? baseUrl, Future<void> Function(Duration)? delay})
-      : _client = client, _baseUrl = baseUrl,
+  PhilthyApi({
+    http.Client? client,
+    String? baseUrl,
+    Future<void> Function(Duration)? delay,
+  })  : _client = client,
+        _baseUrl = baseUrl,
         _delay = delay ?? ((duration) => Future<void>.delayed(duration));
 
   final http.Client? _client;
@@ -45,6 +49,66 @@ class PhilthyApi {
         .toList(growable: false);
   }
 
+  bool _isFlootBase(String base) {
+    final uri = Uri.tryParse(base);
+    return uri != null && uri.host.toLowerCase().endsWith('.floot.app');
+  }
+
+  String _flootPath(String rawPath) {
+    final parsed = Uri.parse(rawPath);
+    if (parsed.path.startsWith('/_api/')) return parsed.toString();
+
+    var path = parsed.path;
+    final query = <String, String>{...parsed.queryParameters};
+
+    final game = RegExp(
+      r'^/v1/games/(NFL|NBA|MLB|NHL)/([^/]+)(/props|/parlays|/best9)?$',
+      caseSensitive: false,
+    ).firstMatch(path);
+    if (game != null) {
+      query['sport'] = game.group(1)!.toUpperCase();
+      query['event_id'] = game.group(2)!;
+      final suffix = game.group(3) ?? '';
+      path = '/v1/game$suffix';
+    }
+
+    final verify = RegExp(
+      r'^/v1/evidence/verify/([0-9a-f-]{36})$',
+      caseSensitive: false,
+    ).firstMatch(path);
+    if (verify != null) {
+      query['signal'] = verify.group(1)!;
+      path = '/v1/evidence/verify';
+    }
+
+    final liveGame = RegExp(
+      r'^/v1/live/(NFL|NBA|MLB|NHL)/game/([^/]+)$',
+      caseSensitive: false,
+    ).firstMatch(path);
+    if (liveGame != null) {
+      query['sport'] = liveGame.group(1)!.toUpperCase();
+      query['event_id'] = liveGame.group(2)!;
+      path = '/v1/live/game';
+    }
+
+    final liveScoreboard = RegExp(
+      r'^/v1/live/(NFL|NBA|MLB|NHL)/scoreboard$',
+      caseSensitive: false,
+    ).firstMatch(path);
+    if (liveScoreboard != null) {
+      query['sport'] = liveScoreboard.group(1)!.toUpperCase();
+      path = '/v1/live/scoreboard';
+    }
+
+    return Uri(
+      path: '/_api$path',
+      queryParameters: query.isEmpty ? null : query,
+    ).toString();
+  }
+
+  String _routeForBase(String base, String path) =>
+      _isFlootBase(base) ? _flootPath(path) : path;
+
   Future<Map<String, dynamic>> _get(
     String path, {
     int attempts = 2,
@@ -56,7 +120,7 @@ class PhilthyApi {
     final candidatePaths = _compatiblePaths(path);
 
     for (var pathIndex = 0; pathIndex < candidatePaths.length; pathIndex++) {
-      final candidate = candidatePaths[pathIndex];
+      final candidate = _routeForBase(base, candidatePaths[pathIndex]);
       final uri = Uri.parse('$base$candidate');
 
       for (var attempt = 0; attempt < attempts; attempt++) {
@@ -69,13 +133,17 @@ class PhilthyApi {
               .timeout(timeout);
 
           if (r.statusCode >= 200 && r.statusCode < 300) {
-            final decoded = jsonDecode(r.body);
-            if (decoded is! Map) {
+            final raw = jsonDecode(r.body);
+            if (raw is! Map) {
               throw const FormatException(
                 'Backend returned a non-object JSON response.',
               );
             }
-            return Map<String, dynamic>.from(decoded);
+            final decoded = Map<String, dynamic>.from(raw);
+            if (_isFlootBase(base) && decoded['json'] is Map) {
+              return Map<String, dynamic>.from(decoded['json'] as Map);
+            }
+            return decoded;
           }
 
           final error = Exception('API ${r.statusCode} for ${uri.path}');
@@ -116,16 +184,20 @@ class PhilthyApi {
 
   Future<Map<String, dynamic>> health() async {
     final result = await _get(
-        '/health',
-        attempts: 5,
-        timeout: const Duration(seconds: 15),
-        retryBaseDelay: const Duration(seconds: 2),
+      '/health',
+      attempts: 5,
+      timeout: const Duration(seconds: 15),
+      retryBaseDelay: const Duration(seconds: 2),
+    );
+    if (result['status'] != 'ok' ||
+        result['service'] != 'philthysports-runtime') {
+      throw const FormatException(
+        'This URL did not identify a healthy PhilthyParleys backend.',
       );
-    if (result['status'] != 'ok' || result['service'] != 'philthysports-runtime') {
-      throw const FormatException('This URL did not identify a healthy PhilthyParleys backend.');
     }
     return result;
   }
+
   Future<Map<String, dynamic>> systemStatus() => _get('/v1/system/status');
   Future<Map<String, dynamic>> modelStatus() => _get('/v1/models/status');
   Future<Map<String, dynamic>> modelRegistry() => _get('/v1/models/registry');
@@ -231,7 +303,10 @@ class PhilthyApi {
       'legs': '$legs',
       if (date != null && date.isNotEmpty) 'date': date,
     };
-    final uri = Uri(path: '/v1/parlays/multisport', queryParameters: params);
+    final uri = Uri(
+      path: '/v1/parlays/multisport',
+      queryParameters: params,
+    );
     return _get(uri.toString());
   }
 }

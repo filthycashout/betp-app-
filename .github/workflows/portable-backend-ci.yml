@@ -1,0 +1,76 @@
+name: Portable Backend CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'ci/portable_backend_contract.py'
+      - 'backend/Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/portable-backend-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'ci/portable_backend_contract.py'
+      - 'backend/Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/portable-backend-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-container-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate portable smoke script
+        run: python -m py_compile ci/portable_backend_contract.py
+      - name: Build canonical backend image
+        run: docker build -f backend/Dockerfile -t philthyparleys-backend:${GITHUB_SHA} .
+      - name: Start isolated Postgres
+        run: |
+          docker network create philthy-ci
+          docker run -d --name philthy-postgres --network philthy-ci \
+            -e POSTGRES_USER=philthy \
+            -e POSTGRES_PASSWORD=philthy-ci-only \
+            -e POSTGRES_DB=philthy \
+            postgres:16-alpine
+          for i in $(seq 1 30); do
+            docker exec philthy-postgres pg_isready -U philthy -d philthy && exit 0
+            sleep 2
+          done
+          docker logs philthy-postgres
+          exit 1
+      - name: Start canonical backend container
+        run: |
+          docker run -d --name philthy-backend --network philthy-ci -p 8080:8080 \
+            -e PORT=8080 \
+            -e DATABASE_URL='postgresql://philthy:philthy-ci-only@philthy-postgres:5432/philthy' \
+            -e PHILTHY_EVIDENCE_DATABASE_URL='postgresql://philthy:philthy-ci-only@philthy-postgres:5432/philthy' \
+            -e PHILTHY_MANUAL_REVIEW_ONLY=true \
+            philthyparleys-backend:${GITHUB_SHA}
+      - name: Verify complete production API contract
+        run: python ci/portable_backend_contract.py --base http://127.0.0.1:8080 --report portable-backend-contract.json
+      - name: Capture container diagnostics
+        if: always()
+        run: |
+          docker inspect philthy-backend > portable-backend-inspect.json || true
+          docker logs philthy-backend > portable-backend.log 2>&1 || true
+          docker logs philthy-postgres > portable-postgres.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-backend-contract
+          path: |
+            portable-backend-contract.json
+            portable-backend-inspect.json
+            portable-backend.log
+            portable-postgres.log
+          retention-days: 30

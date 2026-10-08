@@ -1,0 +1,145 @@
+name: Self-Hosted Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Immutable backend image tag (commit SHA preferred)'
+        required: true
+        type: string
+      public_port:
+        description: 'Host port for the API'
+        required: false
+        default: '8080'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, philthyparleys-prod]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Require production secrets
+        shell: bash
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SPORTRADAR_API_KEY: ${{ secrets.SPORTRADAR_API_KEY }}
+          PHILTHY_EVIDENCE_DATABASE_URL: ${{ secrets.PHILTHY_EVIDENCE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$ODDS_API_KEY"
+          test -n "$SPORTRADAR_API_KEY"
+          test -n "$PHILTHY_EVIDENCE_DATABASE_URL"
+      - name: Pull immutable backend image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/philthyparleys-backend:${IMAGE_TAG}"
+      - name: Preflight candidate then cut over with rollback
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          PUBLIC_PORT: ${{ inputs.public_port }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SPORTRADAR_API_KEY: ${{ secrets.SPORTRADAR_API_KEY }}
+          PHILTHY_EVIDENCE_DATABASE_URL: ${{ secrets.PHILTHY_EVIDENCE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/philthyparleys-backend:${IMAGE_TAG}"
+          PROD=philthyparleys-backend
+          CANDIDATE=philthyparleys-backend-next
+          ROLLBACK=philthyparleys-backend-rollback
+          CANDIDATE_PORT="$(python - <<'PY'
+          import socket
+          with socket.socket() as s:
+              s.bind(('127.0.0.1', 0))
+              print(s.getsockname()[1])
+          PY
+          )"
+
+          run_backend() {
+            local name="$1" port="$2" image="$3" restart="$4"
+            docker run -d --name "$name" $restart \
+              -p "127.0.0.1:${port}:8080" \
+              -e PORT=8080 \
+              -e ODDS_API_KEY="$ODDS_API_KEY" \
+              -e SPORTRADAR_API_KEY="$SPORTRADAR_API_KEY" \
+              -e DATABASE_URL="$PHILTHY_EVIDENCE_DATABASE_URL" \
+              -e PHILTHY_EVIDENCE_DATABASE_URL="$PHILTHY_EVIDENCE_DATABASE_URL" \
+              -e PHILTHY_MANUAL_REVIEW_ONLY=true \
+              "$image"
+          }
+
+          wait_health() {
+            local name="$1" port="$2"
+            for i in $(seq 1 45); do
+              if curl -fsS "http://127.0.0.1:${port}/health" >/dev/null; then
+                return 0
+              fi
+              if [ "$i" = 45 ]; then
+                docker logs "$name" || true
+                return 1
+              fi
+              sleep 2
+            done
+          }
+
+          # 1) Preflight the exact immutable image on a temporary loopback port.
+          docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+          run_backend "$CANDIDATE" "$CANDIDATE_PORT" "$IMAGE" ""
+          if ! wait_health "$CANDIDATE" "$CANDIDATE_PORT"; then
+            docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          python ci/portable_backend_contract.py \
+            --base "http://127.0.0.1:${CANDIDATE_PORT}" \
+            --report self-host-candidate-contract.json
+          docker rm -f "$CANDIDATE"
+
+          # 2) Preserve the existing production container intact as rollback.
+          HAD_OLD=false
+          docker rm -f "$ROLLBACK" >/dev/null 2>&1 || true
+          if docker inspect "$PROD" >/dev/null 2>&1; then
+            HAD_OLD=true
+            docker stop "$PROD"
+            docker rename "$PROD" "$ROLLBACK"
+          fi
+
+          rollback() {
+            docker rm -f "$PROD" >/dev/null 2>&1 || true
+            if [ "$HAD_OLD" = true ] && docker inspect "$ROLLBACK" >/dev/null 2>&1; then
+              docker rename "$ROLLBACK" "$PROD"
+              docker start "$PROD"
+            fi
+          }
+          trap rollback ERR
+
+          # 3) Bind the verified image to the real production port and verify again.
+          run_backend "$PROD" "$PUBLIC_PORT" "$IMAGE" "--restart unless-stopped"
+          wait_health "$PROD" "$PUBLIC_PORT"
+          python ci/portable_backend_contract.py \
+            --base "http://127.0.0.1:${PUBLIC_PORT}" \
+            --report self-host-production-contract.json
+
+          trap - ERR
+          if [ "$HAD_OLD" = true ]; then
+            docker rm -f "$ROLLBACK"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: self-host-production-contract
+          path: |
+            self-host-candidate-contract.json
+            self-host-production-contract.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -2,17 +2,35 @@ name: PhilthyParleys Release Candidate CI
 
 on:
   workflow_dispatch:
+    inputs:
+      runtime_root:
+        description: 'Public HTTPS runtime root used by the APK (no trailing slash)'
+        required: true
+        default: 'https://philthyparleys.floot.app'
+        type: string
+      runtime_api_prefix:
+        description: 'Provider API prefix. Use /_api for Floot; leave empty for canonical FastAPI hosts.'
+        required: false
+        default: '/_api'
+        type: string
+      signing_base:
+        description: 'Temporary HTTPS signing-material bridge'
+        required: true
+        default: 'https://philthysports-api-v9.onrender.com'
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: philthysports-release-candidate
+  group: philthyparleys-release-candidate
   cancel-in-progress: true
 
 env:
-  PHILTHY_PRODUCTION_BASE: https://philthysports-api-v9.onrender.com
+  PHILTHY_RUNTIME_ROOT: ${{ inputs.runtime_root }}
+  PHILTHY_RUNTIME_API_PREFIX: ${{ inputs.runtime_api_prefix }}
+  PHILTHY_SIGNING_BASE: ${{ inputs.signing_base }}
 
 jobs:
   production-readiness:
@@ -21,55 +39,55 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
+      - name: Validate runtime inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, urllib.parse
+          for name in ('PHILTHY_RUNTIME_ROOT','PHILTHY_SIGNING_BASE'):
+              value=os.environ[name].strip().rstrip('/')
+              parsed=urllib.parse.urlparse(value)
+              if parsed.scheme!='https' or not parsed.netloc or parsed.username or parsed.password:
+                  raise SystemExit(f'{name} must be a credential-free HTTPS root')
+          prefix=os.environ.get('PHILTHY_RUNTIME_API_PREFIX','')
+          if prefix and (not prefix.startswith('/') or prefix.endswith('/')):
+              raise SystemExit('PHILTHY_RUNTIME_API_PREFIX must be empty or a slash-prefixed path without trailing slash')
+          PY
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
       - name: Backend regression suite
         run: |
-          python -m py_compile backend/app.py backend/selftest.py backend/evidence/runtime.py backend/odds_api_net.py
+          python -m py_compile \
+            backend/app.py \
+            backend/selftest.py \
+            backend/evidence/runtime.py \
+            backend/odds_api_net.py \
+            ci/portable_backend_contract.py \
+            ci/governed_release_gate.py
           PYTHONPATH=backend pytest -q backend/tests
-      - name: Require durable production evidence storage and prediction readiness
+      - name: Require complete deployed production contract
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-evidence
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/health" -o release-evidence/health.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/system/status" -o release-evidence/system-status.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/evidence/signals?limit=1" -o release-evidence/storage.json
-          curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$PHILTHY_PRODUCTION_BASE/v1/providers/canary" -o release-evidence/provider-canary.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          root=Path('release-evidence')
-          health=json.loads((root/'health.json').read_text())
-          status=json.loads((root/'system-status.json').read_text())
-          storage=json.loads((root/'storage.json').read_text())
-          canary=json.loads((root/'provider-canary.json').read_text())
-          ss=storage.get('storage_status') or {}
-          failures=[]
-          if not (ss.get('database_configured') is True and ss.get('durable') is True and ss.get('mode') == 'render_postgres'):
-              failures.append('production evidence storage is not durable Render Postgres')
-          if canary.get('credentialled_live_provider_verified') is not True:
-              failures.append('fresh credentialled live-provider canary has not passed')
-          # The backend remains authoritative: only a signed promoted model may release
-          # model probabilities. Market baseline is valid runtime fallback but not a
-          # model-promotion pass.
-          models=(status.get('models') or status.get('model_registry') or {})
-          promoted=[]
-          for sport in ('NFL','NBA','MLB','NHL'):
-              item=models.get(sport) or models.get(sport.lower()) or {}
-              if isinstance(item, dict) and (item.get('promotion_gate') or {}).get('passed') is True:
-                  promoted.append(sport)
-          (root/'readiness.json').write_text(json.dumps({
-              'storage': ss,
-              'credentialled_live_provider_verified': canary.get('credentialled_live_provider_verified') is True,
-              'promoted_sports': promoted,
-              'failures': failures,
-              'release_gate_passed': not failures,
-          },indent=2,sort_keys=True)+'\n')
-          if failures:
-              raise SystemExit('; '.join(failures))
-          PY
+          API_BASE="${PHILTHY_RUNTIME_ROOT%/}${PHILTHY_RUNTIME_API_PREFIX}"
+          python ci/portable_backend_contract.py \
+            --base "$API_BASE" \
+            --report release-evidence/production-contract.json
+          printf '%s\n' "$API_BASE" > release-evidence/runtime-api-base.txt
+      - name: Require governed NFL and NBA model promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_BASE="${PHILTHY_RUNTIME_ROOT%/}${PHILTHY_RUNTIME_API_PREFIX}"
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+            "$API_BASE/v1/models/status" \
+            -o release-evidence/model-status-envelope.json
+          python ci/governed_release_gate.py \
+            --model-status release-evidence/model-status-envelope.json \
+            --output release-evidence/readiness.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -85,7 +103,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -104,14 +122,14 @@ jobs:
               s=s.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    '+permission)
           p.write_text(s)
           PY
-      - name: Fetch pinned release signing material
+      - name: Fetch pinned release signing material from signing bridge
         shell: bash
         run: |
           set -euo pipefail
-          AUDIENCE="philthysports-ci"
+          AUDIENCE='philthysports-ci'
           OIDC_JSON="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")"
           OIDC_TOKEN="$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"$OIDC_JSON")"
-          SIGNING_JSON="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 -H "Authorization: Bearer $OIDC_TOKEN" "$PHILTHY_PRODUCTION_BASE/v1/ci/android-signing-material")"
+          SIGNING_JSON="$(curl -fsS --retry 4 --retry-all-errors --retry-delay 2 -H "Authorization: Bearer $OIDC_TOKEN" "$PHILTHY_SIGNING_BASE/v1/ci/android-signing-material")"
           SIGNING_PATH="$RUNNER_TEMP/philthysports-signing.json"
           umask 077
           printf '%s' "$SIGNING_JSON" > "$SIGNING_PATH"
@@ -152,10 +170,10 @@ jobs:
           PY
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
           cache: npm
           cache-dependency-path: mobile_dashboard/package-lock.json
-      - name: Build dashboard and signed APK
+      - name: Build dashboard and signed APK against selected runtime
         run: |
           cd mobile_dashboard
           npm ci --no-audit --no-fund
@@ -165,7 +183,7 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
-          flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=$PHILTHY_PRODUCTION_BASE
+          flutter build apk --release --dart-define=PHILTHY_API_BASE_URL=$PHILTHY_RUNTIME_ROOT
       - name: Verify signature and stage candidate
         shell: bash
         run: |
@@ -173,7 +191,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk | tee apk-signature.txt
           ACTUAL="$(grep -m1 'certificate SHA-256 digest:' apk-signature.txt | awk -F': ' '{print $NF}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-          test "$ACTUAL" = "97BE4C2028288638C8BE55CE7540164A1995A1F18675964E3D8E733744D89700"
+          test "$ACTUAL" = '97BE4C2028288638C8BE55CE7540164A1995A1F18675964E3D8E733744D89700'
           cp build/app/outputs/flutter-apk/app-release.apk PhilthyParleys.apk
           sha256sum PhilthyParleys.apk > PhilthyParleys.apk.sha256
       - name: Audit signed APK domains
@@ -232,7 +250,7 @@ jobs:
           test -f PhilthyParleys.apk
           test -f PhilthyParleys.apk.sha256
           test -d emulator-evidence
-          printf '%s\n' 'Production evidence storage, provider canary, signing, and emulator gates passed.' > RELEASE_READY.txt
+          printf '%s\n' 'Portable production contract, governed NFL/NBA model promotion, stable signing, and emulator gates passed.' > RELEASE_READY.txt
       - uses: actions/upload-artifact@v4
         with:
           name: PhilthyParleys-release-ready
