@@ -143,6 +143,21 @@ def main() -> int:
             failures.append("manual_review_only")
         checks["market_baseline_only"] = status_doc.get("market_baseline_only")
 
+    evidence_doc = payloads.get("evidence_signals")
+    if isinstance(evidence_doc, dict):
+        storage = evidence_doc.get("storage_status") or {}
+        durable = evidence_doc.get("durable_storage") is True and storage.get("durable") is True
+        configured = storage.get("database_configured") is True
+        error_clear = not storage.get("database_error_type")
+        checks["durable_evidence"] = {
+            "durable": durable,
+            "database_configured": configured,
+            "database_error_clear": error_clear,
+            "mode": storage.get("mode"),
+        }
+        if not (durable and configured and error_clear):
+            failures.append("durable_evidence")
+
     event_id = None
     search = payloads.get("search_nfl")
     if isinstance(search, dict) and isinstance(search.get("games"), list):
