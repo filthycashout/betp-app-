@@ -18,6 +18,12 @@ BASE = "https://philthyparleys.floot.app/_api"
 OUTPUT = Path("floot-cutover-report.json")
 
 
+def unwrap_floot(payload: object) -> object:
+    if isinstance(payload, dict) and isinstance(payload.get("json"), dict):
+        return payload["json"]
+    return payload
+
+
 def get(path: str, timeout: int = 30) -> tuple[int, object]:
     url = BASE + path
     req = urllib.request.Request(
@@ -29,11 +35,11 @@ def get(path: str, timeout: int = 30) -> tuple[int, object]:
             body = response.read(5_000_001)
             if len(body) > 5_000_000:
                 raise RuntimeError(f"response too large for {path}")
-            return response.status, json.loads(body.decode("utf-8"))
+            return response.status, unwrap_floot(json.loads(body.decode("utf-8")))
     except urllib.error.HTTPError as exc:
         body = exc.read(200_000).decode("utf-8", errors="replace")
         try:
-            parsed: object = json.loads(body)
+            parsed: object = unwrap_floot(json.loads(body))
         except Exception:
             parsed = {"raw": body[:2000]}
         return exc.code, parsed
