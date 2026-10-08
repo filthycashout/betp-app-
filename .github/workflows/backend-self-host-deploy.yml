@@ -1,0 +1,82 @@
+name: Self-Hosted Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Immutable backend image tag (commit SHA preferred)'
+        required: true
+        type: string
+      public_port:
+        description: 'Host port for the API'
+        required: false
+        default: '8080'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, philthyparleys-prod]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Require production secrets
+        shell: bash
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SPORTRADAR_API_KEY: ${{ secrets.SPORTRADAR_API_KEY }}
+          PHILTHY_EVIDENCE_DATABASE_URL: ${{ secrets.PHILTHY_EVIDENCE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$ODDS_API_KEY"
+          test -n "$SPORTRADAR_API_KEY"
+          test -n "$PHILTHY_EVIDENCE_DATABASE_URL"
+      - name: Pull immutable backend image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/philthyparleys-backend:${IMAGE_TAG}"
+      - name: Replace production container atomically
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          PUBLIC_PORT: ${{ inputs.public_port }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SPORTRADAR_API_KEY: ${{ secrets.SPORTRADAR_API_KEY }}
+          PHILTHY_EVIDENCE_DATABASE_URL: ${{ secrets.PHILTHY_EVIDENCE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          NEW=philthyparleys-backend-next
+          OLD=philthyparleys-backend
+          docker rm -f "$NEW" >/dev/null 2>&1 || true
+          docker run -d --name "$NEW" --restart unless-stopped \
+            -p "127.0.0.1:${PUBLIC_PORT}:8080" \
+            -e PORT=8080 \
+            -e ODDS_API_KEY="$ODDS_API_KEY" \
+            -e SPORTRADAR_API_KEY="$SPORTRADAR_API_KEY" \
+            -e DATABASE_URL="$PHILTHY_EVIDENCE_DATABASE_URL" \
+            -e PHILTHY_EVIDENCE_DATABASE_URL="$PHILTHY_EVIDENCE_DATABASE_URL" \
+            -e PHILTHY_MANUAL_REVIEW_ONLY=true \
+            "ghcr.io/${GITHUB_REPOSITORY_OWNER}/philthyparleys-backend:${IMAGE_TAG}"
+          for i in $(seq 1 45); do
+            if curl -fsS "http://127.0.0.1:${PUBLIC_PORT}/health" >/dev/null; then break; fi
+            if [ "$i" = 45 ]; then docker logs "$NEW"; docker rm -f "$NEW"; exit 1; fi
+            sleep 2
+          done
+          python ci/portable_backend_contract.py --base "http://127.0.0.1:${PUBLIC_PORT}" --report self-host-contract.json
+          docker rm -f "$OLD" >/dev/null 2>&1 || true
+          docker rename "$NEW" "$OLD"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: self-host-production-contract
+          path: self-host-contract.json
+          retention-days: 90

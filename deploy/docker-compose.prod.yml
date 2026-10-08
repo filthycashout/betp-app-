@@ -1,0 +1,17 @@
+services:
+  backend:
+    image: ${PHILTHYPARLEYS_IMAGE:-ghcr.io/filthycashout/philthyparleys-backend:latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      PORT: 8080
+      PHILTHY_MANUAL_REVIEW_ONLY: "true"
+    ports:
+      - "127.0.0.1:${PHILTHYPARLEYS_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=4)); assert d.get('status')=='ok'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
