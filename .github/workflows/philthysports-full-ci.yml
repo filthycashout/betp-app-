@@ -59,7 +59,13 @@ jobs:
         run: pip install -r backend/requirements.txt -r backend/requirements-validation.txt
       - name: Backend regression suite
         run: |
-          python -m py_compile backend/app.py backend/selftest.py backend/evidence/runtime.py backend/odds_api_net.py ci/portable_backend_contract.py
+          python -m py_compile \
+            backend/app.py \
+            backend/selftest.py \
+            backend/evidence/runtime.py \
+            backend/odds_api_net.py \
+            ci/portable_backend_contract.py \
+            ci/governed_release_gate.py
           PYTHONPATH=backend pytest -q backend/tests
       - name: Require complete deployed production contract
         shell: bash
@@ -67,71 +73,21 @@ jobs:
           set -euo pipefail
           mkdir -p release-evidence
           API_BASE="${PHILTHY_RUNTIME_ROOT%/}${PHILTHY_RUNTIME_API_PREFIX}"
-          python ci/portable_backend_contract.py --base "$API_BASE" --report release-evidence/production-contract.json
+          python ci/portable_backend_contract.py \
+            --base "$API_BASE" \
+            --report release-evidence/production-contract.json
           printf '%s\n' "$API_BASE" > release-evidence/runtime-api-base.txt
       - name: Require governed NFL and NBA model promotion
         shell: bash
         run: |
           set -euo pipefail
           API_BASE="${PHILTHY_RUNTIME_ROOT%/}${PHILTHY_RUNTIME_API_PREFIX}"
-          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 "$API_BASE/v1/system/status" -o release-evidence/system-status-envelope.json
-          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 "$API_BASE/v1/models/status" -o release-evidence/model-status-envelope.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          root=Path('release-evidence')
-          def unwrap(path):
-              payload=json.loads(path.read_text())
-              if isinstance(payload,dict) and isinstance(payload.get('json'),dict):
-                  return payload['json']
-              return payload
-
-          status=unwrap(root/'system-status-envelope.json')
-          model_status=unwrap(root/'model-status-envelope.json')
-          required_checks=(
-              'canonical_dataset','feature_schema','chronology_as_of_before_event',
-              'walk_forward_oof','calibration_oof_only','sample_sufficiency',
-              'brier_improvement','noninferior_log_loss','calibration_metrics',
-              'ece_threshold','separate_holdout','leakage_audit',
-              'provenance_hashes','artifact_checksum','beats_active_market_baseline',
-              'trained_weights','explicit_promotion',
-          )
-          models=model_status.get('models') if isinstance(model_status,dict) else None
-          if not isinstance(models,dict):
-              models=(status.get('models') if isinstance(status,dict) else None)
-          failures=[]
-          verified={}
-          for sport in ('NFL','NBA'):
-              item=(models or {}).get(sport) or (models or {}).get(sport.lower())
-              if not isinstance(item,dict):
-                  failures.append(f'{sport}: structured promotion evidence missing')
-                  continue
-              gate=item.get('promotion_gate') or {}
-              checks=gate.get('checks') or {}
-              missing=[name for name in required_checks if checks.get(name) is not True]
-              if gate.get('passed') is not True:
-                  failures.append(f'{sport}: promotion gate is not passed')
-              if missing:
-                  failures.append(f'{sport}: missing/failed checks: {", ".join(missing)}')
-              if not item.get('artifact_checksum') and not item.get('sha256'):
-                  failures.append(f'{sport}: promoted artifact checksum missing')
-              verified[sport]={
-                  'promotion_gate_passed': gate.get('passed') is True,
-                  'required_checks': {name: checks.get(name) is True for name in required_checks},
-                  'artifact_checksum_present': bool(item.get('artifact_checksum') or item.get('sha256')),
-              }
-          readiness={
-              'runtime_root': str(Path('runtime-api-base.txt')) if False else None,
-              'durable_database': ((status.get('database') or {}).get('durable') is True) if isinstance(status,dict) else False,
-              'verified_model_gates': verified,
-              'failures': failures,
-              'release_gate_passed': not failures,
-          }
-          (root/'readiness.json').write_text(json.dumps(readiness,indent=2,sort_keys=True)+'\n')
-          if failures:
-              raise SystemExit('; '.join(failures))
-          PY
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+            "$API_BASE/v1/models/status" \
+            -o release-evidence/model-status-envelope.json
+          python ci/governed_release_gate.py \
+            --model-status release-evidence/model-status-envelope.json \
+            --output release-evidence/readiness.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
