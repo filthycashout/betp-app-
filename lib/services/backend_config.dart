@@ -2,14 +2,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class BackendConfig {
   static const _key = 'philthy_backend_url';
+  static const _flootMigrationKey = 'philthy_backend_floot_cutover_v1';
   static const compiledDefault = String.fromEnvironment(
     'PHILTHY_API_BASE_URL',
-    defaultValue: 'https://philthysports-api-v9.onrender.com',
+    defaultValue: 'https://philthyparleys.floot.app',
   );
 
   static const _obsoleteHosts = {
     'philthysports-powerhouse.onrender.com',
     'philthysports-powerhouse-v8.onrender.com',
+  };
+
+  static const _legacyDefaultHosts = {
+    'philthysports-api-v9.onrender.com',
   };
 
   static Future<String> baseUrl() async {
@@ -22,8 +27,20 @@ class BackendConfig {
     if (uri != null && _obsoleteHosts.contains(uri.host.toLowerCase())) {
       final migrated = normalize(compiledDefault);
       await prefs.setString(_key, migrated);
+      await prefs.setBool(_flootMigrationKey, true);
       return migrated;
     }
+
+    final migrationApplied = prefs.getBool(_flootMigrationKey) ?? false;
+    if (!migrationApplied &&
+        uri != null &&
+        _legacyDefaultHosts.contains(uri.host.toLowerCase())) {
+      final migrated = normalize(compiledDefault);
+      await prefs.setString(_key, migrated);
+      await prefs.setBool(_flootMigrationKey, true);
+      return migrated;
+    }
+
     if (normalized != saved) await prefs.setString(_key, normalized);
     return normalized;
   }
@@ -32,6 +49,9 @@ class BackendConfig {
     final normalized = validate(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, normalized);
+    // A deliberate manual save wins over the one-time automatic Render->Floot
+    // migration, so the legacy Render URL remains available as a rollback.
+    await prefs.setBool(_flootMigrationKey, true);
   }
 
   static String validate(String value) {
@@ -50,6 +70,7 @@ class BackendConfig {
   static Future<void> reset() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+    await prefs.setBool(_flootMigrationKey, true);
   }
 
   static String normalize(String value) {
@@ -80,8 +101,15 @@ class BackendConfig {
         }
       }
     }
-    final cleanUri = Uri(scheme: uri.scheme, host: uri.host, port: uri.hasPort ? uri.port : null, path: path == '/' ? '' : path);
+    final cleanUri = Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: path == '/' ? '' : path,
+    );
     final normalized = cleanUri.toString();
-    return normalized.endsWith('/') ? normalized.substring(0, normalized.length - 1) : normalized;
+    return normalized.endsWith('/')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
   }
 }
