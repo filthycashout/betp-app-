@@ -13,6 +13,7 @@ on:
       - 'ci/floot_cutover_smoke.py'
       - 'ci/portable_backend_contract.py'
       - 'ci/governed_release_gate.py'
+      - 'ci/test_governed_release_gate.py'
       - '.github/workflows/floot-client-ci.yml'
       - '.github/workflows/floot-cutover-guard.yml'
       - '.github/workflows/portable-backend-ci.yml'
@@ -36,7 +37,9 @@ jobs:
           python -m py_compile \
             ci/floot_cutover_smoke.py \
             ci/portable_backend_contract.py \
-            ci/governed_release_gate.py
+            ci/governed_release_gate.py \
+            ci/test_governed_release_gate.py
+          python -m unittest discover -s ci -p 'test_governed_release_gate.py' -v
           python -m pip install --disable-pip-version-check --quiet pyyaml
           python - <<'PY'
           from pathlib import Path
