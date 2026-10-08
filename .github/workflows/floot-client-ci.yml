@@ -8,12 +8,40 @@ on:
       - 'mobile_dashboard/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - 'ci/floot_cutover_smoke.py'
       - '.github/workflows/floot-client-ci.yml'
+      - '.github/workflows/floot-cutover-guard.yml'
+      - '.github/workflows/philthysports-full-ci.yml'
 
 permissions:
   contents: read
 
 jobs:
+  workflow-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate migration scripts and workflow YAML
+        run: |
+          python -m py_compile ci/floot_cutover_smoke.py
+          python -m pip install --disable-pip-version-check --quiet pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for name in (
+              '.github/workflows/floot-client-ci.yml',
+              '.github/workflows/floot-cutover-guard.yml',
+              '.github/workflows/philthysports-full-ci.yml',
+          ):
+              value=yaml.safe_load(Path(name).read_text())
+              if not isinstance(value,dict) or 'jobs' not in value:
+                  raise SystemExit(f'invalid workflow structure: {name}')
+              print(f'validated {name}: {len(value["jobs"])} jobs')
+          PY
+
   dashboard:
     runs-on: ubuntu-latest
     steps:
