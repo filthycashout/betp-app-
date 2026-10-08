@@ -8,6 +8,15 @@ test('retries a transient gateway failure and returns actual JSON',async()=>{
  try {assert.deepEqual(await fetchBackendJson('https://backend.test/health'),{status:'ok'});assert.equal(calls,2);}
  finally {globalThis.fetch=original;}
 });
+test('unwraps Floot SuperJSON envelopes without changing other hosts',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({json:{status:'ok',service:'philthysports-runtime'}});
+ try {
+  assert.deepEqual(await fetchBackendJson('https://philthyparleys.floot.app/_api/health'),{status:'ok',service:'philthysports-runtime'});
+  assert.deepEqual(await fetchBackendJson('https://backend.test/health'),{json:{status:'ok',service:'philthysports-runtime'}});
+ }
+ finally {globalThis.fetch=original;}
+});
 test('does not retry authentication errors or mask invalid JSON',async()=>{
  const original=globalThis.fetch;let calls=0;
  globalThis.fetch=async()=>{calls++;return new Response('',{status:403});};
