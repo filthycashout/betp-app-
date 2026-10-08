@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Portable PhilthyParleys backend contract smoke.
+"""Provider-independent PhilthyParleys backend contract smoke.
 
-Designed to run against the local Docker image in GitHub Actions or any deployed
-host. It verifies that the canonical FastAPI backend exposes the full mobile
-contract so deployment providers cannot silently ship a partial API surface.
+The canonical API is FastAPI, but adapters such as Floot may wrap JSON in a
+SuperJSON envelope, omit OpenAPI, or expose dynamic game routes as fixed query
+endpoints. This smoke normalizes only those transport differences; the business
+contract and fail-closed behavior stay identical.
 """
 from __future__ import annotations
 
@@ -34,6 +35,12 @@ REQUIRED_OPENAPI_PATHS = {
 }
 
 
+def unwrap(payload: Any) -> Any:
+    if isinstance(payload, dict) and set(payload).issubset({"json", "meta"}) and "json" in payload:
+        return payload["json"]
+    return payload
+
+
 def get_json(base: str, path: str, timeout: int = 35) -> tuple[int, Any]:
     url = base.rstrip("/") + path
     request = urllib.request.Request(
@@ -42,14 +49,20 @@ def get_json(base: str, path: str, timeout: int = 35) -> tuple[int, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, json.loads(response.read(5_000_000).decode("utf-8"))
+            raw = json.loads(response.read(5_000_000).decode("utf-8"))
+            return response.status, unwrap(raw)
     except urllib.error.HTTPError as exc:
-        raw = exc.read(1_000_000).decode("utf-8", errors="replace")
+        raw_text = exc.read(1_000_000).decode("utf-8", errors="replace")
         try:
-            body: Any = json.loads(raw)
+            body: Any = unwrap(json.loads(raw_text))
         except Exception:
-            body = {"raw": raw[:2000]}
+            body = {"raw": raw_text[:2000]}
         return exc.code, body
+
+
+def is_floot_adapter(base: str) -> bool:
+    parsed = urllib.parse.urlparse(base)
+    return (parsed.hostname or "").lower().endswith(".floot.app") or parsed.path.rstrip("/").endswith("/_api")
 
 
 def wait_for_health(base: str, seconds: int = 90) -> dict[str, Any]:
@@ -75,6 +88,8 @@ def main() -> int:
 
     failures: list[str] = []
     checks: dict[str, Any] = {}
+    floot = is_floot_adapter(args.base)
+    checks["transport"] = "floot_adapter" if floot else "canonical_http"
 
     health = wait_for_health(args.base)
     checks["health"] = health
@@ -82,15 +97,17 @@ def main() -> int:
         failures.append("health.service")
 
     openapi_status, openapi = get_json(args.base, "/openapi.json")
-    if openapi_status != 200 or not isinstance(openapi, dict):
-        failures.append("openapi")
-        paths: set[str] = set()
-    else:
+    if openapi_status == 200 and isinstance(openapi, dict):
         paths = set((openapi.get("paths") or {}).keys())
         missing = sorted(REQUIRED_OPENAPI_PATHS - paths)
         checks["openapi_missing"] = missing
         if missing:
             failures.extend(f"route:{path}" for path in missing)
+    elif floot:
+        checks["openapi_missing"] = "adapter_does_not_expose_openapi; verified by live route probes"
+    else:
+        failures.append("openapi")
+        checks["openapi_missing"] = f"unavailable_http_{openapi_status}"
 
     static_checks = {
         "system_status": "/v1/system/status",
@@ -136,24 +153,38 @@ def main() -> int:
 
     if event_id:
         encoded = urllib.parse.quote(event_id, safe="")
-        dynamic = {
-            "game_detail": f"/v1/games/NFL/{encoded}",
-            "game_props": f"/v1/games/NFL/{encoded}/props",
-            "game_best9": f"/v1/games/NFL/{encoded}/best9",
-        }
+        if floot:
+            q = urllib.parse.urlencode({"sport": "NFL", "event_id": event_id})
+            dynamic = {
+                "game_detail": f"/v1/game?{q}",
+                "game_props": f"/v1/game/props?{q}",
+                "game_best9": f"/v1/game/best9?{q}",
+            }
+        else:
+            dynamic = {
+                "game_detail": f"/v1/games/NFL/{encoded}",
+                "game_props": f"/v1/games/NFL/{encoded}/props",
+                "game_best9": f"/v1/games/NFL/{encoded}/best9",
+            }
         for name, path in dynamic.items():
             try:
                 status, payload = get_json(args.base, path)
                 checks[name] = {"status": status, "object": isinstance(payload, dict)}
-                # A provider/evidence gate may legitimately block a specific game,
-                # but a migrated runtime must never report route-not-found.
+                # Evidence/provider gating may legitimately return a non-2xx response,
+                # but a complete deployment must not report route-not-found.
                 if status in {404, 405} or not isinstance(payload, dict):
                     failures.append(name)
             except Exception as exc:
                 checks[name] = {"error": f"{type(exc).__name__}: {exc}"}
                 failures.append(name)
     else:
-        checks["dynamic_game_routes"] = "No current NFL event; OpenAPI route-presence check used."
+        checks["dynamic_game_routes"] = (
+            "No current NFL event; canonical OpenAPI checked."
+            if not floot else
+            "No current NFL event; dynamic adapter route could not be live-probed."
+        )
+        if floot:
+            failures.append("dynamic_game_routes.no_current_event")
 
     report = {
         "base": args.base,
