@@ -1,5 +1,14 @@
 import {FeedHttpError,fetchJson} from './sports.ts';
 
+function unwrapFlootPayload(url:string,data:Record<string,any>) {
+ try {
+  const host=new URL(url).hostname.toLowerCase();
+  const payload=data?.json;
+  if(host.endsWith('.floot.app')&&payload&&typeof payload==='object'&&!Array.isArray(payload)) return payload as Record<string,any>;
+ } catch {}
+ return data;
+}
+
 // Cold starts share one total budget across retries. League score feeds keep
 // their shorter independent deadlines, and evidence checks stay unchanged.
 export async function fetchBackendJson(url:string,signal?:AbortSignal,budgetMs=90_000) {
@@ -8,7 +17,10 @@ export async function fetchBackendJson(url:string,signal?:AbortSignal,budgetMs=9
   if(signal?.aborted)throw signal.reason||new DOMException('Request cancelled','AbortError');
   const remaining=deadline-Date.now();
   if(remaining<=0)throw new DOMException('Backend startup timed out','TimeoutError');
-  try {return await fetchJson(url,remaining,signal);}
+  try {
+   const data=await fetchJson(url,remaining,signal);
+   return unwrapFlootPayload(url,data);
+  }
   catch(error) {
    if(signal?.aborted)throw signal.reason||error;
    const transient=error instanceof FeedHttpError
