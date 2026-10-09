@@ -1,0 +1,79 @@
+name: Harden PhilthySports FreeOddsGateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/harden_free_odds_gateway.py'
+      - '.github/workflows/free-odds-gateway-hardening.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: harden-philthysports-free-odds-gateway
+  cancel-in-progress: false
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply hardening patch
+        run: python scripts/harden_free_odds_gateway.py
+
+      - name: Validate patched syntax
+        run: |
+          python -m py_compile \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/evidence/market_snapshot_store.py \
+            backend/outcome_validation.py \
+            backend/training/free_odds_evidence.py \
+            backend/training/prediction_ledger.py \
+            backend/ops/production_guard.py \
+            scripts/apply_free_odds_gateway.py \
+            scripts/harden_free_odds_gateway.py
+
+      - name: Install validation dependencies
+        run: python -m pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
+
+      - name: Run focused regression tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          pytest -q \
+            backend/tests/test_free_odds_gateway.py \
+            backend/tests/test_validation.py \
+            backend/tests/test_app.py
+
+      - name: Commit hardened gateway
+        run: |
+          git add \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/evidence/market_snapshot_store.py \
+            backend/training/prediction_ledger.py \
+            backend/ops/production_guard.py \
+            backend/tests/test_free_odds_gateway.py \
+            scripts/apply_free_odds_gateway.py \
+            .github/workflows/apply-free-odds-gateway.yml \
+            docs/FREE_ODDS_GATEWAY.md
+          if git diff --cached --quiet; then
+            echo 'FreeOddsGateway hardening already applied.'
+            exit 0
+          fi
+          git config user.name 'philthysports-gateway-hardening-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Harden PhilthySports FreeOddsGateway 1.6.10'
+          git pull --rebase origin main
+          git push origin main
