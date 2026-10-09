@@ -34,6 +34,9 @@ jobs:
       - name: Apply hardening patch
         run: python scripts/harden_free_odds_gateway.py
 
+      - name: Preserve legacy SX read-only helper contract
+        run: python -c "from pathlib import Path; p=Path('backend/free_odds_gateway.py'); s=p.read_text(); a='def _sx_market_teams(market: dict[str, Any]) -> tuple[str, str] | None:'; shim='def _sx_secondary_signal(sport: str) -> dict[str, Any]:\n    snapshot = _sx_market_snapshot(sport)\n    return {key: value for key, value in snapshot.items() if key != \"markets\"}\n\n\n'; assert a in s; p.write_text(s.replace(a, shim+a, 1))"
+
       - name: Validate patched syntax
         run: |
           python -m py_compile \
