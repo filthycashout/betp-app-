@@ -1,0 +1,82 @@
+name: Finalize FreeOddsGateway branch
+
+on:
+  push:
+    branches: [free-odds-final-hardening]
+    paths:
+      - 'scripts/finalize_free_odds_gateway.py'
+      - '.github/workflows/finalize-free-odds-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-free-odds-gateway-branch
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-odds-final-hardening
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply final hardening
+        run: python scripts/finalize_free_odds_gateway.py
+
+      - name: Validate syntax
+        run: |
+          python -m py_compile \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/evidence/market_snapshot_store.py \
+            backend/evidence/runtime.py \
+            backend/training/evidence_pipeline.py \
+            backend/training/prediction_ledger.py \
+            backend/training/sign_promoted.py \
+            backend/ops/production_guard.py \
+            backend/ci_security.py \
+            scripts/finalize_free_odds_gateway.py
+
+      - name: Install validation dependencies
+        run: python -m pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
+
+      - name: Run focused regression tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          pytest -q \
+            backend/tests/test_free_odds_gateway.py \
+            backend/tests/test_validation.py \
+            backend/tests/test_app.py
+
+      - name: Commit verified final hardening to branch
+        run: |
+          git add \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/evidence/market_snapshot_store.py \
+            backend/evidence/runtime.py \
+            backend/training/evidence_pipeline.py \
+            backend/training/sign_promoted.py \
+            backend/ops/production_guard.py \
+            backend/ci_security.py \
+            backend/tests/test_free_odds_gateway.py \
+            backend/tests/test_validation.py \
+            docs/FREE_ODDS_GATEWAY.md
+          if git diff --cached --quiet; then
+            echo 'Final hardening already applied.'
+            exit 0
+          fi
+          git config user.name 'philthysports-final-hardening-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Finalize FreeOddsGateway evidence hardening 1.6.11'
+          git push origin HEAD:free-odds-final-hardening
