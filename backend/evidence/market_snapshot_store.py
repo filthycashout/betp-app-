@@ -106,9 +106,13 @@ def record_market_snapshot(
     if fetched >= event_time:
         return None
 
+    sport = str(event.get("sport") or "").upper().strip()
+    if not sport:
+        return None
+
     record: dict[str, Any] = {
         "schema_version": "1",
-        "sport": str(event.get("sport") or "").upper(),
+        "sport": sport,
         "event_id": str(event.get("id") or event.get("event_id") or ""),
         "home_team": event.get("home_team") or event.get("home"),
         "away_team": event.get("away_team") or event.get("away"),

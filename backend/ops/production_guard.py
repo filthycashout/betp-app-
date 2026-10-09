@@ -44,9 +44,11 @@ def main() -> None:
         health = get_json(base + "/health")
         status = get_json(base + "/v1/system/status")
         props = get_json(base + "/v1/system/props")
+        providers = get_json(base + "/v1/data/external-providers")
         evidence = get_json(base + "/v1/evidence/signals?limit=1")
         storage = evidence.get("storage_status") or {}
 
+        gateway = providers.get("free_odds_gateway") or {}
         checks = {
             "health_ok": health.get("status") == "ok",
             "service_identity": health.get("service") == "philthysports-runtime",
@@ -54,6 +56,10 @@ def main() -> None:
             "stable_android_signing": str((status.get("gates") or {}).get("stable_android_signing") or "").startswith("PASS"),
             "immutable_capture": str((status.get("gates") or {}).get("immutable_pregame_evidence_capture") or "").startswith("PASS"),
             "keyless_props_fallback": props.get("keyless_fallback_configured") is True,
+            "free_odds_gateway_identity": gateway.get("name") == "PhilthySports FreeOddsGateway",
+            "free_odds_gateway_oddswrap": (gateway.get("oddswrap") or {}).get("available") is True,
+            "free_odds_gateway_snapshot_gate": gateway.get("snapshot_gate") == "fetched_at < event_time",
+            "free_odds_gateway_props_chain": gateway.get("player_props_order") == ["ODDSWRAP", "PROPLINE", "ODDS_API_IO"],
             "manual_review_only": status.get("execution_mode") == "MANUAL_REVIEW_ONLY",
             "evidence_database_configured": storage.get("database_configured") is True,
             "evidence_durable": evidence.get("durable_storage") is True and storage.get("durable") is True,
@@ -65,6 +71,7 @@ def main() -> None:
             gates=status.get("gates"),
             credential_gate=status.get("credential_gate"),
             props_status=props.get("status"),
+            free_odds_gateway=gateway,
             evidence_storage={
                 "storage_root": evidence.get("storage_root"),
                 "durable_storage": evidence.get("durable_storage"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import date as date_cls, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -23,42 +24,89 @@ PROPLINE_SPORT_KEYS = {
     "NHL": ("hockey_nhl", "icehockey_nhl"),
 }
 ODDS_IO_SPORTS = {
-    "NFL": ("american-football", "usa-nfl"),
-    "NBA": ("basketball", "usa-nba"),
-    "MLB": ("baseball", None),
-    "NHL": ("ice-hockey", None),
+    "NFL": "nfl",
+    "NBA": "nba",
+    "MLB": "mlb",
+    "NHL": "nhl",
 }
+ODDS_IO_BOOKS = ["DraftKings", "FanDuel", "BetMGM", "Caesars", "BetRivers", "Bovada"]
 
 _PROP_HINTS: dict[str, list[tuple[str, str]]] = {
     "NFL": [
-        ("passingyards", "player_pass_yds"), ("rushingyards", "player_rush_yds"),
-        ("receivingyards", "player_reception_yds"), ("receptions", "player_receptions"),
-        ("passingtouchdowns", "player_pass_tds"), ("passingcompletions", "player_pass_completions"),
-        ("passingattempts", "player_pass_attempts"), ("passinginterceptions", "player_pass_interceptions"),
+        ("passrushreceptionyards", "player_pass_rush_reception_yds"),
+        ("passingrushingreceivingyards", "player_pass_rush_reception_yds"),
+        ("passingrushingyards", "player_pass_rush_yds"),
+        ("rushreceivingyards", "player_rush_reception_yds"),
+        ("rushingreceivingyards", "player_rush_reception_yds"),
+        ("longestpassingcompletion", "player_pass_longest_completion"),
+        ("longestreception", "player_reception_longest"),
+        ("longestrush", "player_rush_longest"),
+        ("passingyards", "player_pass_yds"),
+        ("rushingyards", "player_rush_yds"),
+        ("receivingyards", "player_reception_yds"),
+        ("receptions", "player_receptions"),
+        ("passingtouchdowns", "player_pass_tds"),
+        ("rushingtouchdowns", "player_rush_tds"),
+        ("receivingtouchdowns", "player_reception_tds"),
+        ("passingcompletions", "player_pass_completions"),
+        ("passingattempts", "player_pass_attempts"),
+        ("passinginterceptions", "player_pass_interceptions"),
         ("rushingattempts", "player_rush_attempts"),
+        ("anytimetouchdown", "player_anytime_td"),
+        ("sacks", "player_sacks"),
+        ("solotackles", "player_solo_tackles"),
+        ("tacklesassists", "player_tackles_assists"),
     ],
     "NBA": [
         ("pointsreboundsassists", "player_points_rebounds_assists"),
-        ("pointsrebounds", "player_points_rebounds"), ("pointsassists", "player_points_assists"),
-        ("reboundsassists", "player_rebounds_assists"), ("threepointers", "player_threes"),
-        ("points", "player_points"), ("rebounds", "player_rebounds"),
-        ("assists", "player_assists"), ("blocks", "player_blocks"),
-        ("steals", "player_steals"), ("turnovers", "player_turnovers"),
+        ("pointsrebounds", "player_points_rebounds"),
+        ("pointsassists", "player_points_assists"),
+        ("reboundsassists", "player_rebounds_assists"),
+        ("blockssteals", "player_blocks_steals"),
+        ("threepointers", "player_threes"),
+        ("3pointers", "player_threes"),
+        ("freethrowsattempted", "player_frees_attempts"),
+        ("freethrowattempts", "player_frees_attempts"),
+        ("freethrowsmade", "player_frees_made"),
+        ("fieldgoalsmade", "player_field_goals"),
+        ("points", "player_points"),
+        ("rebounds", "player_rebounds"),
+        ("assists", "player_assists"),
+        ("blocks", "player_blocks"),
+        ("steals", "player_steals"),
+        ("turnovers", "player_turnovers"),
     ],
     "MLB": [
-        ("pitcherstrikeouts", "pitcher_strikeouts"), ("pitcherouts", "pitcher_outs"),
-        ("pitcherhitsallowed", "pitcher_hits_allowed"), ("pitcherwalks", "pitcher_walks"),
-        ("pitcherearnedruns", "pitcher_earned_runs"), ("homeruns", "batter_home_runs"),
-        ("totalbases", "batter_total_bases"), ("hitsrunsrbis", "batter_hits_runs_rbis"),
-        ("rbis", "batter_rbis"), ("runsscored", "batter_runs_scored"),
-        ("stolenbases", "batter_stolen_bases"), ("strikeouts", "batter_strikeouts"),
-        ("walks", "batter_walks"), ("hits", "batter_hits"),
+        ("pitcherstrikeouts", "pitcher_strikeouts"),
+        ("pitcherouts", "pitcher_outs"),
+        ("pitcherhitsallowed", "pitcher_hits_allowed"),
+        ("pitcherwalks", "pitcher_walks"),
+        ("pitcherearnedruns", "pitcher_earned_runs"),
+        ("hitsrunsrbis", "batter_hits_runs_rbis"),
+        ("homeruns", "batter_home_runs"),
+        ("totalbases", "batter_total_bases"),
+        ("runsbattedin", "batter_rbis"),
+        ("rbis", "batter_rbis"),
+        ("runsscored", "batter_runs_scored"),
+        ("stolenbases", "batter_stolen_bases"),
+        ("batterstrikeouts", "batter_strikeouts"),
+        ("batterwalks", "batter_walks"),
+        ("singles", "batter_singles"),
+        ("doubles", "batter_doubles"),
+        ("triples", "batter_triples"),
+        ("hits", "batter_hits"),
     ],
     "NHL": [
-        ("shotson goal", "player_shots_on_goal"), ("shotsongoal", "player_shots_on_goal"),
-        ("powerplaypoints", "player_power_play_points"), ("blockedshots", "player_blocked_shots"),
-        ("goaliesaves", "player_total_saves"), ("saves", "player_total_saves"),
-        ("points", "player_points"), ("assists", "player_assists"), ("goals", "player_goals"),
+        ("shotson goal", "player_shots_on_goal"),
+        ("shotsongoal", "player_shots_on_goal"),
+        ("powerplaypoints", "player_power_play_points"),
+        ("blockedshots", "player_blocked_shots"),
+        ("goaliesaves", "player_total_saves"),
+        ("goalie saves", "player_total_saves"),
+        ("saves", "player_total_saves"),
+        ("points", "player_points"),
+        ("assists", "player_assists"),
+        ("goals", "player_goals"),
     ],
 }
 
@@ -85,9 +133,11 @@ def _same_team(a: Any, b: Any) -> bool:
 
 
 def _same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
-    at = _utc(a.get("commence_time") or a.get("event_time") or a.get("start_time"))
-    bt = _utc(b.get("commence_time") or b.get("event_time") or b.get("start_time"))
-    if at is None or bt is None or abs((at - bt).total_seconds()) > 3 * 60 * 60:
+    at = _utc(a.get("commence_time") or a.get("event_time") or a.get("start_time") or a.get("date"))
+    bt = _utc(b.get("commence_time") or b.get("event_time") or b.get("start_time") or b.get("date"))
+    # Fail closed around doubleheaders and same-team rematches. Provider start
+    # times can drift by a few minutes, but distinct events must never be merged.
+    if at is None or bt is None or abs((at - bt).total_seconds()) > 30 * 60:
         return False
     return (
         _same_team(a.get("home_team") or a.get("home"), b.get("home_team") or b.get("home"))
@@ -106,12 +156,12 @@ def _items(payload: Any) -> list[dict[str, Any]]:
         return [row for row in payload if isinstance(row, dict)]
     if not isinstance(payload, dict):
         return []
-    for key in ("data", "events", "items"):
+    for key in ("data", "events", "items", "sports", "leagues", "fixtures", "markets"):
         value = payload.get(key)
         if isinstance(value, list):
             return [row for row in value if isinstance(row, dict)]
         if isinstance(value, dict):
-            for nested in ("markets", "events", "items"):
+            for nested in ("markets", "events", "items", "sports", "leagues", "fixtures"):
                 rows = value.get(nested)
                 if isinstance(rows, list):
                     return [row for row in rows if isinstance(row, dict)]
@@ -280,38 +330,6 @@ def _propline_game_events(sport: str, target_date: date_cls) -> list[dict[str, A
     return []
 
 
-def _odds_io_game_events(sport: str, target_date: date_cls) -> list[dict[str, Any]]:
-    key = os.getenv("ODDS_API_IO_KEY", "").strip()
-    if not key:
-        return []
-    sport_slug, league_slug = ODDS_IO_SPORTS[sport.upper()]
-    params: dict[str, Any] = {"apiKey": key, "sport": sport_slug, "status": "pending", "limit": 100}
-    if league_slug:
-        params["league"] = league_slug
-    try:
-        events = _items(_request_json(f"{ODDS_IO_BASE}/events", params=params))
-    except Exception:
-        return []
-    out: list[dict[str, Any]] = []
-    observed = datetime.now(timezone.utc).isoformat()
-    for event in events:
-        start = _utc(event.get("date") or event.get("commence_time"))
-        if start is None or start.astimezone(PACIFIC).date() != target_date:
-            continue
-        event_id = event.get("id")
-        if event_id is None:
-            continue
-        try:
-            payload = _request_json(f"{ODDS_IO_BASE}/odds", params={"apiKey": key, "eventId": event_id})
-        except Exception:
-            continue
-        normalized = _normalize_odds_io(event, payload, observed)
-        if normalized:
-            normalized["sport"] = sport.upper()
-            out.append(normalized)
-    return out
-
-
 def _decimal_to_american(value: Any) -> int | None:
     try:
         decimal = float(value)
@@ -322,73 +340,369 @@ def _decimal_to_american(value: Any) -> int | None:
     return round((decimal - 1) * 100) if decimal >= 2 else round(-100 / (decimal - 1))
 
 
-def _normalize_odds_io(event: dict[str, Any], payload: Any, observed: str) -> dict[str, Any] | None:
-    if isinstance(payload, dict) and isinstance(payload.get("bookmakers"), list):
-        row = dict(payload)
-        row.setdefault("id", str(event.get("id") or ""))
-        row.setdefault("home_team", event.get("home"))
-        row.setdefault("away_team", event.get("away"))
-        row.setdefault("commence_time", event.get("date"))
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _odds_io_events(sport: str) -> list[dict[str, Any]]:
+    key = os.getenv("ODDS_API_IO_KEY", "").strip()
+    if not key:
+        return []
+    params = {
+        "apiKey": key,
+        "sport": ODDS_IO_SPORTS[sport.upper()],
+        "status": "pending",
+        "limit": 100,
+    }
+    try:
+        return _items(_request_json(f"{ODDS_IO_BASE}/events", params=params))
+    except Exception:
+        return []
+
+
+def _normalize_odds_io_game(event: dict[str, Any], payload: Any, observed: str) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    home = payload.get("home") or event.get("home") or event.get("home_team")
+    away = payload.get("away") or event.get("away") or event.get("away_team")
+    start = payload.get("date") or event.get("date") or event.get("commence_time")
+    books_raw = payload.get("bookmakers")
+
+    # Some deployments expose The-Odds-API-compatible bookmaker arrays. Keep
+    # accepting that shape, but stamp the observation time if the provider did not.
+    if isinstance(books_raw, list):
+        row = {
+            **payload,
+            "id": str(payload.get("id") or event.get("id") or ""),
+            "home_team": payload.get("home_team") or home,
+            "away_team": payload.get("away_team") or away,
+            "commence_time": payload.get("commence_time") or start,
+            "market_source": "ODDS_API_IO",
+            "data_quality": "PREGAME_CREDENTIALLED_FREE_TIER",
+        }
         for book in row.get("bookmakers") or []:
             if isinstance(book, dict):
                 book.setdefault("observed_at", observed)
-        row["market_source"] = "ODDS_API_IO"
-        row["data_quality"] = "PREGAME_CREDENTIALLED_FREE_TIER"
+                for market in book.get("markets") or []:
+                    if isinstance(market, dict):
+                        market.setdefault("observed_at", book.get("observed_at") or observed)
         return row
-    if not isinstance(payload, dict):
+
+    # Current odds-api.io v3 uses a bookmaker-name -> market-list mapping.
+    if not isinstance(books_raw, dict):
         return None
-    home, away = event.get("home"), event.get("away")
     books: list[dict[str, Any]] = []
-    source = payload.get("odds") if isinstance(payload.get("odds"), dict) else payload
-    for book_name, markets in source.items():
-        if not isinstance(markets, dict):
+    for book_name, market_rows in books_raw.items():
+        if not isinstance(market_rows, list):
             continue
-        normalized: list[dict[str, Any]] = []
-        ml = markets.get("ML") or markets.get("Moneyline") or markets.get("moneyline")
-        if isinstance(ml, dict):
-            hp = _decimal_to_american(ml.get("home") or ml.get(str(home)))
-            ap = _decimal_to_american(ml.get("away") or ml.get(str(away)))
-            if hp is not None and ap is not None:
-                normalized.append({"key": "h2h", "observed_at": observed, "outcomes": [
-                    {"name": home, "price": hp}, {"name": away, "price": ap}
-                ]})
-        if normalized:
-            books.append({"key": _norm(book_name), "title": str(book_name), "observed_at": observed, "markets": normalized})
+        normalized_markets: list[dict[str, Any]] = []
+        for market in market_rows:
+            if not isinstance(market, dict):
+                continue
+            market_name = _norm(market.get("name"))
+            updated = market.get("updatedAt") or market.get("updated_at") or observed
+            quotes = market.get("odds") or []
+            if not isinstance(quotes, list):
+                continue
+            for quote in quotes:
+                if not isinstance(quote, dict):
+                    continue
+                if market_name in {"ml", "moneyline", "h2h"}:
+                    hp = _decimal_to_american(quote.get("home"))
+                    ap = _decimal_to_american(quote.get("away"))
+                    if hp is not None and ap is not None:
+                        normalized_markets.append({
+                            "key": "h2h", "observed_at": updated,
+                            "outcomes": [
+                                {"name": home, "price": hp},
+                                {"name": away, "price": ap},
+                            ],
+                        })
+                elif market_name in {"spread", "spreads", "handicap"}:
+                    point = _as_float(quote.get("hdp") if quote.get("hdp") is not None else quote.get("handicap"))
+                    hp = _decimal_to_american(quote.get("home"))
+                    ap = _decimal_to_american(quote.get("away"))
+                    if point is not None and hp is not None and ap is not None:
+                        normalized_markets.append({
+                            "key": "spreads", "observed_at": updated,
+                            "outcomes": [
+                                {"name": home, "point": point, "price": hp},
+                                {"name": away, "point": -point, "price": ap},
+                            ],
+                        })
+                elif market_name in {"total", "totals", "overunder"}:
+                    point = _as_float(quote.get("hdp") if quote.get("hdp") is not None else quote.get("total"))
+                    over = _decimal_to_american(quote.get("over"))
+                    under = _decimal_to_american(quote.get("under"))
+                    if point is not None and over is not None and under is not None:
+                        normalized_markets.append({
+                            "key": "totals", "observed_at": updated,
+                            "outcomes": [
+                                {"name": "Over", "point": point, "price": over},
+                                {"name": "Under", "point": point, "price": under},
+                            ],
+                        })
+        if normalized_markets:
+            books.append({
+                "key": _norm(book_name),
+                "title": str(book_name),
+                "observed_at": observed,
+                "markets": normalized_markets,
+            })
     if not books:
         return None
     return {
-        "id": str(event.get("id") or ""), "home_team": home, "away_team": away,
-        "commence_time": event.get("date"), "bookmakers": books,
-        "market_source": "ODDS_API_IO", "data_quality": "PREGAME_CREDENTIALLED_FREE_TIER",
+        "id": str(payload.get("id") or event.get("id") or ""),
+        "home_team": home,
+        "away_team": away,
+        "commence_time": start,
+        "bookmakers": books,
+        "market_source": "ODDS_API_IO",
+        "data_quality": "PREGAME_CREDENTIALLED_FREE_TIER",
     }
 
 
-def _sx_secondary_signal(sport: str) -> dict[str, Any]:
+def _odds_io_game_events(sport: str, target_date: date_cls) -> list[dict[str, Any]]:
+    key = os.getenv("ODDS_API_IO_KEY", "").strip()
+    if not key:
+        return []
+    observed = datetime.now(timezone.utc).isoformat()
+    out: list[dict[str, Any]] = []
+    for event in _odds_io_events(sport):
+        start = _utc(event.get("date") or event.get("commence_time"))
+        if start is None or start.astimezone(PACIFIC).date() != target_date:
+            continue
+        event_id = event.get("id")
+        if event_id is None:
+            continue
+        try:
+            payload = _request_json(
+                f"{ODDS_IO_BASE}/odds",
+                params={
+                    "apiKey": key,
+                    "eventId": event_id,
+                    "bookmakers": ",".join(ODDS_IO_BOOKS),
+                    "markets": "ML,Spread,Totals",
+                },
+            )
+        except Exception:
+            continue
+        normalized = _normalize_odds_io_game(event, payload, observed)
+        if normalized is not None:
+            normalized["sport"] = sport.upper()
+            out.append(normalized)
+    return out
+
+
+def _split_odds_io_prop_label(label: Any) -> tuple[str, str] | None:
+    text = str(label or "").strip()
+    if not text:
+        return None
+    match = re.match(r"^(.+?)\s*\(([^()]+)\)\s*$", text)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    match = re.match(r"^(.+?)\s*[-–—]\s*(.+)$", text)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    return None
+
+
+def _normalize_odds_io_props(
+    sport: str,
+    game: dict[str, Any],
+    event: dict[str, Any],
+    payload: Any,
+    requested_markets: list[str],
+    observed: str,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("bookmakers"), dict):
+        return None
+    by_book: list[dict[str, Any]] = []
+    for book_name, market_rows in payload["bookmakers"].items():
+        if not isinstance(market_rows, list):
+            continue
+        grouped: dict[str, dict[str, Any]] = {}
+        for market in market_rows:
+            if not isinstance(market, dict) or "playerprops" not in _norm(market.get("name")):
+                continue
+            updated = market.get("updatedAt") or market.get("updated_at") or observed
+            for quote in market.get("odds") or []:
+                if not isinstance(quote, dict):
+                    continue
+                parsed = _split_odds_io_prop_label(quote.get("label"))
+                if parsed is None:
+                    continue
+                player, prop_label = parsed
+                market_key = _prop_key(sport, prop_label)
+                if market_key is None or market_key not in requested_markets:
+                    continue
+                over = _decimal_to_american(quote.get("over"))
+                under = _decimal_to_american(quote.get("under"))
+                if over is None and under is None:
+                    continue
+                line = _as_float(quote.get("hdp"))
+                row = grouped.setdefault(market_key, {
+                    "key": market_key,
+                    "observed_at": updated,
+                    "outcomes": [],
+                })
+                if over is not None:
+                    row["outcomes"].append({
+                        "name": "Over", "description": player, "point": line, "price": over,
+                    })
+                if under is not None:
+                    row["outcomes"].append({
+                        "name": "Under", "description": player, "point": line, "price": under,
+                    })
+        if grouped:
+            by_book.append({
+                "key": _norm(book_name),
+                "title": str(book_name),
+                "observed_at": observed,
+                "markets": list(grouped.values()),
+            })
+    if not by_book:
+        return None
+    return {
+        "id": str(game.get("event_id") or event.get("id") or ""),
+        "sport": sport.upper(),
+        "home_team": game.get("home"),
+        "away_team": game.get("away"),
+        "commence_time": game.get("event_time") or event.get("date"),
+        "bookmakers": by_book,
+        "market_source": "ODDS_API_IO_PROPS",
+        "data_quality": "PREGAME_CREDENTIALLED_FREE_TIER",
+    }
+
+
+def _odds_io_prop_event(sport: str, game: dict[str, Any], requested_markets: list[str]) -> dict[str, Any] | None:
+    key = os.getenv("ODDS_API_IO_KEY", "").strip()
+    if not key:
+        return None
+    probe = {
+        "home_team": game.get("home"),
+        "away_team": game.get("away"),
+        "commence_time": game.get("event_time"),
+    }
+    event = next((row for row in _odds_io_events(sport) if _same_event(probe, row)), None)
+    if event is None:
+        return None
+    observed = datetime.now(timezone.utc).isoformat()
+    try:
+        payload = _request_json(
+            f"{ODDS_IO_BASE}/odds",
+            params={
+                "apiKey": key,
+                "eventId": event.get("id"),
+                "bookmakers": ",".join(ODDS_IO_BOOKS),
+                "markets": "Player Props",
+            },
+        )
+    except Exception:
+        return None
+    return _normalize_odds_io_props(sport, game, event, payload, requested_markets, observed)
+
+
+def _sx_market_time(market: dict[str, Any]) -> datetime | None:
+    raw = market.get("gameTime") or market.get("game_time") or market.get("startTime")
+    if isinstance(raw, (int, float)):
+        value = float(raw)
+        if value > 10_000_000_000:
+            value /= 1000.0
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+    return _utc(raw)
+
+
+def _sx_market_snapshot(sport: str) -> dict[str, Any]:
     if os.getenv("PHILTHY_SXBET_ENABLED", "true").strip().lower() not in {"1", "true", "yes", "on"}:
-        return {"available": False, "reason": "disabled"}
+        return {"available": False, "reason": "disabled", "markets": []}
     try:
         sports = _items(_request_json(f"{SX_BASE}/sports", timeout=8))
         aliases = {
             "NFL": ("nfl", "football"), "NBA": ("nba", "basketball"),
             "MLB": ("mlb", "baseball"), "NHL": ("nhl", "hockey"),
         }[sport.upper()]
-        match = next((row for row in sports if any(alias in _norm(row.get("name") or row.get("label")) for alias in aliases)), None)
+        match = next(
+            (
+                row for row in sports
+                if any(alias in _norm(row.get("name") or row.get("label") or row.get("slug")) for alias in aliases)
+            ),
+            None,
+        )
         sport_id = (match or {}).get("id") or (match or {}).get("sportId")
         if sport_id is None:
-            return {"available": False, "reason": "sport_not_found"}
-        payload = _request_json(f"{SX_BASE}/markets/active", params={"sportIds": sport_id}, timeout=8)
-        markets = _items(payload)
+            return {"available": False, "reason": "sport_not_found", "markets": []}
+        payload = _request_json(
+            f"{SX_BASE}/markets/active",
+            params={"sportIds": sport_id, "onlyMainLine": "true"},
+            timeout=8,
+        )
         return {
             "available": True,
             "source": "SX_BET",
             "sport_id": sport_id,
-            "active_market_count": len(markets),
+            "markets": _items(payload),
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "sample_market_hashes": [str(row.get("marketHash")) for row in markets[:5] if row.get("marketHash")],
-            "role": "secondary_market_signal_only",
         }
     except Exception as exc:
-        return {"available": False, "reason": type(exc).__name__, "source": "SX_BET"}
+        return {"available": False, "reason": type(exc).__name__, "source": "SX_BET", "markets": []}
+
+
+def _sx_secondary_signal(sport: str) -> dict[str, Any]:
+    snapshot = _sx_market_snapshot(sport)
+    return {key: value for key, value in snapshot.items() if key != "markets"}
+
+
+def _sx_market_teams(market: dict[str, Any]) -> tuple[str, str] | None:
+    first = market.get("teamOneName") or market.get("outcomeOneName")
+    second = market.get("teamTwoName") or market.get("outcomeTwoName")
+    if first and second:
+        return str(first), str(second)
+    label = str(market.get("gameLabel") or market.get("label") or "")
+    for sep in (" @ ", " vs ", " vs. "):
+        if sep in label:
+            a, b = label.split(sep, 1)
+            if a.strip() and b.strip():
+                return a.strip(), b.strip()
+    return None
+
+
+def _sx_signal_for_event(snapshot: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    if snapshot.get("available") is not True:
+        return {k: v for k, v in snapshot.items() if k != "markets"}
+    target_time = _utc(event.get("commence_time") or event.get("event_time"))
+    home = event.get("home_team") or event.get("home")
+    away = event.get("away_team") or event.get("away")
+    matches = []
+    for market in snapshot.get("markets") or []:
+        if not isinstance(market, dict):
+            continue
+        teams = _sx_market_teams(market)
+        market_time = _sx_market_time(market)
+        if teams is None or target_time is None or market_time is None:
+            continue
+        if abs((market_time - target_time).total_seconds()) > 30 * 60:
+            continue
+        direct = _same_team(teams[0], away) and _same_team(teams[1], home)
+        swapped = _same_team(teams[1], away) and _same_team(teams[0], home)
+        if direct or swapped:
+            matches.append(market)
+    return {
+        "available": True,
+        "matched": bool(matches),
+        "source": "SX_BET",
+        "sport_id": snapshot.get("sport_id"),
+        "observed_at": snapshot.get("observed_at"),
+        "active_market_count": len(matches),
+        "market_hashes": [str(row.get("marketHash")) for row in matches[:20] if row.get("marketHash")],
+        "role": "secondary_market_signal_only",
+    }
 
 
 def game_events(sport: str, target_date: date_cls, espn_events: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -396,16 +710,30 @@ def game_events(sport: str, target_date: date_cls, espn_events: list[dict[str, A
     primary = list(espn_events or [])
     verification = _oddswrap_game_events(sport, target_date)
     sources: list[tuple[str, list[dict[str, Any]]]] = [("ODDSWRAP", verification)]
-    if not verification:
+
+    def missing_primary(candidates: list[dict[str, Any]]) -> bool:
+        if not primary:
+            return not candidates
+        return any(not any(_same_event(base, candidate) for candidate in candidates) for base in primary)
+
+    coverage = list(verification)
+    if missing_primary(coverage):
         propline = _propline_game_events(sport, target_date)
         sources.append(("PROPLINE", propline))
-        if not propline:
-            sources.append(("ODDS_API_IO", _odds_io_game_events(sport, target_date)))
+        coverage.extend(propline)
+    if missing_primary(coverage):
+        odds_io = _odds_io_game_events(sport, target_date)
+        sources.append(("ODDS_API_IO", odds_io))
+        coverage.extend(odds_io)
+
     merged = _merge_sources(primary, sources)
-    sx = _sx_secondary_signal(sport)
+    sx_snapshot = _sx_market_snapshot(sport)
     now = datetime.now(timezone.utc)
     for event in merged:
-        event.setdefault("secondary_signals", {})["sx_bet"] = sx
+        # The ESPN primary adapter does not attach sport itself. Set it before
+        # hashing/persisting so the immutable row is queryable by league.
+        event["sport"] = sport
+        event.setdefault("secondary_signals", {})["sx_bet"] = _sx_signal_for_event(sx_snapshot, event)
         snapshot = record_market_snapshot(event, fetched_at=now)
         event["snapshot_evidence"] = (
             {
@@ -414,17 +742,23 @@ def game_events(sport: str, target_date: date_cls, espn_events: list[dict[str, A
                 "fetched_at_utc": snapshot["fetched_at_utc"],
                 "event_time_utc": snapshot["event_time_utc"],
                 "chronology_valid": True,
+                "sport": snapshot.get("sport") or sport,
             }
             if snapshot else
-            {"status": "NOT_RECORDED", "chronology_valid": False}
+            {"status": "NOT_RECORDED", "chronology_valid": False, "sport": sport}
         )
     return merged
 
 
 def _prop_key(sport: str, text: str) -> str | None:
     compact = _norm(text)
+    for structural in ("props", "overunder", "ou"):
+        compact = compact.replace(structural, "")
     for needle, key in _PROP_HINTS.get(sport.upper(), []):
-        if _norm(needle) in compact:
+        candidate = _norm(needle)
+        for structural in ("props", "overunder", "ou"):
+            candidate = candidate.replace(structural, "")
+        if candidate and candidate in compact:
             return key
     return None
 
@@ -567,6 +901,9 @@ def prop_event(sport: str, game: dict[str, Any], requested_markets: list[str]) -
     event = _propline_prop_event(sport, game, requested_markets)
     if event is not None:
         return event
+    event = _odds_io_prop_event(sport, game, requested_markets)
+    if event is not None:
+        return event
     return None
 
 
@@ -581,12 +918,20 @@ def status() -> dict[str, Any]:
     return {
         "name": "PhilthySports FreeOddsGateway",
         "game_odds_order": ["ESPN_KEYLESS", "ODDSWRAP", "PROPLINE", "ODDS_API_IO"],
-        "player_props_order": ["ODDSWRAP", "PROPLINE", "ODDS_API_IO_SCHEMA_GUARDED"],
+        "player_props_order": ["ODDSWRAP", "PROPLINE", "ODDS_API_IO"],
         "outcome_validation": ["ESPN", "MLB_STATSAPI", "NBA", "NHL_WEB_API"],
-        "secondary_signal": "SX_BET",
+        "secondary_signal": "SX_BET_EVENT_MATCHED",
         "snapshot_gate": "fetched_at < event_time",
+        "event_match_tolerance_seconds": 1800,
         "oddswrap": {"available": oddswrap_available, "books": oddswrap_books},
-        "propline": {"configured": bool(os.getenv("PROPLINE_API_KEY", "").strip())},
-        "odds_api_io": {"configured": bool(os.getenv("ODDS_API_IO_KEY", "").strip())},
-        "sx_bet": {"key_required_for_reads": False},
+        "propline": {
+            "configured": bool(os.getenv("PROPLINE_API_KEY", "").strip()),
+            "tier": "credentialled_free_fallback",
+        },
+        "odds_api_io": {
+            "configured": bool(os.getenv("ODDS_API_IO_KEY", "").strip()),
+            "game_markets": ["ML", "Spread", "Totals"],
+            "player_props": True,
+        },
+        "sx_bet": {"key_required_for_reads": False, "event_scoped": True},
     }

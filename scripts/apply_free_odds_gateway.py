@@ -206,6 +206,10 @@ def patch_docker() -> None:
 
 
 def main() -> None:
+    current = APP.read_text(encoding="utf-8")
+    if 'APP_VERSION = "1.6.10"' in current and 'market_snapshot_evidence' in current:
+        print("FreeOddsGateway 1.6.10 is already integrated; legacy mutating patch skipped")
+        return
     patch_app()
     patch_requirements()
     patch_docker()

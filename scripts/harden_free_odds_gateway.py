@@ -923,13 +923,13 @@ def patch_legacy_apply() -> None:
     replace_once(
         LEGACY_APPLY,
         '''def main() -> None:
-    patch_backend()''',
+    patch_app()''',
         '''def main() -> None:
     current = APP.read_text(encoding="utf-8")
     if 'APP_VERSION = "1.6.10"' in current and 'market_snapshot_evidence' in current:
         print("FreeOddsGateway 1.6.10 is already integrated; legacy mutating patch skipped")
         return
-    patch_backend()''',
+    patch_app()''',
         "legacy apply safety guard",
     )
 

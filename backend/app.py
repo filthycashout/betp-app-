@@ -49,7 +49,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.9"
+APP_VERSION = "1.6.10"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2004,6 +2004,10 @@ def _search(q: str = "", sport: str | None = None, date: str | None = None, incl
                         }
                     ),
                     "market": market,
+                    "market_source": oe.get("market_source") if oe else None,
+                    "market_gateway": oe.get("gateway") if oe else {},
+                    "market_snapshot_evidence": oe.get("snapshot_evidence") if oe else {},
+                    "market_secondary_signals": oe.get("secondary_signals") if oe else {},
                     "projected_score": score,
                     "predictions": predictions,
                     "home_win_probability": hp,

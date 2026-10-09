@@ -95,6 +95,10 @@ def capture(root: Path, capture_dir: Path) -> None:
                 "model_artifact_sha256": gate.get("artifact_sha256") or model.get("sha256"),
                 "promotion_gate_passed": gate.get("passed") is True,
                 "market": market,
+                "market_source": game.get("market_source"),
+                "market_gateway": game.get("market_gateway") or {},
+                "market_snapshot_evidence": game.get("market_snapshot_evidence") or {},
+                "market_secondary_signals": game.get("market_secondary_signals") or {},
                 "market_last_update": market.get("last_update"),
                 "moneyline_last_update": market.get("moneyline_last_update"),
                 "spread_last_update": market.get("spread_last_update"),
@@ -223,6 +227,7 @@ def verify(root: Path) -> None:
     chronology_failures = []
     hash_failures = []
     missing_model_identity = []
+    gateway_snapshot_failures = []
     for row in rows:
         if _hash_record(row) != row.get("record_sha256"):
             hash_failures.append(row.get("record_sha256"))
@@ -233,6 +238,12 @@ def verify(root: Path) -> None:
             chronology_failures.append(row.get("record_sha256"))
         if not row.get("model_id") or not row.get("model_artifact_sha256"):
             missing_model_identity.append(row.get("record_sha256"))
+        if row.get("market_source") == "PHILTHY_FREE_ODDS_GATEWAY":
+            snapshot = row.get("market_snapshot_evidence") or {}
+            digest = str(snapshot.get("record_sha256") or "").lower()
+            valid_digest = len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest)
+            if snapshot.get("status") != "RECORDED" or snapshot.get("chronology_valid") is not True or not valid_digest:
+                gateway_snapshot_failures.append(row.get("record_sha256"))
 
     settlement_path = root / "prediction_ledger" / "settled" / "settlements.jsonl"
     settled = []
@@ -260,13 +271,20 @@ def verify(root: Path) -> None:
     report = {
         "schema_version": 1,
         "verified_at": datetime.now(timezone.utc).isoformat(),
-        "passed": not chronology_failures and not hash_failures and not orphaned and not missing_model_identity,
+        "passed": (
+            not chronology_failures
+            and not hash_failures
+            and not orphaned
+            and not missing_model_identity
+            and not gateway_snapshot_failures
+        ),
         "pregame_records": len(rows),
         "settled_records": len(settled),
         "chronology_failures": chronology_failures,
         "record_hash_failures": hash_failures,
         "orphaned_settlements": orphaned,
         "missing_model_identity": missing_model_identity,
+        "gateway_snapshot_failures": gateway_snapshot_failures,
         "sports": by_sport,
         "settlements_sha256": _sha256(settlement_path) if settlement_path.exists() else None,
     }

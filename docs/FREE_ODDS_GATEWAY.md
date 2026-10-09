@@ -63,3 +63,14 @@ The training exporter `backend/training/free_odds_evidence.py` only emits snapsh
 ## Why this avoids the previous workflow failure
 
 The earlier repair workflow embedded a long Python program inside a YAML shell heredoc and failed before validation because escaped newline text leaked into Python source. This integration keeps the transformation in a checked-in Python file (`scripts/apply_free_odds_gateway.py`) and the workflow invokes that file directly. Syntax validation runs before tests and before any commit is pushed.
+
+
+## Hardening completion — 1.6.10
+
+The gateway now normalizes the current odds-api.io v3 bookmaker-map schema for ML, spread, total, and Player Props markets; uses odds-api.io only after ESPN/oddswrap/PropLine coverage remains incomplete; and fails closed on same-team events whose start times differ by more than 30 minutes.
+
+ESPN-primary events are stamped with their sport before immutable hashing. The resulting snapshot hash, gateway provenance, and SX Bet event-scoped secondary signal are propagated into `/v1/search` and the immutable prediction ledger. The prediction-ledger verifier requires a valid chronology-marked snapshot hash for new FreeOddsGateway rows.
+
+SX Bet remains read-only secondary evidence. The gateway matches SX markets to a specific event by teams and start time and never enables order placement.
+
+The old self-mutating GitHub Action has been converted to validation-only. `scripts/apply_free_odds_gateway.py` now refuses to overwrite an already hardened 1.6.10 integration.
