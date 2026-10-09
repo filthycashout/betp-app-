@@ -70,6 +70,7 @@ jobs:
 
       - name: Commit hardened gateway
         run: |
+          git restore .github/workflows/apply-free-odds-gateway.yml
           git add \
             backend/app.py \
             backend/free_odds_gateway.py \
@@ -79,7 +80,6 @@ jobs:
             backend/tests/test_free_odds_gateway.py \
             scripts/apply_free_odds_gateway.py \
             scripts/harden_free_odds_gateway.py \
-            .github/workflows/apply-free-odds-gateway.yml \
             docs/FREE_ODDS_GATEWAY.md
           if git diff --cached --quiet; then
             echo 'FreeOddsGateway hardening already applied.'
