@@ -243,3 +243,40 @@ def test_snapshot_evidence_marks_runtime_fallback_non_durable(monkeypatch):
     row = gateway.game_events("NFL", when.astimezone(gateway.PACIFIC).date(), [espn])[0]
     assert row["snapshot_evidence"]["status"] == "RECORDED_NON_DURABLE"
     assert row["snapshot_evidence"]["durable"] is False
+
+
+
+def test_cached_value_reuses_provider_result():
+    gateway._GATEWAY_CACHE.clear()
+    calls = {"count": 0}
+
+    def factory():
+        calls["count"] += 1
+        return ["value"]
+
+    assert gateway._cached_value(("test-cache",), 60, factory) == ["value"]
+    assert gateway._cached_value(("test-cache",), 60, factory) == ["value"]
+    assert calls["count"] == 1
+
+
+def test_prop_catalog_is_filtered_to_requested_game(monkeypatch):
+    monkeypatch.setattr(gateway, "_oddswrap_prop_catalog", lambda sport, markets: [
+        {
+            "book": "draftkings", "market_key": "player_pass_yds",
+            "away": "Away A", "home": "Home A", "player": "Player A",
+            "line": 249.5, "over": -110, "under": -110, "fetched_at": None,
+        },
+        {
+            "book": "fanduel", "market_key": "player_pass_yds",
+            "away": "Away B", "home": "Home B", "player": "Player B",
+            "line": 249.5, "over": -105, "under": -115, "fetched_at": None,
+        },
+    ])
+    game = {
+        "event_id": "a", "away": "Away A", "home": "Home A",
+        "event_time": (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(),
+    }
+    event = gateway._oddswrap_prop_event("NFL", game, ["player_pass_yds"])
+    assert event is not None
+    assert [book["key"] for book in event["bookmakers"]] == ["draftkings"]
+    assert event["bookmakers"][0]["markets"][0]["outcomes"][0]["description"] == "Player A"
