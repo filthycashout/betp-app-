@@ -25,6 +25,11 @@ from odds_api_net import (
     events_for_date as odds_api_net_events_for_date,
     status as odds_api_net_status,
 )
+from free_odds_gateway import (
+    game_events as free_odds_game_events,
+    prop_event as free_odds_prop_event,
+    status as free_odds_gateway_status,
+)
 
 import requests
 from provider_canary import live_provider_canaries
@@ -44,7 +49,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.8"
+APP_VERSION = "1.6.9"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -1539,75 +1544,58 @@ def _espn_market_events(sport: str, d: date_cls) -> list[dict]:
     return events
 
 def _odds(sport: str, d: date_cls) -> list[dict]:
-    # No single sportsbook provider is allowed to make the Powerhouse board fail.
-    # Credentialled providers are attempted independently, then keyless read-only
-    # sources fill coverage. Every downstream pick still has to pass freshness and
-    # two-sided evidence validation.
-    events: list[dict[str, Any]] = []
+    # PhilthySports FreeOddsGateway order:
+    # ESPN keyless primary -> oddswrap verification -> free fallbacks -> SX signal.
+    try:
+        espn = _timed(
+            f"{sport}.odds.espn_keyless_primary",
+            lambda: _espn_market_events(sport, d),
+        )
+    except Exception:
+        espn = []
+    try:
+        gateway = _timed(
+            f"{sport}.odds.free_gateway",
+            lambda: free_odds_game_events(sport, d, espn),
+        )
+    except Exception:
+        gateway = list(espn)
+
+    # Legacy credentialed providers remain fail-available fallbacks. They are not
+    # allowed to outrank a validated composite FreeOddsGateway event.
+    fallback: list[dict[str, Any]] = []
     key = os.getenv("ODDS_API_KEY", "").strip()
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
-
     if key and rotation:
         try:
             start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
             end = start + timedelta(hours=36)
             params = {
-                "apiKey": key,
-                "regions": "us",
-                "markets": "h2h,spreads,totals",
-                "oddsFormat": "american",
-                "dateFormat": "iso",
+                "apiKey": key, "regions": "us", "markets": "h2h,spreads,totals",
+                "oddsFormat": "american", "dateFormat": "iso",
                 "commenceTimeFrom": start.isoformat().replace("+00:00", "Z"),
                 "commenceTimeTo": end.isoformat().replace("+00:00", "Z"),
             }
-            primary = _timed(
-                f"{sport}.odds.the_odds_api",
+            rows = _timed(
+                f"{sport}.odds.the_odds_api_fallback",
                 lambda: _json(
                     f"https://api.the-odds-api.com/v4/sports/{SPORT_KEYS[sport]}/odds/",
-                    params=params,
-                    timeout=12,
+                    params=params, timeout=12,
                 ),
             )
-            if isinstance(primary, list):
-                events.extend(
-                    {
-                        **row,
-                        "market_source": "THE_ODDS_API_V4",
-                        "data_quality": "PREGAME_CREDENTIALLED",
-                    }
-                    for row in primary
-                    if isinstance(row, dict)
-                )
+            if isinstance(rows, list):
+                fallback.extend({**row, "market_source": "THE_ODDS_API_V4_FALLBACK", "data_quality": "PREGAME_CREDENTIALLED"} for row in rows if isinstance(row, dict))
         except Exception:
-            # Keep the board available through the next validated provider.
             pass
-
     if odds_api_net_configured():
         try:
-            events.extend(
-                _timed(
-                    f"{sport}.odds.odds_api_net",
-                    lambda: odds_api_net_events_for_date(sport, d),
-                )
-            )
+            fallback.extend(_timed(
+                f"{sport}.odds.odds_api_net_fallback",
+                lambda: odds_api_net_events_for_date(sport, d),
+            ))
         except Exception:
             pass
-
-    try:
-        direct = _timed(
-            f"{sport}.odds.public_sportsbook_keyless",
-            lambda: keyless_game_events(sport),
-        )
-    except Exception:
-        direct = []
-    try:
-        espn = _timed(
-            f"{sport}.odds.espn_keyless",
-            lambda: _espn_market_events(sport, d),
-        )
-    except Exception:
-        espn = []
-    return [*events, *direct, *espn]
+    return [*gateway, *fallback]
 
 def _norm(s: str | None) -> str:
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
@@ -1618,18 +1606,20 @@ def _same_team(a: str | None, b: str | None) -> bool:
 
 def _market_source_rank(event: dict[str, Any]) -> int:
     source = str(event.get("market_source") or "").upper()
+    if "PHILTHY_FREE_ODDS_GATEWAY" in source:
+        return 100
+    if "ESPN" in source:
+        return 90
+    if "ODDSWRAP" in source:
+        return 80
+    if "PROPLINE" in source:
+        return 70
+    if "ODDS_API_IO" in source:
+        return 60
     if "THE_ODDS" in source:
         return 40
     if "ODDS_API_NET" in source:
         return 35
-    if "BOVADA" in source:
-        return 25
-    if "DRAFTKINGS" in source:
-        return 20
-    if "FANDUEL" in source:
-        return 20
-    if "ESPN" in source:
-        return 10
     return 0
 
 
@@ -1762,17 +1752,40 @@ def _props_for_game(
     matched_odds_event: dict[str, Any] | None = None,
     requested: str | None = None,
 ) -> dict[str, Any]:
+    markets = _requested_prop_markets(sport, requested)
+    try:
+        gateway_event = _timed(
+            f"{sport}.props.free_gateway",
+            lambda: free_odds_prop_event(sport, game, markets),
+        )
+    except Exception:
+        gateway_event = None
+    if gateway_event is not None:
+        parsed = parse_props(gateway_event, sport, markets)
+        if parsed.get("props"):
+            return {
+                "sport": sport,
+                "event_id": game.get("event_id"),
+                "provider_event_id": gateway_event.get("id"),
+                "provider": str(gateway_event.get("market_source") or "PhilthySports FreeOddsGateway"),
+                "credential_required": False,
+                "configured_markets": PROP_MARKETS[sport],
+                "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
+                "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
+                "requested_markets": markets,
+                **parsed,
+            }
+
     if _primary_prop_provider_ready() and matched_odds_event is not None:
         provider_event_id = matched_odds_event.get("id")
         if provider_event_id:
             try:
                 payload = _prop_payload(sport, str(provider_event_id), requested)
-                payload["provider"] = "The Odds API v4"
+                payload["provider"] = "The Odds API v4 fallback"
                 payload["credential_required"] = True
                 return payload
             except Exception:
                 pass
-
     try:
         return _keyless_prop_payload_for_game(sport, game, requested)
     except ValueError:
@@ -1786,13 +1799,10 @@ def _props_for_game(
             "configured_markets": PROP_MARKETS[sport],
             "alternate_markets": PROP_ALTERNATE_MARKETS[sport],
             "default_live_markets": PROP_DEFAULT_LIVE_MARKETS[sport],
-            "requested_markets": _requested_prop_markets(sport, requested),
+            "requested_markets": markets,
             "props": [],
-            "status": "KEYLESS_SPORTSBOOK_UNAVAILABLE",
-            "message": (
-                "The keyless sportsbook fallback did not return a validated prop "
-                f"board ({type(exc).__name__}). No prop was fabricated."
-            ),
+            "status": "FREE_ODDS_GATEWAY_UNAVAILABLE",
+            "message": f"No validated player-prop board was available ({type(exc).__name__}). No prop was fabricated.",
         }
 
 
@@ -4228,6 +4238,7 @@ def _build_multisport_parlay(
 def external_provider_status():
     rotation = os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
     return {
+        "free_odds_gateway": free_odds_gateway_status(),
         "odds_api_net": odds_api_net_status(),
         "the_odds_api": {
             "configured": bool(os.getenv("ODDS_API_KEY", "").strip()) and rotation,

@@ -7,3 +7,4 @@ cryptography>=43.0
 
 curl_cffi>=0.11,<1
 psycopg[binary]>=3.2,<4
+oddswrap @ https://github.com/sjhouston23/oddswrap/archive/b4b8b65bc4be45d855824ca70e3230f3f4d7ca9f.zip

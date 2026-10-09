@@ -14,7 +14,7 @@ RUN python -m pip install --upgrade pip \
 COPY backend ./backend
 WORKDIR /srv/philthyparleys/backend
 
-RUN python -m py_compile app.py selftest.py evidence/runtime.py odds_api_net.py
+RUN python -m py_compile app.py selftest.py evidence/runtime.py evidence/market_snapshot_store.py odds_api_net.py free_odds_gateway.py outcome_validation.py training/free_odds_evidence.py
 
 EXPOSE 8080
 
