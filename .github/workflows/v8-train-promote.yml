@@ -23,6 +23,8 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-latest
+    env:
+      PHILTHY_SIGNER_URL: ${{ vars.PHILTHY_SIGNER_URL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,6 +87,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${PHILTHY_SIGNER_URL:-}" ]; then
+            echo "Set repository variable PHILTHY_SIGNER_URL before promoting a trained model." >&2
+            exit 2
+          fi
+          case "$PHILTHY_SIGNER_URL" in
+            https://*) ;;
+            *) echo "PHILTHY_SIGNER_URL must use HTTPS." >&2; exit 2 ;;
+          esac
           mkdir -p /tmp/promotions backend/models/promoted assets/models/promoted
           promoted=""
 
@@ -95,7 +105,12 @@ jobs:
             mkdir -p "$out"
 
             set +e
-            python backend/training/strict_promote.py               --sport "$SPORT"               --input "/tmp/evidence/${lower}.csv"               --output-dir "$out"               --source-manifest "/tmp/evidence/${lower}_source_manifest.json"               --features "consensus_de_vig_home_probability,home_spread,consensus_total"
+            python backend/training/strict_promote.py \
+              --sport "$SPORT" \
+              --input "/tmp/evidence/${lower}.csv" \
+              --output-dir "$out" \
+              --source-manifest "/tmp/evidence/${lower}_source_manifest.json" \
+              --features "consensus_de_vig_home_probability,home_spread,consensus_total"
             rc=$?
             set -e
 
@@ -108,7 +123,9 @@ jobs:
             fi
 
             artifact="$out/${lower}_mobile_model.json"
-            python backend/training/sign_promoted.py --artifact "$artifact"
+            python backend/training/sign_promoted.py \
+              --artifact "$artifact" \
+              --signer-url "$PHILTHY_SIGNER_URL"
 
             cp "$artifact" "backend/models/promoted/${lower}.json"
             cp "$artifact" "assets/models/promoted/${lower}.json"
