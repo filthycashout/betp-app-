@@ -28,6 +28,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Repair hardening anchor for current legacy patcher
+        run: python -c "from pathlib import Path; p=Path('scripts/harden_free_odds_gateway.py'); s=p.read_text(); s=s.replace('patch_backend()', 'patch_app()'); p.write_text(s)"
+
       - name: Apply hardening patch
         run: python scripts/harden_free_odds_gateway.py
 
@@ -66,6 +69,7 @@ jobs:
             backend/ops/production_guard.py \
             backend/tests/test_free_odds_gateway.py \
             scripts/apply_free_odds_gateway.py \
+            scripts/harden_free_odds_gateway.py \
             .github/workflows/apply-free-odds-gateway.yml \
             docs/FREE_ODDS_GATEWAY.md
           if git diff --cached --quiet; then
