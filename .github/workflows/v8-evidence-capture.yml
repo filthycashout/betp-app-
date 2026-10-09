@@ -26,6 +26,9 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
+    env:
+      PHILTHY_EVIDENCE_BACKEND_URL: ${{ vars.PHILTHY_EVIDENCE_BACKEND_URL }}
+      PHILTHY_PRODUCTION_BACKEND_URL: ${{ vars.PHILTHY_PRODUCTION_BACKEND_URL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,19 +38,34 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve evidence backend fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_URL="${PHILTHY_EVIDENCE_BACKEND_URL:-${PHILTHY_PRODUCTION_BACKEND_URL:-}}"
+          if [ -z "$BACKEND_URL" ]; then
+            echo "Set repository variable PHILTHY_EVIDENCE_BACKEND_URL or PHILTHY_PRODUCTION_BACKEND_URL." >&2
+            exit 2
+          fi
+          case "$BACKEND_URL" in
+            https://*) ;;
+            *) echo "Evidence backend must be an HTTPS URL." >&2; exit 2 ;;
+          esac
+          echo "BACKEND_URL=${BACKEND_URL%/}" >> "$GITHUB_ENV"
+
       - name: Preserve evidence tools from main
         run: |
           cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
           cp backend/training/prediction_ledger.py /tmp/prediction_ledger.py
           cp backend/training/historical_backfill.py /tmp/historical_backfill.py
 
-      - name: Capture strict pregame evidence from live Powerhouse
+      - name: Capture strict pregame evidence from configured backend
         run: |
           set -euo pipefail
           rm -rf /tmp/pregame_capture
           mkdir -p /tmp/pregame_capture
           python /tmp/evidence_pipeline.py capture \
-            --base-url https://philthysports-api-v9.onrender.com \
+            --base-url "$BACKEND_URL" \
             --days 4 \
             --output-dir /tmp/pregame_capture
 
@@ -95,7 +113,7 @@ jobs:
           cat > evidence/run_metadata/latest.json <<EOF
           {
             "captured_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "source_backend": "https://philthysports-api-v9.onrender.com",
+            "source_backend": "${BACKEND_URL}",
             "workflow_source_commit": "${GITHUB_SHA}",
             "branch": "evidence-snapshots",
             "historical_backfill_merge": true,
