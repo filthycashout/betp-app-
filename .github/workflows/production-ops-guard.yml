@@ -24,6 +24,8 @@ concurrency:
 jobs:
   guard:
     runs-on: ubuntu-latest
+    env:
+      PHILTHY_PRODUCTION_BACKEND_URL: ${{ vars.PHILTHY_PRODUCTION_BACKEND_URL }}
     steps:
       - name: Check out production source
         uses: actions/checkout@v4
@@ -40,6 +42,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Resolve production backend fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_URL="${PHILTHY_PRODUCTION_BACKEND_URL:-}"
+          if [ -z "$BACKEND_URL" ]; then
+            echo "Set repository variable PHILTHY_PRODUCTION_BACKEND_URL to the active HTTPS backend." >&2
+            exit 2
+          fi
+          case "$BACKEND_URL" in
+            https://*) ;;
+            *) echo "Production backend must be an HTTPS URL." >&2; exit 2 ;;
+          esac
+          echo "BACKEND_URL=${BACKEND_URL%/}" >> "$GITHUB_ENV"
 
       - name: Verify evidence capture freshness
         id: evidence
@@ -66,12 +83,12 @@ jobs:
           print(json.dumps({"captured_at_utc":data["captured_at_utc"],"age_seconds":age},indent=2))
           PY
 
-      - name: Verify production backend
+      - name: Verify configured production backend
         id: backend
         continue-on-error: true
         run: |
           python backend/ops/production_guard.py \
-            --base-url https://philthysports-api-v9.onrender.com \
+            --base-url "$BACKEND_URL" \
             --output /tmp/production-guard.json
 
       - name: Record current deployment as last known good
@@ -90,7 +107,7 @@ jobs:
             "schema_version":1,
             "verified_at":datetime.now(timezone.utc).isoformat(),
             "main_commit":os.environ["GITHUB_SHA"],
-            "backend":"https://philthysports-api-v9.onrender.com",
+            "backend":os.environ["BACKEND_URL"],
             "api_version":report.get("api_version"),
             "checks":report.get("checks"),
           }
