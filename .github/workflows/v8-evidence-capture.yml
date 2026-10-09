@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
     paths:
+      - "backend/app.py"
+      - "backend/free_odds_gateway.py"
+      - "backend/evidence/market_snapshot_store.py"
+      - "backend/training/free_odds_evidence.py"
       - "backend/training/evidence_pipeline.py"
       - "backend/training/prediction_ledger.py"
       - "backend/training/historical_backfill.py"
@@ -95,6 +99,7 @@ jobs:
             "workflow_source_commit": "${GITHUB_SHA}",
             "branch": "evidence-snapshots",
             "historical_backfill_merge": true,
+            "free_odds_gateway_snapshot_provenance": true,
             "secrets_embedded": false
           }
           EOF
