@@ -131,7 +131,7 @@ def _ensure_database() -> bool:
                         cur.execute(ddl)
             _DB_READY = True
             _DB_ERROR_TYPE = None
-            _log_storage_state("render_postgres")
+            _log_storage_state("postgres")
             return True
         except Exception as exc:
             _mark_db_failed(exc)
@@ -140,7 +140,7 @@ def _ensure_database() -> bool:
 def storage_status() -> dict[str, Any]:
     durable = _ensure_database()
     return {
-        "mode": "render_postgres" if durable else "server_runtime_fallback",
+        "mode": "postgres" if durable else "server_runtime_fallback",
         "durable": durable,
         "database_configured": bool(_database_url()),
         "database_error_type": _DB_ERROR_TYPE,
@@ -523,7 +523,7 @@ def roots_for_date(date: str):
                 "date": date,
                 "roots": roots,
                 "count": len(roots),
-                "storage_root": "render_postgres",
+                "storage_root": "postgres",
                 "durable_storage": True,
             }
         except Exception as exc:

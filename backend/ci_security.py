@@ -28,7 +28,7 @@ P256_ORDER = int(
 )
 ANDROID_KEY_CONTEXT = b"philthysports-android-release-v1"
 ANDROID_PUBLIC_SPKI_SHA256_PIN = "0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
-DEFAULT_ANDROID_SIGNING_FALLBACK = "https://philthysports-powerhouse-v8.onrender.com"
+DEFAULT_ANDROID_SIGNING_FALLBACK = ""
 _SIGNING_BEARER_TOKEN: ContextVar[str | None] = ContextVar(
     "philthy_signing_bearer_token", default=None
 )
@@ -136,7 +136,10 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
     if not fallback_base:
         raise RuntimeError("Android signing fallback URL is not configured")
 
-    current_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
+    current_host = (
+        os.getenv("PHILTHY_PUBLIC_HOST", "").strip()
+        or os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    ).lower()
     fallback_host = fallback_base.split("://", 1)[-1].split("/", 1)[0].lower()
     if current_host and current_host == fallback_host:
         raise RuntimeError("Android signing seed unavailable on fallback signer")
