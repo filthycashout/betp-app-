@@ -160,3 +160,86 @@ def test_gateway_sets_sport_before_snapshot(monkeypatch):
     assert rows[0]["sport"] == "NFL"
     assert seen["sport"] == "NFL"
     assert rows[0]["snapshot_evidence"]["sport"] == "NFL"
+
+
+
+def _add_market(event, key):
+    row = {**event, "bookmakers": [{**event["bookmakers"][0], "markets": list(event["bookmakers"][0]["markets"])}]}
+    if key == "spreads":
+        row["bookmakers"][0]["markets"].append({
+            "key": "spreads",
+            "outcomes": [
+                {"name": row["home_team"], "point": -2.5, "price": -110},
+                {"name": row["away_team"], "point": 2.5, "price": -110},
+            ],
+        })
+    elif key == "totals":
+        row["bookmakers"][0]["markets"].append({
+            "key": "totals",
+            "outcomes": [
+                {"name": "Over", "point": 44.5, "price": -110},
+                {"name": "Under", "point": 44.5, "price": -110},
+            ],
+        })
+    return row
+
+
+def test_game_fallback_fills_missing_market_coverage(monkeypatch):
+    when = datetime.now(timezone.utc) + timedelta(hours=12)
+    espn = _event("ESPN_SCOREBOARD_ODDS", "espn", when)
+    wrap = _event("ODDSWRAP", "draftkings", when)
+    fallback = _add_market(_add_market(_event("PROPLINE", "draftkings", when), "spreads"), "totals")
+    calls = []
+    monkeypatch.setattr(gateway, "_oddswrap_game_events", lambda sport, day: [wrap])
+    monkeypatch.setattr(gateway, "_propline_game_events", lambda sport, day: calls.append("propline") or [fallback])
+    monkeypatch.setattr(gateway, "_odds_io_game_events", lambda sport, day: calls.append("odds_io") or [])
+    monkeypatch.setattr(gateway, "_sx_market_snapshot", lambda sport: {"available": False, "markets": []})
+    monkeypatch.setattr(gateway, "record_market_snapshot", lambda event, fetched_at=None: None)
+    monkeypatch.setattr(gateway, "market_snapshot_storage_status", lambda: {"mode": "server_runtime_fallback", "durable": False, "database_configured": False})
+    rows = gateway.game_events("NFL", when.astimezone(gateway.PACIFIC).date(), [espn])
+    assert calls == ["propline"]
+    draftkings = next(book for book in rows[0]["bookmakers"] if book["key"] == "draftkings")
+    assert {market["key"] for market in draftkings["markets"]} == {"h2h", "spreads", "totals"}
+
+
+def test_prop_fallback_merges_missing_requested_markets(monkeypatch):
+    when = datetime.now(timezone.utc) + timedelta(hours=12)
+    game = {"event_id": "1", "home": "Home", "away": "Away", "event_time": when.isoformat()}
+    def prop_event(source, book, market):
+        return {
+            "id": "1", "home_team": "Home", "away_team": "Away", "commence_time": when.isoformat(),
+            "market_source": source,
+            "bookmakers": [{"key": book, "markets": [{"key": market, "outcomes": [
+                {"name": "Over", "description": "Player", "point": 1.5, "price": -110},
+                {"name": "Under", "description": "Player", "point": 1.5, "price": -110},
+            ]}]}],
+        }
+    monkeypatch.setattr(gateway, "_oddswrap_prop_event", lambda sport, game, markets: prop_event("ODDSWRAP_PROPS", "draftkings", "player_pass_yds"))
+    monkeypatch.setattr(gateway, "_propline_prop_event", lambda sport, game, markets: prop_event("PROPLINE_PROPS", "fanduel", "player_rush_yds"))
+    monkeypatch.setattr(gateway, "_odds_io_prop_event", lambda sport, game, markets: None)
+    row = gateway.prop_event("NFL", game, ["player_pass_yds", "player_rush_yds"])
+    assert row is not None
+    assert row["market_source"] == "PHILTHY_FREE_ODDS_GATEWAY_PROPS"
+    assert row["gateway"]["complete"] is True
+    assert row["gateway"]["sources_seen"] == ["ODDSWRAP", "PROPLINE"]
+
+
+def test_snapshot_evidence_marks_runtime_fallback_non_durable(monkeypatch):
+    when = datetime.now(timezone.utc) + timedelta(hours=12)
+    espn = _event("ESPN_SCOREBOARD_ODDS", "espn", when)
+    monkeypatch.setattr(gateway, "_oddswrap_game_events", lambda sport, day: [])
+    monkeypatch.setattr(gateway, "_propline_game_events", lambda sport, day: [])
+    monkeypatch.setattr(gateway, "_odds_io_game_events", lambda sport, day: [])
+    monkeypatch.setattr(gateway, "_sx_market_snapshot", lambda sport: {"available": False, "markets": []})
+    monkeypatch.setattr(gateway, "record_market_snapshot", lambda event, fetched_at=None: {
+        "record_sha256": "c" * 64,
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+        "event_time_utc": when.isoformat(),
+        "sport": "NFL",
+    })
+    monkeypatch.setattr(gateway, "market_snapshot_storage_status", lambda: {
+        "mode": "server_runtime_fallback", "durable": False, "database_configured": False,
+    })
+    row = gateway.game_events("NFL", when.astimezone(gateway.PACIFIC).date(), [espn])[0]
+    assert row["snapshot_evidence"]["status"] == "RECORDED_NON_DURABLE"
+    assert row["snapshot_evidence"]["durable"] is False

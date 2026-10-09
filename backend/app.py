@@ -49,7 +49,7 @@ from model_runtime import (
     promotion_gate as trained_promotion_gate,
 )
 
-APP_VERSION = "1.6.10"
+APP_VERSION = "1.6.11"
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -2657,12 +2657,8 @@ def legacy_odds(sport: str, date: str | None = None):
     return {
         "sport": s,
         "date": d.isoformat(),
-        "provider": (
-            "The Odds API v4"
-            if os.getenv("ODDS_API_KEY", "").strip()
-            and os.getenv("CREDENTIAL_ROTATION_CONFIRMED", "").strip().lower() == "true"
-            else "ESPN scoreboard odds"
-        ),
+        "provider": "PhilthySports FreeOddsGateway",
+        "provider_status": free_odds_gateway_status(),
         "events": events,
     }
 

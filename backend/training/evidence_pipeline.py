@@ -112,6 +112,10 @@ def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
             "probability_source": game.get("probability_source"),
             "model_status": game.get("model_status"),
             "schedule_source": game.get("schedule_source"),
+            "market_source": game.get("market_source"),
+            "market_snapshot_sha256": (game.get("market_snapshot_evidence") or {}).get("record_sha256"),
+            "market_snapshot_chronology_valid": (game.get("market_snapshot_evidence") or {}).get("chronology_valid"),
+            "market_snapshot_durable": (game.get("market_snapshot_evidence") or {}).get("durable"),
             "injury_home_count": (
                 ((game.get("injury_report") or {}).get("home") or {}).get("count")
             ),
@@ -146,6 +150,7 @@ def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
             "rows": len(rows),
         },
         "chronology_rule": "as_of < event_time",
+        "gateway_snapshot_rule": "FreeOddsGateway rows require durable chronology-valid snapshot SHA-256 before canonical training inclusion",
         "secrets_embedded": False,
     }
     manifest_path = output_dir / f"manifest_{stamp}.json"
@@ -341,6 +346,15 @@ def build(root: Path) -> None:
             continue
         if not 0.0 < market_probability < 1.0:
             continue
+        if row.get("market_source") == "PHILTHY_FREE_ODDS_GATEWAY":
+            digest = str(row.get("market_snapshot_sha256") or "").lower()
+            digest_valid = len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest)
+            if (
+                not digest_valid
+                or row.get("market_snapshot_chronology_valid") is not True
+                or row.get("market_snapshot_durable") is not True
+            ):
+                continue
         key = (row["sport"], row["event_id"])
         existing = latest.get(key)
         if existing is None or row["as_of"] > existing["as_of"]:
@@ -361,6 +375,10 @@ def build(root: Path) -> None:
         "consensus_de_vig_home_probability",
         "home_spread",
         "consensus_total",
+        "market_source",
+        "market_snapshot_sha256",
+        "market_snapshot_chronology_valid",
+        "market_snapshot_durable",
     ]
     source_files = [
         {
@@ -399,6 +417,10 @@ def build(root: Path) -> None:
                 "consensus_de_vig_home_probability": row.get("consensus_de_vig_home_probability"),
                 "home_spread": row.get("home_spread"),
                 "consensus_total": row.get("consensus_total"),
+                "market_source": row.get("market_source"),
+                "market_snapshot_sha256": row.get("market_snapshot_sha256"),
+                "market_snapshot_chronology_valid": row.get("market_snapshot_chronology_valid"),
+                "market_snapshot_durable": row.get("market_snapshot_durable"),
             })
         merged.sort(key=lambda x: (x["event_time"], x["event_id"]))
 
@@ -409,8 +431,14 @@ def build(root: Path) -> None:
             writer.writerows(merged)
 
         schema = {
-            "schema_version": 1,
+            "schema_version": 2,
             "columns": columns,
+            "provenance_fields": [
+                "market_source",
+                "market_snapshot_sha256",
+                "market_snapshot_chronology_valid",
+                "market_snapshot_durable",
+            ],
             "runtime_features": [
                 "consensus_de_vig_home_probability",
                 "home_spread",
@@ -449,7 +477,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     capture_p = sub.add_parser("capture")
-    capture_p.add_argument("--base-url", default="https://philthysports-powerhouse-v8.onrender.com")
+    capture_p.add_argument("--base-url", required=True)
     capture_p.add_argument("--output-dir", required=True, type=Path)
     capture_p.add_argument("--days", type=int, default=4)
 

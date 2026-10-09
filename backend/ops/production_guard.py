@@ -49,6 +49,7 @@ def main() -> None:
         storage = evidence.get("storage_status") or {}
 
         gateway = providers.get("free_odds_gateway") or {}
+        snapshot_storage = gateway.get("snapshot_storage") or {}
         checks = {
             "health_ok": health.get("status") == "ok",
             "service_identity": health.get("service") == "philthysports-runtime",
@@ -59,11 +60,14 @@ def main() -> None:
             "free_odds_gateway_identity": gateway.get("name") == "PhilthySports FreeOddsGateway",
             "free_odds_gateway_oddswrap": (gateway.get("oddswrap") or {}).get("available") is True,
             "free_odds_gateway_snapshot_gate": gateway.get("snapshot_gate") == "fetched_at < event_time",
+            "free_odds_gateway_snapshot_database_configured": snapshot_storage.get("database_configured") is True,
+            "free_odds_gateway_snapshot_storage_durable": snapshot_storage.get("durable") is True,
+            "free_odds_gateway_snapshot_storage_postgres": snapshot_storage.get("mode") in {"postgres", "render_postgres"},
             "free_odds_gateway_props_chain": gateway.get("player_props_order") == ["ODDSWRAP", "PROPLINE", "ODDS_API_IO"],
             "manual_review_only": status.get("execution_mode") == "MANUAL_REVIEW_ONLY",
             "evidence_database_configured": storage.get("database_configured") is True,
             "evidence_durable": evidence.get("durable_storage") is True and storage.get("durable") is True,
-            "evidence_render_postgres": storage.get("mode") == "render_postgres",
+            "evidence_postgres": storage.get("mode") in {"postgres", "render_postgres"},
             "evidence_database_error_clear": storage.get("database_error_type") in (None, ""),
         }
         report.update(
@@ -72,6 +76,7 @@ def main() -> None:
             credential_gate=status.get("credential_gate"),
             props_status=props.get("status"),
             free_odds_gateway=gateway,
+            market_snapshot_storage=snapshot_storage,
             evidence_storage={
                 "storage_root": evidence.get("storage_root"),
                 "durable_storage": evidence.get("durable_storage"),

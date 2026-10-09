@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from evidence.market_snapshot_store import record_market_snapshot
+from evidence.market_snapshot_store import record_market_snapshot, storage_status as market_snapshot_storage_status
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 ODDSWRAP_BOOKS = ["draftkings", "fanduel", "betmgm", "caesars", "betrivers", "bovada"]
@@ -168,6 +168,48 @@ def _items(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+_REQUIRED_GAME_MARKETS = {"h2h", "spreads", "totals"}
+
+
+def _market_fingerprint(market: dict[str, Any]) -> tuple[Any, ...]:
+    outcomes = []
+    for outcome in market.get("outcomes") or []:
+        if not isinstance(outcome, dict):
+            continue
+        outcomes.append((
+            _norm(outcome.get("name")),
+            outcome.get("point"),
+            outcome.get("description"),
+        ))
+    return (str(market.get("key") or "").lower(), tuple(outcomes))
+
+
+def _event_market_keys(event: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for book in event.get("bookmakers") or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets") or []:
+            if isinstance(market, dict) and market.get("key"):
+                keys.add(str(market["key"]).lower())
+    return keys
+
+
+def _primary_market_coverage_complete(
+    primary: list[dict[str, Any]], candidates: list[dict[str, Any]]
+) -> bool:
+    if not primary:
+        return bool(candidates)
+    for base in primary:
+        covered: set[str] = set()
+        for candidate in candidates:
+            if _same_event(base, candidate):
+                covered.update(_event_market_keys(candidate))
+        if not _REQUIRED_GAME_MARKETS.issubset(covered):
+            return False
+    return True
+
+
 def _align_bookmaker(book: dict[str, Any], source: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     out = {**book, "markets": []}
     src_home = source.get("home_team") or source.get("home")
@@ -204,8 +246,8 @@ def _merge_sources(primary: list[dict[str, Any]], sources: list[tuple[str, list[
                 provenance[id(target)] = {label}
                 continue
             provenance.setdefault(id(target), set()).add(label)
-            existing_keys = {
-                str(book.get("key") or book.get("title") or "").lower()
+            book_index = {
+                str(book.get("key") or book.get("title") or "").lower(): book
                 for book in target.get("bookmakers") or []
                 if isinstance(book, dict)
             }
@@ -214,10 +256,25 @@ def _merge_sources(primary: list[dict[str, Any]], sources: list[tuple[str, list[
                     continue
                 aligned = _align_bookmaker(book, event, target)
                 key = str(aligned.get("key") or aligned.get("title") or "").lower()
-                if not key or key in existing_keys:
+                if not key:
                     continue
-                target.setdefault("bookmakers", []).append(aligned)
-                existing_keys.add(key)
+                existing = book_index.get(key)
+                if existing is None:
+                    target.setdefault("bookmakers", []).append(aligned)
+                    book_index[key] = aligned
+                    continue
+                fingerprints = {
+                    _market_fingerprint(market)
+                    for market in existing.get("markets") or []
+                    if isinstance(market, dict)
+                }
+                for market in aligned.get("markets") or []:
+                    if not isinstance(market, dict):
+                        continue
+                    fingerprint = _market_fingerprint(market)
+                    if fingerprint not in fingerprints:
+                        existing.setdefault("markets", []).append(market)
+                        fingerprints.add(fingerprint)
 
     for row in merged:
         seen = sorted(provenance.get(id(row), set()))
@@ -711,17 +768,12 @@ def game_events(sport: str, target_date: date_cls, espn_events: list[dict[str, A
     verification = _oddswrap_game_events(sport, target_date)
     sources: list[tuple[str, list[dict[str, Any]]]] = [("ODDSWRAP", verification)]
 
-    def missing_primary(candidates: list[dict[str, Any]]) -> bool:
-        if not primary:
-            return not candidates
-        return any(not any(_same_event(base, candidate) for candidate in candidates) for base in primary)
-
     coverage = list(verification)
-    if missing_primary(coverage):
+    if not _primary_market_coverage_complete(primary, coverage):
         propline = _propline_game_events(sport, target_date)
         sources.append(("PROPLINE", propline))
         coverage.extend(propline)
-    if missing_primary(coverage):
+    if not _primary_market_coverage_complete(primary, coverage):
         odds_io = _odds_io_game_events(sport, target_date)
         sources.append(("ODDS_API_IO", odds_io))
         coverage.extend(odds_io)
@@ -735,17 +787,26 @@ def game_events(sport: str, target_date: date_cls, espn_events: list[dict[str, A
         event["sport"] = sport
         event.setdefault("secondary_signals", {})["sx_bet"] = _sx_signal_for_event(sx_snapshot, event)
         snapshot = record_market_snapshot(event, fetched_at=now)
+        storage = market_snapshot_storage_status()
         event["snapshot_evidence"] = (
             {
-                "status": "RECORDED",
+                "status": "RECORDED" if storage.get("durable") is True else "RECORDED_NON_DURABLE",
                 "record_sha256": snapshot["record_sha256"],
                 "fetched_at_utc": snapshot["fetched_at_utc"],
                 "event_time_utc": snapshot["event_time_utc"],
                 "chronology_valid": True,
                 "sport": snapshot.get("sport") or sport,
+                "durable": storage.get("durable") is True,
+                "storage_mode": storage.get("mode"),
             }
             if snapshot else
-            {"status": "NOT_RECORDED", "chronology_valid": False, "sport": sport}
+            {
+                "status": "NOT_RECORDED",
+                "chronology_valid": False,
+                "sport": sport,
+                "durable": False,
+                "storage_mode": storage.get("mode"),
+            }
         )
     return merged
 
@@ -894,17 +955,92 @@ def _propline_prop_event(sport: str, game: dict[str, Any], requested_markets: li
     return payload
 
 
+def _clone_prop_event(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **event,
+        "bookmakers": [
+            {
+                **book,
+                "markets": [dict(market) for market in book.get("markets") or [] if isinstance(market, dict)],
+            }
+            for book in event.get("bookmakers") or []
+            if isinstance(book, dict)
+        ],
+    }
+
+
+def _merge_prop_event(base: dict[str, Any] | None, addition: dict[str, Any]) -> dict[str, Any]:
+    if base is None:
+        return _clone_prop_event(addition)
+    book_index = {
+        str(book.get("key") or book.get("title") or "").lower(): book
+        for book in base.get("bookmakers") or []
+        if isinstance(book, dict)
+    }
+    for book in addition.get("bookmakers") or []:
+        if not isinstance(book, dict):
+            continue
+        key = str(book.get("key") or book.get("title") or "").lower()
+        if not key:
+            continue
+        existing = book_index.get(key)
+        if existing is None:
+            cloned = {**book, "markets": [dict(m) for m in book.get("markets") or [] if isinstance(m, dict)]}
+            base.setdefault("bookmakers", []).append(cloned)
+            book_index[key] = cloned
+            continue
+        fingerprints = {
+            _market_fingerprint(market)
+            for market in existing.get("markets") or []
+            if isinstance(market, dict)
+        }
+        for market in book.get("markets") or []:
+            if not isinstance(market, dict):
+                continue
+            fingerprint = _market_fingerprint(market)
+            if fingerprint not in fingerprints:
+                existing.setdefault("markets", []).append(dict(market))
+                fingerprints.add(fingerprint)
+    return base
+
+
 def prop_event(sport: str, game: dict[str, Any], requested_markets: list[str]) -> dict[str, Any] | None:
-    event = _oddswrap_prop_event(sport, game, requested_markets)
-    if event is not None:
-        return event
-    event = _propline_prop_event(sport, game, requested_markets)
-    if event is not None:
-        return event
-    event = _odds_io_prop_event(sport, game, requested_markets)
-    if event is not None:
-        return event
-    return None
+    requested = list(dict.fromkeys(requested_markets))
+    composite: dict[str, Any] | None = None
+    sources_seen: list[str] = []
+
+    oddswrap = _oddswrap_prop_event(sport, game, requested)
+    if oddswrap is not None:
+        composite = _merge_prop_event(composite, oddswrap)
+        sources_seen.append("ODDSWRAP")
+
+    covered = _event_market_keys(composite or {})
+    missing = [market for market in requested if market not in covered]
+    if missing:
+        propline = _propline_prop_event(sport, game, missing)
+        if propline is not None:
+            composite = _merge_prop_event(composite, propline)
+            sources_seen.append("PROPLINE")
+
+    covered = _event_market_keys(composite or {})
+    missing = [market for market in requested if market not in covered]
+    if missing:
+        odds_io = _odds_io_prop_event(sport, game, missing)
+        if odds_io is not None:
+            composite = _merge_prop_event(composite, odds_io)
+            sources_seen.append("ODDS_API_IO")
+
+    if composite is None:
+        return None
+    covered = _event_market_keys(composite)
+    composite["market_source"] = "PHILTHY_FREE_ODDS_GATEWAY_PROPS"
+    composite["gateway"] = {
+        "sources_seen": sources_seen,
+        "requested_markets": requested,
+        "covered_markets": sorted(covered.intersection(requested)),
+        "complete": all(market in covered for market in requested),
+    }
+    return composite
 
 
 def status() -> dict[str, Any]:
@@ -922,6 +1058,7 @@ def status() -> dict[str, Any]:
         "outcome_validation": ["ESPN", "MLB_STATSAPI", "NBA", "NHL_WEB_API"],
         "secondary_signal": "SX_BET_EVENT_MATCHED",
         "snapshot_gate": "fetched_at < event_time",
+        "snapshot_storage": market_snapshot_storage_status(),
         "event_match_tolerance_seconds": 1800,
         "oddswrap": {"available": oddswrap_available, "books": oddswrap_books},
         "propline": {

@@ -18,6 +18,7 @@ except Exception:  # optional until runtime requirements are installed
 _LOCK = threading.RLock()
 _DB_LOCK = threading.RLock()
 _DB_READY = False
+_DB_ERROR_TYPE: str | None = None
 _DEFAULT_ROOT = Path(__file__).resolve().parent / "runtime_market_snapshots"
 SNAPSHOT_ROOT = Path(os.environ.get("PHILTHY_MARKET_SNAPSHOT_DIR", str(_DEFAULT_ROOT)))
 
@@ -50,12 +51,22 @@ def _canonical_bytes(value: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _mark_db_failed(exc: Exception) -> None:
+    global _DB_READY, _DB_ERROR_TYPE
+    _DB_READY = False
+    _DB_ERROR_TYPE = type(exc).__name__
+
+
 def _ensure_database() -> bool:
-    global _DB_READY
+    global _DB_READY, _DB_ERROR_TYPE
     if _DB_READY:
         return True
     url = _database_url()
-    if not url or psycopg is None or Jsonb is None:
+    if not url:
+        _DB_ERROR_TYPE = "DATABASE_URL_MISSING"
+        return False
+    if psycopg is None or Jsonb is None:
+        _DB_ERROR_TYPE = "PSYCOPG_UNAVAILABLE"
         return False
     with _DB_LOCK:
         if _DB_READY:
@@ -82,9 +93,21 @@ def _ensure_database() -> bool:
                         "ON philthy_market_snapshots (sport, event_date, fetched_at DESC)"
                     )
             _DB_READY = True
+            _DB_ERROR_TYPE = None
             return True
-        except Exception:
+        except Exception as exc:
+            _mark_db_failed(exc)
             return False
+
+
+def storage_status() -> dict[str, Any]:
+    durable = _ensure_database()
+    return {
+        "mode": "postgres" if durable else "server_runtime_fallback",
+        "durable": durable,
+        "database_configured": bool(_database_url()),
+        "database_error_type": _DB_ERROR_TYPE,
+    }
 
 
 def record_market_snapshot(
@@ -150,8 +173,8 @@ def record_market_snapshot(
                         ),
                     )
             return record
-        except Exception:
-            pass
+        except Exception as exc:
+            _mark_db_failed(exc)
 
     path = SNAPSHOT_ROOT / event_date / "markets.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)

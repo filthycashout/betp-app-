@@ -74,3 +74,12 @@ ESPN-primary events are stamped with their sport before immutable hashing. The r
 SX Bet remains read-only secondary evidence. The gateway matches SX markets to a specific event by teams and start time and never enables order placement.
 
 The old self-mutating GitHub Action has been converted to validation-only. `scripts/apply_free_odds_gateway.py` now refuses to overwrite an already hardened 1.6.10 integration.
+
+
+## Final evidence hardening — 1.6.11
+
+Game fallback is now market-coverage-aware rather than merely event-aware: missing h2h, spread, or total verification can be filled by later providers, including within an already-present sportsbook. Player-prop fallbacks merge missing requested markets across oddswrap, PropLine, and odds-api.io instead of stopping at the first partial provider.
+
+FreeOddsGateway snapshots report whether their backing storage is durable. A local runtime JSONL write is explicitly marked `RECORDED_NON_DURABLE`; strict prediction-ledger and canonical-training evidence require a durable, chronology-valid SHA-256 snapshot for FreeOddsGateway rows.
+
+Canonical training rows now retain the gateway market source and snapshot provenance. The active production/evidence workflows no longer hard-code a retired Render host; repository variables select the active HTTPS backend and fail closed when no current backend has been configured. Model and Android signing fallbacks likewise no longer silently target a retired host.
