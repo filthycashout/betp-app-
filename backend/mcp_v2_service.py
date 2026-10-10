@@ -9,8 +9,8 @@ import requests
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-SERVICE_VERSION = "1.1.1"
-BACKEND_BASE = os.getenv("PHILTHY_BACKEND_BASE_URL", "https://philthysports-api-v9.onrender.com").rstrip("/")
+SERVICE_VERSION = "1.1.2"
+BACKEND_BASE = os.getenv("PHILTHY_BACKEND_BASE_URL", "https://philthyparleys.floot.app/_api").rstrip("/")
 PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "philthysports-mcp-v1.onrender.com").strip()
 RETRYABLE = {429, 502, 503, 504}
 SESSION = requests.Session()
@@ -34,6 +34,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _unwrap(payload: Any) -> Any:
+    """Normalize Floot's SuperJSON transport envelope without changing canonical JSON."""
+    if (
+        isinstance(payload, dict)
+        and "json" in payload
+        and set(payload).issubset({"json", "meta"})
+    ):
+        return payload["json"]
+    return payload
+
+
 def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     url = f"{BACKEND_BASE}{path}"
     last_status: int | None = None
@@ -45,10 +56,10 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
             if response.status_code == 200:
                 return {
                     "status": "OK",
-                    "source": url,
+                    "source": response.url,
                     "retrieved_at": _now(),
                     "mock_data_used": False,
-                    "payload": response.json(),
+                    "payload": _unwrap(response.json()),
                 }
             last_error = f"HTTP_{response.status_code}"
             if response.status_code not in RETRYABLE:
