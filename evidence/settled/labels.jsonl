@@ -107,3 +107,5 @@
 {"event_date": "2026-10-09", "event_id": "2026020067", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T17:14:27.235942+00:00", "sport": "NHL", "target_home_win": 1}
 {"event_date": "2026-10-09", "event_id": "2026020068", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T17:14:27.235947+00:00", "sport": "NHL", "target_home_win": 1}
 {"event_date": "2026-10-09", "event_id": "2026020069", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T17:14:27.235951+00:00", "sport": "NHL", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "2026020070", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T22:32:45.889901+00:00", "sport": "NHL", "target_home_win": 1}
+{"event_date": "2026-10-10", "event_id": "2026020071", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T22:32:45.889913+00:00", "sport": "NHL", "target_home_win": 1}
