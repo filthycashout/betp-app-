@@ -14,46 +14,46 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: philthysports-live-provider-proof
+  cancel-in-progress: true
+
+env:
+  PHILTHY_PRODUCTION_BACKEND_URL: https://philthyparleys.floot.app/_api
+
 jobs:
   live-provider-proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for deployed redacted provider canary
+      - name: Wait for Floot redacted provider canary
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p provider-proof
-          bases=(
-            'https://philthysports-api-v9.onrender.com'
-            'https://philthysports-powerhouse-v8.onrender.com'
-          )
-          selected=''
-          for attempt in $(seq 1 40); do
-            for base in "${bases[@]}"; do
-              if curl -fsS --max-time 20 "$base/health" -o provider-proof/health.json \
-                && curl -fsS --max-time 30 "$base/v1/providers/canary" -o provider-proof/provider-canary.json; then
-                selected="$base"
-                break 2
-              fi
-            done
+          base="${PHILTHY_PRODUCTION_BACKEND_URL%/}"
+          ready=''
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 20 "$base/health" -o provider-proof/health.json \
+              && curl -fsS --max-time 30 "$base/v1/providers/canary" -o provider-proof/provider-canary.json; then
+              ready='yes'
+              break
+            fi
             sleep 5
           done
-          if [ -z "$selected" ]; then
-            printf '%s\n' '{"status":"BLOCKED","reason":"deployed provider canary endpoint did not become reachable"}' > provider-proof/report.json
-            exit 0
+          printf '%s\n' "$base" > provider-proof/base-url.txt
+          if [ -z "$ready" ]; then
+            printf '%s\n' '{"status":"BLOCKED","reason":"Floot provider canary endpoint did not become reachable"}' > provider-proof/report.json
           fi
-          printf '%s\n' "$selected" > provider-proof/base-url.txt
-          curl -fsS --max-time 30 "$selected/v1/system/status" -o provider-proof/system-status.json
-          curl -fsS --max-time 30 "$selected/v1/system/props" -o provider-proof/props-capabilities.json
 
       - name: Evaluate direct live credential proof
         shell: bash
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           root = Path('provider-proof')
@@ -62,33 +62,47 @@ jobs:
               print(report_path.read_text())
               raise SystemExit(0)
 
-          canary = json.loads((root / 'provider-canary.json').read_text())
-          status = json.loads((root / 'system-status.json').read_text())
-          health = json.loads((root / 'health.json').read_text())
-          odds = canary.get('the_odds_api') or {}
-          cred = status.get('credential_gate') or {}
-          passed = (
-              canary.get('credentialled_live_provider_verified') is True
-              and odds.get('authenticated') is True
-              and odds.get('schema_valid') is True
-          )
+          def unwrap(payload):
+              if isinstance(payload, dict) and 'json' in payload and set(payload).issubset({'json','meta'}):
+                  return payload['json']
+              return payload
+
+          canary = unwrap(json.loads((root / 'provider-canary.json').read_text()))
+          health = unwrap(json.loads((root / 'health.json').read_text()))
+          odds = canary.get('theOddsApi') or canary.get('the_odds_api') or {}
+          verified = canary.get('credentialledLiveProviderVerified')
+          if verified is None:
+              verified = canary.get('credentialled_live_provider_verified')
+
+          configured = odds.get('configured')
+          if configured is None:
+              configured = odds.get('credential_configured')
+          authenticated = odds.get('authenticated') is True
+          schema_valid = odds.get('schemaValid')
+          if schema_valid is None:
+              schema_valid = odds.get('schema_valid')
+          schema_valid = schema_valid is True
+
+          passed = verified is True and configured is True and authenticated and schema_valid
           proof = {
-              'schema_version': 3,
+              'schema_version': 4,
               'base_url': (root / 'base-url.txt').read_text().strip(),
-              'deployment_commit': health.get('deployment_commit'),
-              'workflow_head_sha': __import__('os').environ.get('GITHUB_SHA'),
+              'host': health.get('host'),
+              'service': health.get('service'),
+              'workflow_head_sha': os.environ.get('GITHUB_SHA'),
               'provider': 'The Odds API v4',
-              'credential_configured': odds.get('credential_configured') is True,
-              'rotation_confirmed': odds.get('rotation_confirmed') is True,
-              'authenticated': odds.get('authenticated') is True,
-              'schema_valid': odds.get('schema_valid') is True,
-              'http_status': odds.get('http_status'),
-              'usage': odds.get('usage') or {},
+              'credential_configured': configured is True,
+              'rotation_confirmed': False,
+              'authenticated': authenticated,
+              'schema_valid': schema_valid,
+              'http_status': odds.get('httpStatus', odds.get('http_status')),
+              'catalog_count': odds.get('catalogCount', odds.get('catalog_count')),
+              'requests_remaining': odds.get('requestsRemaining', odds.get('requests_remaining')),
               'secret_exposed': False,
-              'provider_revocation_independently_verified': cred.get('provider_revocation_independently_verified') is True,
+              'provider_revocation_independently_verified': False,
               'status': 'PASS' if passed else 'BLOCKED',
               'reason': (
-                  'credentialed provider authenticated directly and returned the expected live catalog schema'
+                  'Floot credentialed provider authenticated directly and returned the expected catalog schema'
                   if passed else
                   odds.get('reason') or 'direct credential canary did not pass'
               ),
