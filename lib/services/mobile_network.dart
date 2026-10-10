@@ -76,32 +76,12 @@ class MobileNetwork {
             .hasMatch(uri.path);
       case 'philthyparleys.floot.app':
         return _flootPathAllowed(uri);
-      case 'philthysports-api-v9.onrender.com':
-        return const [
-              '/health',
-              '/v1/system/status',
-              '/v1/models/status',
-              '/v1/data/providers',
-              '/v1/search',
-              '/v1/parlays/multisport',
-              '/v1/picks/best12',
-              '/v1/parlays/best3',
-              '/v1/evidence/signals',
-            ].contains(uri.path) ||
-            RegExp(
-              r'^/v1/games/(NFL|NBA|MLB|NHL)/\d{1,20}(/props|/best9)?$',
-            ).hasMatch(uri.path) ||
-            RegExp(
-              r'^/v1/evidence/verify/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$',
-            ).hasMatch(uri.path);
       default:
         return false;
     }
   }
 
-  static Duration timeoutFor(Uri uri) => Duration(
-        seconds: uri.host == 'philthysports-api-v9.onrender.com' ? 95 : 45,
-      );
+  static Duration timeoutFor(Uri uri) => const Duration(seconds: 45);
 
   static Future<Map<String, dynamic>> request(String message) async {
     String id = '';
@@ -128,8 +108,7 @@ class MobileNetwork {
           bytes.addAll(chunk);
           if (bytes.length > 5000000) throw const FormatException();
         }
-        if (uri.host == 'philthysports-api-v9.onrender.com' ||
-            uri.host == 'philthyparleys.floot.app') {
+        if (uri.host == 'philthyparleys.floot.app') {
           debugPrint('PHILTHY_BACKEND_HTTP:${uri.path}:${response.statusCode}');
         }
         return <String, dynamic>{
