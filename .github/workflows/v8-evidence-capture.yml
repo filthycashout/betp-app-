@@ -21,8 +21,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Non-secret canonical production fallback. Repository variables override it.
-  PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL: https://philthysports-api-v9.onrender.com
+  # Canonical production runtime. Repository variables may override it for an
+  # explicitly verified replacement, but the legacy Render backend is no
+  # longer a production fallback.
+  PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL: https://philthyparleys.floot.app/_api
 
 jobs:
   capture:
@@ -57,30 +59,65 @@ jobs:
           echo "Resolved evidence backend: $BACKEND_URL"
 
           python - <<'PY'
-          import json, os, sys, urllib.request, urllib.error
-          base = os.environ.get("PHILTHY_EVIDENCE_BACKEND_URL") or os.environ.get("PHILTHY_PRODUCTION_BACKEND_URL") or os.environ.get("PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL")
-          base = base.rstrip("/")
+          import json, os, sys, urllib.request
+
+          def unwrap(payload):
+              if (
+                  isinstance(payload, dict)
+                  and "json" in payload
+                  and set(payload).issubset({"json", "meta"})
+              ):
+                  return payload["json"]
+              return payload
+
+          base = (
+              os.environ.get("PHILTHY_EVIDENCE_BACKEND_URL")
+              or os.environ.get("PHILTHY_PRODUCTION_BACKEND_URL")
+              or os.environ.get("PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL")
+          ).rstrip("/")
           failures = []
           for path in ("/health", "/v1/system/status"):
               url = base + path
               try:
-                  with urllib.request.urlopen(url, timeout=30) as response:
+                  with urllib.request.urlopen(url, timeout=45) as response:
                       body = response.read().decode("utf-8", "replace")
                       print(f"{path}: HTTP {response.status}")
                       if response.status != 200:
                           failures.append(f"{path}:HTTP_{response.status}")
                           continue
-                      if path.endswith("system/status"):
-                          try:
-                              payload = json.loads(body)
-                          except Exception as exc:
-                              failures.append(f"{path}:INVALID_JSON:{type(exc).__name__}")
-                              continue
-                          storage = payload.get("evidence_storage") or payload.get("storage") or {}
-                          if isinstance(storage, dict):
-                              print("evidence storage:", json.dumps(storage, sort_keys=True))
-                              if storage.get("durable") is False:
-                                  failures.append(f"{path}:EVIDENCE_STORAGE_NON_DURABLE:{storage.get('database_error_type') or storage.get('mode')}")
+                      try:
+                          payload = unwrap(json.loads(body))
+                      except Exception as exc:
+                          failures.append(f"{path}:INVALID_JSON:{type(exc).__name__}")
+                          continue
+                      if not isinstance(payload, dict):
+                          failures.append(f"{path}:INVALID_OBJECT")
+                          continue
+                      if path == "/health":
+                          if payload.get("status") != "ok" or payload.get("service") != "philthysports-runtime":
+                              failures.append(f"{path}:INCOMPATIBLE_SERVICE_IDENTITY")
+                          continue
+
+                      storage = (
+                          payload.get("evidence_storage")
+                          or payload.get("storage")
+                          or payload.get("database")
+                          or {}
+                      )
+                      print("evidence storage:", json.dumps(storage, sort_keys=True))
+                      if not isinstance(storage, dict) or storage.get("durable") is not True:
+                          failures.append(
+                              f"{path}:EVIDENCE_STORAGE_NON_DURABLE:"
+                              f"{storage.get('database_error_type') or storage.get('mode') or 'unknown'}"
+                              if isinstance(storage, dict)
+                              else f"{path}:EVIDENCE_STORAGE_INVALID"
+                          )
+                          continue
+                      configured = storage.get("database_configured", storage.get("configured", True))
+                      if configured is not True:
+                          failures.append(f"{path}:EVIDENCE_DATABASE_NOT_CONFIGURED")
+                      if storage.get("database_error_type"):
+                          failures.append(f"{path}:EVIDENCE_DATABASE_ERROR:{storage['database_error_type']}")
               except Exception as exc:
                   failures.append(f"{path}:{type(exc).__name__}:{exc}")
           if failures:
@@ -95,14 +132,36 @@ jobs:
           cp backend/training/historical_backfill.py /tmp/historical_backfill.py
 
       - name: Capture strict pregame evidence from configured backend
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/pregame_capture
           mkdir -p /tmp/pregame_capture
-          python /tmp/evidence_pipeline.py capture \
-            --base-url "$BACKEND_URL" \
-            --days 4 \
-            --output-dir /tmp/pregame_capture
+          python - "$BACKEND_URL" /tmp/pregame_capture <<'PY'
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location("evidence_pipeline", "/tmp/evidence_pipeline.py")
+          if spec is None or spec.loader is None:
+              raise SystemExit("Could not load evidence pipeline")
+          pipeline = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(pipeline)
+          upstream_json = pipeline._json
+
+          def transport_json(url: str, timeout: int = 45):
+              payload = upstream_json(url, timeout)
+              if (
+                  isinstance(payload, dict)
+                  and "json" in payload
+                  and set(payload).issubset({"json", "meta"})
+              ):
+                  return payload["json"]
+              return payload
+
+          pipeline._json = transport_json
+          pipeline.capture(sys.argv[1], Path(sys.argv[2]), 4)
+          PY
 
       - name: Switch to durable evidence branch
         shell: bash
