@@ -14,9 +14,8 @@ on:
         default: '/_api'
         type: string
       signing_base:
-        description: 'Temporary HTTPS signing-material bridge'
+        description: 'HTTPS signing-material bridge. Required explicitly; no legacy Render default is permitted.'
         required: true
-        default: 'https://philthysports-api-v9.onrender.com'
         type: string
 
 permissions:
