@@ -27,7 +27,8 @@ tools = [
 
 assert mcp["mcpServers"]["philthysports"]["url"] == endpoint
 assert manifest["mcp_endpoint"] == endpoint
-assert manifest["skill_version"] == "1.1.1"
+assert manifest["skill_version"] == "1.1.2"
+assert manifest["backend_default"] == "https://philthyparleys.floot.app/_api"
 assert manifest["transport"] == "streamable-http"
 assert "as_of < event_time" in skill
 assert "Never silently replace" in skill
