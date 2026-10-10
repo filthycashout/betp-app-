@@ -11,7 +11,7 @@ Version **1.6.6+29** uses the supplied FILTHY PICKZ raccoon artwork for the laun
 - Training retains prior settled labels, records result availability, verifies capture hashes and excludes unavailable results from chronological folds and holdout training.
 - No trained model replaces the market baseline until strict per-sport evaluation and signature checks pass. A baseline needs usable current market data; it does not guarantee prices exist for every game.
 
-Backend: https://philthysports-api-v9.onrender.com
+Production backend: https://philthyparleys.floot.app/_api
 
 ## Keyless live-data gateway
 
@@ -61,7 +61,7 @@ The mobile release no longer displays 7/10/14-leg cards. It shows two three-leg 
 
 ## Android bundled dashboard
 
-The Android app bundles the same React dashboard as the PhilthySports Site. It opens from local assets without a Sites login. Android performs allowlisted HTTPS GET requests for the score feeds and the existing Powerhouse backend; no provider secret or arbitrary network proxy is exposed. The stable package/signing identity is preserved.
+The Android app bundles the same React dashboard as the PhilthySports Site. It opens from local assets without a Sites login. Android performs allowlisted HTTPS GET requests for the score feeds and the configured PhilthyParleys production backend; no provider secret or arbitrary network proxy is exposed. The stable package/signing identity is preserved.
 
 Mobile UI source is in `mobile_dashboard/`; `npm install` followed by `npm run build` regenerates `assets/dashboard/`. The web UI and its v8 evidence filters are preserved. The CI APK smoke checks require the actual dashboard to render, fresh feeds for all four sports, and Settings navigation. Physical-device and live-prop/model-promotion checks remain separate.
 
