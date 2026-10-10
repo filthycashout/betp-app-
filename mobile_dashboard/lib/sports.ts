@@ -5,7 +5,6 @@ export type Game = { id: string; sport: Sport; start: string; state: string; sta
 export type Feed = { games: Game[]; sport: Sport; date: string; retrievedAt: string; source: string; fallback: string | null; error?: string };
 export const PATHS: Record<Sport,string> = { NFL: 'football/nfl', NBA: 'basketball/nba', MLB: 'baseball/mlb', NHL: 'hockey/nhl' };
 export const BACKEND = 'https://philthyparleys.floot.app/_api';
-export const ROLLBACK_BACKEND = 'https://philthysports-api-v9.onrender.com';
 export function pacificDate(now = new Date()) { return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(now); }
 export function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value; }
 export function number(value: unknown): number | null { if (value === null || value === undefined || value === '') return null; const n = Number(value); return Number.isFinite(n) ? n : null; }
