@@ -21,6 +21,9 @@ concurrency:
   group: philthyparleys-production-guard
   cancel-in-progress: true
 
+env:
+  PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL: https://philthyparleys.floot.app/_api
+
 jobs:
   guard:
     runs-on: ubuntu-latest
@@ -47,9 +50,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BACKEND_URL="${PHILTHY_PRODUCTION_BACKEND_URL:-}"
+          BACKEND_URL="${PHILTHY_PRODUCTION_BACKEND_URL:-${PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL:-}}"
           if [ -z "$BACKEND_URL" ]; then
-            echo "Set repository variable PHILTHY_PRODUCTION_BACKEND_URL to the active HTTPS backend." >&2
+            echo "No production backend could be resolved." >&2
             exit 2
           fi
           case "$BACKEND_URL" in
@@ -57,6 +60,7 @@ jobs:
             *) echo "Production backend must be an HTTPS URL." >&2; exit 2 ;;
           esac
           echo "BACKEND_URL=${BACKEND_URL%/}" >> "$GITHUB_ENV"
+          echo "Resolved production backend: ${BACKEND_URL%/}"
 
       - name: Verify evidence capture freshness
         id: evidence
