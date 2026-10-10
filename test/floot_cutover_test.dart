@@ -82,8 +82,8 @@ void main() {
       'https://philthyparleys.floot.app',
     );
 
-    expect(
-      () => BackendConfig.save('https://philthysports-api-v9.onrender.com'),
+    await expectLater(
+      BackendConfig.save('https://philthysports-api-v9.onrender.com'),
       throwsA(isA<FormatException>()),
     );
   });
