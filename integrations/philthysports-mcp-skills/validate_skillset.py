@@ -34,6 +34,8 @@ EXPECTED_TOOLS = [
     "philthy_dfs_optimize",
 ]
 ENDPOINT = "https://philthysports-mcp-v1.onrender.com/mcp"
+SERVICE_VERSION = "1.1.2"
+BACKEND_DEFAULT = "https://philthyparleys.floot.app/_api"
 
 
 def fail(message: str) -> None:
@@ -56,6 +58,10 @@ manifest_path = CORE / "source-manifest.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 if manifest.get("mcp_endpoint") != ENDPOINT:
     fail("core manifest endpoint mismatch")
+if manifest.get("skill_version") != SERVICE_VERSION:
+    fail("core manifest service version mismatch")
+if manifest.get("backend_default") != BACKEND_DEFAULT:
+    fail("core manifest backend default mismatch")
 if manifest.get("tools") != EXPECTED_TOOLS:
     fail("core manifest tool inventory mismatch")
 if set(manifest.get("supporting_skills", [])) != EXPECTED_SKILLS - {"philthysports-mcp"}:
@@ -80,8 +86,10 @@ service_text = SERVICE.read_text(encoding="utf-8")
 for tool in EXPECTED_TOOLS:
     if f"def {tool}(" not in service_text:
         fail(f"service implementation missing {tool}")
-if 'SERVICE_VERSION = "1.1.1"' not in service_text:
+if f'SERVICE_VERSION = "{SERVICE_VERSION}"' not in service_text:
     fail("service version no longer matches core skill manifest; update skill set")
+if f'"{BACKEND_DEFAULT}"' not in service_text:
+    fail("service backend default no longer matches core skill manifest; update skill set")
 
 config = json.loads(MCP_CONFIG.read_text(encoding="utf-8"))
 if config.get("mcpServers", {}).get("philthysports-live", {}).get("url") != ENDPOINT:
