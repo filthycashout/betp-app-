@@ -1,8 +1,9 @@
 {
-  "captured_at_utc": "2026-10-09T16:13:44Z",
-  "source_backend": "https://philthysports-api-v9.onrender.com",
-  "workflow_source_commit": "aef20b886b2b12d5d1b56537fe683d3d844d97c8",
+  "captured_at_utc": "2026-10-10T17:14:29Z",
+  "source_backend": "https://philthyparleys.floot.app/_api",
+  "workflow_source_commit": "6279ee0f938ce3c8f8e5fc3c79597cc589413d6c",
   "branch": "evidence-snapshots",
   "historical_backfill_merge": true,
+  "free_odds_gateway_snapshot_provenance": true,
   "secrets_embedded": false
 }
