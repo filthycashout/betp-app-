@@ -73,7 +73,7 @@ void main() {
     expect(seen!.queryParameters['date'], game.date);
   });
 
-  test('one-time legacy default migration preserves deliberate rollback', () async {
+  test('retired Render defaults always migrate to Floot', () async {
     SharedPreferences.setMockInitialValues({
       'philthy_backend_url': 'https://philthysports-api-v9.onrender.com',
     });
@@ -82,10 +82,9 @@ void main() {
       'https://philthyparleys.floot.app',
     );
 
-    await BackendConfig.save('https://philthysports-api-v9.onrender.com');
     expect(
-      await BackendConfig.baseUrl(),
-      'https://philthysports-api-v9.onrender.com',
+      () => BackendConfig.save('https://philthysports-api-v9.onrender.com'),
+      throwsA(isA<FormatException>()),
     );
   });
 
@@ -104,6 +103,7 @@ void main() {
       'https://philthyparleys.floot.app/_api/v1/ci/android-signing-material',
       'https://philthyparleys.floot.app/_api/v1/evidence/verify?signal=bad',
       'https://philthyparleys.floot.app/_api/v1/game?sport=NFL&event_id=../../admin',
+      'https://philthysports-api-v9.onrender.com/v1/search?sport=NFL',
     ]) {
       expect(MobileNetwork.isAllowed(Uri.parse(url)), isFalse, reason: url);
     }
