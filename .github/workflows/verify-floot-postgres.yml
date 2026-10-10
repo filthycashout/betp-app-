@@ -1,0 +1,80 @@
+name: Verify Floot Postgres Wiring
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-floot-postgres.yml"
+      - "backend/evidence/**"
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: philthyparleys-floot-postgres-verification
+  cancel-in-progress: true
+
+env:
+  PROD_BASE_URL: https://philthyparleys.floot.app/_api
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify durable Floot Postgres evidence storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          base = os.environ['PROD_BASE_URL'].rstrip('/')
+
+          def get(path):
+              req = urllib.request.Request(
+                  base + path,
+                  headers={
+                      'Accept': 'application/json',
+                      'User-Agent': 'PhilthyParleys-floot-postgres-verifier/1.0',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f'{path}: HTTP {response.status}')
+                  payload = json.loads(response.read().decode('utf-8'))
+                  if isinstance(payload, dict) and 'json' in payload and set(payload).issubset({'json','meta'}):
+                      payload = payload['json']
+                  if not isinstance(payload, dict):
+                      raise RuntimeError(f'{path}: expected JSON object')
+                  return payload
+
+          health = get('/health')
+          status = get('/v1/system/status')
+          evidence = get('/v1/evidence/signals?limit=1')
+          storage = evidence.get('storage_status') or {}
+
+          checks = {
+              'health_ok': health.get('status') == 'ok',
+              'service_identity': health.get('service') == 'philthysports-runtime',
+              'host_floot': health.get('host') == 'Floot' and status.get('host') == 'Floot',
+              'database_configured': storage.get('database_configured') is True,
+              'durable_storage': evidence.get('durable_storage') is True and storage.get('durable') is True,
+              'floot_postgres': storage.get('mode') == 'floot_postgres',
+              'database_error_clear': storage.get('database_error_type') in (None, ''),
+          }
+          report = {
+              'base_url': base,
+              'checks': checks,
+              'storage_status': storage,
+              'passed': all(checks.values()),
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if not report['passed']:
+              raise SystemExit(2)
+          PY
