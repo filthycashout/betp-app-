@@ -1,11 +1,11 @@
 {
   "skill_name": "philthysports-mcp",
-  "skill_version": "1.1.1",
+  "skill_version": "1.1.2",
   "repository": "filthycashout/betp-app-",
   "source_file": "backend/mcp_v2_service.py",
-  "source_blob_sha": "45d00ddd8f5060e31ec25a03d0c4125591fde0ff",
+  "source_blob_sha": "1b3f42fa623b0e919364172211bf381e631d76a1",
   "mcp_endpoint": "https://philthysports-mcp-v1.onrender.com/mcp",
-  "backend_default": "https://philthysports-api-v9.onrender.com",
+  "backend_default": "https://philthyparleys.floot.app/_api",
   "transport": "streamable-http",
   "sports": ["NFL", "NBA", "MLB", "NHL"],
   "tools": [
