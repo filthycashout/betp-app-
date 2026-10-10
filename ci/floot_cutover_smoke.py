@@ -112,8 +112,8 @@ def main() -> int:
         )
 
     # These routes are the minimum dashboard/mobile cutover surface. Missing any
-    # one keeps the candidate fail-closed on Render rollback rather than silently
-    # promoting a partially functional backend.
+    # one keeps the candidate fail-closed and blocks promotion rather than silently
+    # accepting a partially functional production backend.
     contract_paths = {
         "models_status": "/v1/models/status",
         "models_registry": "/v1/models/registry",
@@ -123,6 +123,8 @@ def main() -> int:
         "best12": "/v1/picks/best12",
         "best3": "/v1/parlays/best3",
         "parlay7": "/v1/parlays/multisport?legs=7",
+        "parlay10": "/v1/parlays/multisport?legs=10",
+        "parlay14": "/v1/parlays/multisport?legs=14",
     }
     for name, path in contract_paths.items():
         check(
