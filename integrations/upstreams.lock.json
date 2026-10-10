@@ -1,40 +1,298 @@
 {
-  "generated_utc": "2026-10-06T21:30:00Z",
+  "schema": "philthyparleys.upstreams.v2",
+  "verified_date_utc": "2026-10-10",
+  "policy": {
+    "artifact_execution": "disabled",
+    "production_authority": "none",
+    "credential_inheritance": "forbidden",
+    "promotion_gate_bypass": "forbidden",
+    "notes": "Pinned external trees are reproducible research/reference artifacts. Production use requires an explicit PhilthyParleys adapter and existing chronology/calibration/leakage/provider gates."
+  },
   "repositories": [
     {
-      "name": "draftfast",
-      "url": "https://github.com/BenBrostoff/draftfast.git",
-      "branch": "master",
-      "commit": "0f5f1f2eb6e2ba7cb4cb6813ee36a3a079369a9b",
-      "role": "dfs_optimizer_reference"
+      "source_index": 3,
+      "name": "public-apis",
+      "repository": "public-apis/public-apis",
+      "url": "https://github.com/public-apis/public-apis.git",
+      "commit": "1155e3e7e8a8ba8fa17ab36410b5b2a8f5901cb0",
+      "clone_group": "sports",
+      "role": "catalog_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
     },
     {
+      "source_index": 4,
+      "name": "public-apis-funkhauser",
+      "repository": "Funkhauser/Public-apis",
+      "url": "https://github.com/Funkhauser/Public-apis.git",
+      "commit": "8a58410a2ecdfac1f1016a9f6888f549dac876f3",
+      "clone_group": "sports",
+      "role": "catalog_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 5,
+      "name": "awesome-web-scraping",
+      "repository": "lorien/awesome-web-scraping",
+      "url": "https://github.com/lorien/awesome-web-scraping.git",
+      "commit": "5fcf6a38b0a797a96a177cbb3bc788fbeff3acfb",
+      "clone_group": "sports",
+      "role": "research_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 6,
+      "name": "nflreadpy",
+      "repository": "nflverse/nflreadpy",
+      "url": "https://github.com/nflverse/nflreadpy.git",
+      "commit": "e7e87b2ef626b8672279db25432b1554ee13348a",
+      "clone_group": "sports",
+      "role": "training_data_library",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 7,
+      "name": "nba-api",
+      "repository": "swar/nba_api",
+      "url": "https://github.com/swar/nba_api.git",
+      "commit": "52c0fb0b81c4b785d6cebeb9988799e5d796dfd7",
+      "clone_group": "sports",
+      "role": "training_data_library",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 8,
+      "name": "pybaseball",
+      "repository": "jldbc/pybaseball",
+      "url": "https://github.com/jldbc/pybaseball.git",
+      "commit": "e588989359059ba04a510cc12aefa972f0a715d6",
+      "clone_group": "sports",
+      "role": "training_data_library",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 9,
+      "name": "mlb-statsapi",
+      "repository": "toddrob99/MLB-StatsAPI",
+      "url": "https://github.com/toddrob99/MLB-StatsAPI.git",
+      "commit": "4658baa93d14b40dd3d83d44425cf3ee2ce73680",
+      "clone_group": "sports",
+      "role": "data_client_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 10,
+      "name": "nhl-api-py",
+      "repository": "coreyjs/nhl-api-py",
+      "url": "https://github.com/coreyjs/nhl-api-py.git",
+      "commit": "d6a9cb532ce58b5d0312fea2ca785f442aa4c2b6",
+      "clone_group": "sports",
+      "role": "data_client_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 11,
+      "name": "nhl-api-reference",
+      "repository": "Zmalski/NHL-API-Reference",
+      "url": "https://github.com/Zmalski/NHL-API-Reference.git",
+      "commit": "20d3f0e1a3528fb4d5cfdb7018d416cbd6a89f40",
+      "clone_group": "sports",
+      "role": "endpoint_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 12,
       "name": "odds-api",
+      "repository": "odds-api/odds-api",
       "url": "https://github.com/odds-api/odds-api.git",
-      "branch": "main",
       "commit": "1b8d4bdddf01c610eb725dc610f12ab53a20dba8",
-      "role": "odds_provider_sdk_mcp_reference"
+      "clone_group": "sports",
+      "role": "odds_provider_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
     },
     {
+      "source_index": 13,
+      "name": "draftfast",
+      "repository": "BenBrostoff/draftfast",
+      "url": "https://github.com/BenBrostoff/draftfast.git",
+      "commit": "0f5f1f2eb6e2ba7cb4cb6813ee36a3a079369a9b",
+      "clone_group": "sports",
+      "role": "optimizer_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 14,
       "name": "fanduel-api",
+      "repository": "Setfive/fanduel-api",
       "url": "https://github.com/Setfive/fanduel-api.git",
-      "branch": "master",
       "commit": "c4b9b746555b2f7d5b4a15a747cc82c724109db4",
-      "role": "legacy_reference_only"
+      "clone_group": "sports",
+      "role": "legacy_reference_only",
+      "artifact_execution": "disabled",
+      "production_authority": false
     },
     {
-      "name": "SportradarAPIs",
+      "source_index": 15,
+      "name": "sportradar-apis",
+      "repository": "johnwmillr/SportradarAPIs",
       "url": "https://github.com/johnwmillr/SportradarAPIs.git",
-      "branch": "master",
-      "commit": "b23e020a29ce7eb792c637ff8e6d34940e1587f1",
-      "role": "sportradar_adapter_reference"
+      "commit": "6f15579667b6ca2dbc4bc024f8028f8c99f02dfe",
+      "clone_group": "sports",
+      "role": "data_client_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 16,
+      "name": "oddswrap",
+      "repository": "sjhouston23/oddswrap",
+      "url": "https://github.com/sjhouston23/oddswrap.git",
+      "commit": "370291c8bfcc0f2032a40cda366d76604f3a29dc",
+      "clone_group": "sports",
+      "role": "odds_aggregation_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 17,
+      "name": "sportsbookreview-scraper",
+      "repository": "flancast90/sportsbookreview-scraper",
+      "url": "https://github.com/flancast90/sportsbookreview-scraper.git",
+      "commit": "1a820e50c6fbd0276cde073c22bfffae78930868",
+      "clone_group": "sports",
+      "role": "legacy_research_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 18,
+      "name": "propline-python",
+      "repository": "proplineapi/propline-python",
+      "url": "https://github.com/proplineapi/propline-python.git",
+      "commit": "3faaa01ec6cd627ee8d0543ee9803d62c269dd7d",
+      "clone_group": "sports",
+      "role": "prop_provider_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 19,
+      "name": "sportsdata-mcp",
+      "repository": "DanielTomaro13/sportsdata-mcp",
+      "url": "https://github.com/DanielTomaro13/sportsdata-mcp.git",
+      "commit": "713f5a7a4746c34f270e3ead544dbf2a2ee7bba7",
+      "clone_group": "sports",
+      "role": "mcp_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 20,
+      "name": "oddsflow-transparency",
+      "repository": "oddsflowai-team/oddsflow-transparency",
+      "url": "https://github.com/oddsflowai-team/oddsflow-transparency.git",
+      "commit": "a0eaef30c52444ee23d129f2c829096d0414c968",
+      "clone_group": "sports",
+      "role": "model_validation_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 21,
+      "name": "claude-sports-analytics",
+      "repository": "PuckAPI/claude-sports-analytics",
+      "url": "https://github.com/PuckAPI/claude-sports-analytics.git",
+      "commit": "dcae9a33231a38ca0f7117ac1ee0a2f398bf0cec",
+      "clone_group": "sports",
+      "role": "analytics_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 22,
+      "name": "goalie",
+      "repository": "HenryTheHamster/goalie",
+      "url": "https://github.com/HenryTheHamster/goalie.git",
+      "commit": "b2a3d92fbff2c517668eaa7503148f5d735463c5",
+      "clone_group": "sports",
+      "role": "model_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 23,
+      "name": "sportsbetting",
+      "repository": "mrcnserkan/SportsBetting",
+      "url": "https://github.com/mrcnserkan/SportsBetting.git",
+      "commit": "48a8108e2dfbeb7e9f1da532bbaad7e1c4c29f91",
+      "clone_group": "sports",
+      "role": "model_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 24,
+      "name": "mcp-sports-hub",
+      "repository": "lacausecrypto/mcp-sports-hub",
+      "url": "https://github.com/lacausecrypto/mcp-sports-hub.git",
+      "commit": "95d6046c80d33f101b4f496c343510265e64ab4c",
+      "clone_group": "sports",
+      "role": "mcp_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 25,
+      "name": "calibre",
+      "repository": "finite-sample/calibre",
+      "url": "https://github.com/finite-sample/calibre.git",
+      "commit": "227f997a1cb6a339399ce49dd99e3ffa0f319f4e",
+      "clone_group": "sports",
+      "role": "calibration_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 26,
+      "name": "sports-leader-mcp",
+      "repository": "WalrusQuant/sports-leader-mcp",
+      "url": "https://github.com/WalrusQuant/sports-leader-mcp.git",
+      "commit": "57c31d27b5b06d69508fef6e226418fae97178cc",
+      "clone_group": "sports",
+      "role": "mcp_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
+    },
+    {
+      "source_index": 27,
+      "name": "sports-analytic-skills",
+      "repository": "WalrusQuant/sports-analytic-skills",
+      "url": "https://github.com/WalrusQuant/sports-analytic-skills.git",
+      "commit": "0f90d2463b7d4c793821cce71fc82d06fcb06a3c",
+      "clone_group": "sports",
+      "role": "pipeline_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
     },
     {
       "name": "bytecode-viewer",
+      "repository": "Konloch/bytecode-viewer",
       "url": "https://github.com/Konloch/bytecode-viewer.git",
-      "branch": "master",
       "commit": "31430e0033fa220db566b5ef461256727ff6793b",
-      "role": "authorized_apk_static_analysis_reference"
+      "clone_group": "analysis",
+      "role": "authorized_apk_static_analysis_reference",
+      "artifact_execution": "disabled",
+      "production_authority": false
     }
   ]
 }

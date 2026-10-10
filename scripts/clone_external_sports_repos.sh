@@ -2,7 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCK_FILE="${ROOT_DIR}/integrations/upstreams.lock.json"
 VENDOR_DIR="${ROOT_DIR}/integrations/vendor"
+
+python3 "${ROOT_DIR}/scripts/validate_upstreams_lock.py"
+
+rm -rf "${VENDOR_DIR}"
 mkdir -p "${VENDOR_DIR}"
 
 clone_exact() {
@@ -11,11 +16,10 @@ clone_exact() {
   local sha="$3"
   local dest="${VENDOR_DIR}/${name}"
 
-  rm -rf "${dest}"
   mkdir -p "${dest}"
   git -C "${dest}" init -q
   git -C "${dest}" remote add origin "${url}"
-  git -C "${dest}" fetch -q --depth 1 origin "${sha}"
+  git -C "${dest}" -c protocol.version=2 fetch -q --depth 1 origin "${sha}"
   git -C "${dest}" checkout -q --detach FETCH_HEAD
 
   local actual
@@ -24,14 +28,38 @@ clone_exact() {
     echo "ERROR: ${name} resolved to ${actual}; expected ${sha}" >&2
     exit 1
   fi
-  echo "${name} ${actual}"
+  printf '%s %s\n' "${name}" "${actual}"
 }
 
-clone_exact "draftfast" "https://github.com/BenBrostoff/draftfast.git" "0f5f1f2eb6e2ba7cb4cb6813ee36a3a079369a9b"
-clone_exact "odds-api" "https://github.com/odds-api/odds-api.git" "1b8d4bdddf01c610eb725dc610f12ab53a20dba8"
-clone_exact "fanduel-api" "https://github.com/Setfive/fanduel-api.git" "c4b9b746555b2f7d5b4a15a747cc82c724109db4"
-clone_exact "SportradarAPIs" "https://github.com/johnwmillr/SportradarAPIs.git" "b23e020a29ce7eb792c637ff8e6d34940e1587f1"
+mapfile -t LOCKED_REPOS < <(
+  python3 - "${LOCK_FILE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for item in data["repositories"]:
+    if item.get("clone_group") == "sports":
+        print("\t".join((item["name"], item["url"], item["commit"])))
+PY
+)
+
+if [[ "${#LOCKED_REPOS[@]}" -ne 25 ]]; then
+  echo "ERROR: expected 25 sports repositories (source indexes 3-27), got ${#LOCKED_REPOS[@]}" >&2
+  exit 1
+fi
+
+for entry in "${LOCKED_REPOS[@]}"; do
+  IFS=$'\t' read -r name url sha <<< "${entry}"
+  clone_exact "${name}" "${url}" "${sha}"
+done
 
 find "${VENDOR_DIR}" -type d -name .git -prune -exec rm -rf {} +
 
-echo "Pinned upstream repositories cloned into ${VENDOR_DIR}"
+actual_count="$(find "${VENDOR_DIR}" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+if [[ "${actual_count}" != "25" ]]; then
+  echo "ERROR: expected 25 cloned directories, got ${actual_count}" >&2
+  exit 1
+fi
+
+echo "Pinned upstream repositories 3-27 cloned into ${VENDOR_DIR}"

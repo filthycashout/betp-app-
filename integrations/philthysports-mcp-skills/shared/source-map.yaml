@@ -9,7 +9,7 @@ sources:
     docs_mcp: https://gitmcp.io/johnwmillr/SportradarAPIs
     repo: https://github.com/johnwmillr/SportradarAPIs
     branch: master
-    commit: b23e020a29ce7eb792c637ff8e6d34940e1587f1
+    commit: 6f15579667b6ca2dbc4bc024f8028f8c99f02dfe
     role: schedules_rosters_stats_context
     auth_boundary: SPORTRADAR_API_KEY_or_sport_specific_server_key
   odds_api_net:
