@@ -5,7 +5,7 @@ Base commit: `c951145efec43c031565549620eeaf6fffed61c0`
 Floot project: `2349a7ae-bd42-45fb-8412-feda5700b916`
 Production hostname: `https://philthyparleys.floot.app`
 Floot API namespace: `https://philthyparleys.floot.app/_api`
-Render rollback: `https://philthysports-api-v9.onrender.com`
+Legacy Render backend: **RETIRED — not a production or rollback target**
 
 ## Verified on Floot
 
@@ -20,18 +20,19 @@ Render rollback: `https://philthysports-api-v9.onrender.com`
 
 ## GitHub cutover changes
 
-- Flutter backend default is staged to Floot on this branch.
-- A one-time migration moves the prior default Render URL to Floot, while a deliberate manual save of the Render URL remains a valid rollback.
+- Flutter backend default is Floot.
+- Saved legacy Render backend values are treated as obsolete and migrate to the current Floot default; the Android network bridge no longer permits the retired Render host.
 - Flutter API requests rewrite Floot calls through `/_api`.
 - Dynamic game/evidence routes are translated to fixed Floot query endpoints because Floot endpoints do not support dynamic route parameters.
 - Mobile WebView networking allows only approved read-only Floot routes; signing/admin routes remain blocked.
 - `ci/floot_cutover_smoke.py` and `.github/workflows/floot-cutover-guard.yml` require the complete mobile/dashboard production contract before promotion.
+- GitHub evidence capture, provider proof, production guard, and durable-storage verification target Floot rather than the retired Render backend.
 
 ## Current blocker
 
-The Floot workspace reached its daily build-action limit after the initial production publish and subsequent development changes. The latest compatibility/search/evidence changes therefore exist in the Floot development project but could not be republished during this run. The cutover guard is intentionally expected to fail until the remaining production contracts are implemented and republished.
+The latest compatibility/search/evidence changes exist in the Floot development project but have not yet been promoted to the published production deployment. The production guard therefore remains intentionally fail-closed while published Floot is missing required compatibility routes. This document does not treat a stale production deployment as equivalent to the tested development project.
 
-Required contracts before promotion include:
+Required production contracts include:
 
 - legacy-compatible health identity (`status=ok`, `service=philthysports-runtime`)
 - NFL and NBA search feeds on production
@@ -44,4 +45,4 @@ Required contracts before promotion include:
 - best-3 cards
 - 7/10/14-leg multisport endpoints
 
-The branch must not be merged merely because `/health` is green. The Floot Cutover Guard must pass first. Android signing/emulator/physical-device acceptance and trained-model promotion remain separate gates.
+The production deployment must not be promoted merely because `/health` is green. The Floot Cutover Guard must pass first. Android signing/emulator/physical-device acceptance, fresh evidence capture, live-provider proof, and trained-model promotion remain separate gates.
