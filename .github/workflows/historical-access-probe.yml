@@ -12,41 +12,49 @@ on:
 permissions:
   contents: read
 
+env:
+  PHILTHY_PRODUCTION_BACKEND_URL: https://philthyparleys.floot.app/_api
+
 jobs:
   historical-access-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe one paid historical-events request
+      - name: Probe historical-access capability through Floot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p historical-access-proof
           curl -fsS --max-time 30 \
-            'https://philthysports-api-v9.onrender.com/v1/providers/canary?historical_probe=true' \
+            "${PHILTHY_PRODUCTION_BACKEND_URL%/}/v1/providers/canary?historical_probe=true" \
             -o historical-access-proof/canary.json
           python - <<'PY'
           import json
           from pathlib import Path
-          src = json.loads(Path('historical-access-proof/canary.json').read_text())
-          odds = src.get('the_odds_api') or {}
-          hist = odds.get('historical_access_probe') or {}
+
+          raw = json.loads(Path('historical-access-proof/canary.json').read_text())
+          src = raw.get('json') if isinstance(raw, dict) and 'json' in raw and set(raw).issubset({'json','meta'}) else raw
+          odds = src.get('theOddsApi') or src.get('the_odds_api') or {}
+          hist = odds.get('historicalAccessProbe') or odds.get('historical_access_probe') or {}
+          status = hist.get('status') or 'UNAVAILABLE'
           report = {
-              'schema_version': 1,
+              'schema_version': 2,
+              'source_backend': 'https://philthyparleys.floot.app/_api',
               'provider': 'The Odds API v4',
               'live_authenticated': odds.get('authenticated') is True,
-              'historical_access_status': hist.get('status'),
-              'historical_http_status': hist.get('http_status'),
-              'historical_schema_valid': hist.get('schema_valid') is True,
-              'historical_events_returned': hist.get('events_returned'),
-              'historical_probe_date': hist.get('probe_date'),
+              'historical_access_status': status,
+              'historical_http_status': hist.get('httpStatus', hist.get('http_status')),
+              'historical_schema_valid': (hist.get('schemaValid', hist.get('schema_valid')) is True),
+              'historical_events_returned': hist.get('eventsReturned', hist.get('events_returned')),
+              'historical_probe_date': hist.get('probeDate', hist.get('probe_date')),
               'usage': hist.get('usage') or {},
               'secret_exposed': False,
               'safe_for_bulk_backfill': False,
-              'reason': hist.get('reason') or 'historical access probe returned no result',
+              'reason': hist.get('reason') or 'Floot runtime does not currently expose a verified historical-access probe',
           }
-          # Bulk backfill remains false here by design. A separate hard budget and
-          # sufficient remaining quota are required before historical odds capture.
+          # Bulk historical backfill stays blocked until the runtime returns an
+          # explicit verified historical-access result plus an independent
+          # budget/quota gate. Live authentication alone is not sufficient.
           Path('historical-access-proof/report.json').write_text(
               json.dumps(report, indent=2, sort_keys=True) + '\n'
           )
