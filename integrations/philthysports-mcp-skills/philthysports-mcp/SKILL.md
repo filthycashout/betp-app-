@@ -11,8 +11,8 @@ Use this skill for the production PhilthySports MCP execution surface.
 
 - Endpoint: `https://philthysports-mcp-v1.onrender.com/mcp`
 - MCP name: `philthysports-mcp`
-- Service version: `1.1.1`
-- Default backend: `https://philthysports-api-v9.onrender.com`
+- Service version: `1.1.2`
+- Default backend: `https://philthyparleys.floot.app/_api`
 - Sports: NFL, NBA, MLB, NHL
 - Transport: Streamable HTTP
 
