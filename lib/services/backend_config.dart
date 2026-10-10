@@ -7,17 +7,18 @@ class BackendConfig {
     defaultValue: 'https://philthyparleys.floot.app',
   );
 
+  // Render backends are retired. Any saved value pointing to one of these
+  // hosts is migrated to the current compiled production default, even if a
+  // previous app version treated it as a deliberate rollback target.
   static const _obsoleteHosts = {
     'philthysports-powerhouse.onrender.com',
     'philthysports-powerhouse-v8.onrender.com',
+    'philthysports-api-v9.onrender.com',
   };
 
-  // Hosts that have previously been shipped as an automatic production
-  // default. A new APK may migrate one of these to its compiledDefault once;
-  // an explicit user save marks the current cutover as handled and therefore
-  // preserves deliberate rollback/custom-host choices.
+  // Hosts previously shipped as an automatic production default. This list is
+  // retained for one-time default migration without re-enabling retired hosts.
   static const _previousDefaultHosts = {
-    'philthysports-api-v9.onrender.com',
     'philthyparleys.floot.app',
   };
 
@@ -65,10 +66,16 @@ class BackendConfig {
 
   static Future<void> save(String value) async {
     final normalized = validate(value);
+    final uri = Uri.parse(normalized);
+    if (_obsoleteHosts.contains(uri.host.toLowerCase())) {
+      throw const FormatException(
+        'That backend has been retired. Use the current Floot backend.',
+      );
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, normalized);
     // A deliberate manual save wins over automatic provider migration for the
-    // runtime compiled into this APK, preserving rollback/custom host choices.
+    // runtime compiled into this APK, except for explicitly retired hosts.
     await prefs.setBool(_defaultMigrationKey, true);
   }
 
