@@ -3,21 +3,9 @@ name: Floot Production Contract Guard
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'lib/services/**'
-      - 'mobile_dashboard/**'
-      - 'ci/floot_cutover_smoke.py'
-      - '.github/workflows/floot-cutover-guard.yml'
-      - 'docs/FLOOT_CUTOVER_STATUS_2026-10-07.md'
   push:
     branches:
       - main
-    paths:
-      - 'lib/services/**'
-      - 'mobile_dashboard/**'
-      - 'ci/floot_cutover_smoke.py'
-      - '.github/workflows/floot-cutover-guard.yml'
-      - 'docs/FLOOT_CUTOVER_STATUS_2026-10-07.md'
 
 permissions:
   contents: read
@@ -25,11 +13,15 @@ permissions:
 jobs:
   floot-production-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Probe required Floot production contract
         id: smoke
-        run: python ci/floot_cutover_smoke.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ci/floot_cutover_smoke.py
       - name: Upload Floot production evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,10 +36,10 @@ jobs:
         run: |
           if [ "${{ steps.smoke.outcome }}" = 'success' ]; then
             echo '### Floot production contract: verified' >> "$GITHUB_STEP_SUMMARY"
-            echo 'The published PhilthyParleys Floot deployment satisfies the required mobile/dashboard contract.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'The published PhilthyParleys Floot deployment satisfies the required production/mobile/dashboard contract.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo '### Floot production contract: FAILED' >> "$GITHUB_STEP_SUMMARY"
-            echo 'Production contract verification failed. Promotion and release must remain blocked until the report passes.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'The required Floot production contract is broken. This workflow is blocking; promotion and release must remain blocked until the smoke report passes.' >> "$GITHUB_STEP_SUMMARY"
             echo '' >> "$GITHUB_STEP_SUMMARY"
             cat floot-cutover-report.json || true
           fi
