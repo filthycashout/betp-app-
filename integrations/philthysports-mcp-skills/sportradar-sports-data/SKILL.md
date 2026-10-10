@@ -11,7 +11,7 @@ Use `sportradar-docs` for repository-specific classes, methods and examples. Use
 
 - Repository: `johnwmillr/SportradarAPIs`
 - Branch: `master`
-- Verified current commit: `b23e020a29ce7eb792c637ff8e6d34940e1587f1`
+- Verified current commit: `6f15579667b6ca2dbc4bc024f8028f8c99f02dfe`
 - PhilthySports lock: `integrations/upstreams.lock.json`
 
 Do not silently float to another commit during reproducible validation.

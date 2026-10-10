@@ -1,10 +1,21 @@
 name: Clone External Sports Repositories
 
 on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'integrations/upstreams.lock.json'
+      - 'scripts/clone_external_sports_repos.sh'
+      - 'scripts/validate_upstreams_lock.py'
+      - '.github/workflows/clone-external-sports-repos.yml'
   push:
     branches:
-      - integration/external-sports-repos
-  workflow_dispatch:
+      - main
+    paths:
+      - 'integrations/upstreams.lock.json'
+      - 'scripts/clone_external_sports_repos.sh'
+      - 'scripts/validate_upstreams_lock.py'
+      - '.github/workflows/clone-external-sports-repos.yml'
 
 permissions:
   contents: read
@@ -12,11 +23,15 @@ permissions:
 jobs:
   clone-and-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout PhilthySports integration branch
+      - name: Checkout PhilthyParleys
         uses: actions/checkout@v4
 
-      - name: Clone pinned upstream repositories
+      - name: Validate pinned upstream manifest
+        run: python3 scripts/validate_upstreams_lock.py
+
+      - name: Clone pinned upstream repositories 3-27
         run: bash scripts/clone_external_sports_repos.sh
 
       - name: Record cloned source inventory
@@ -24,8 +39,9 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "PhilthySports external source bundle"
+            echo "PhilthyParleys external source bundle"
             echo "Created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Source indexes: 3-27"
             echo
             cat integrations/upstreams.lock.json
             echo
@@ -35,6 +51,12 @@ jobs:
               find "$d" -type f | wc -l
             done
           } > integrations/vendor/CLONE_EVIDENCE.txt
+
+      - name: Verify clone cardinality
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find integrations/vendor -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = "25"
 
       - name: Scan cloned trees for obvious secret files
         shell: bash
@@ -49,7 +71,7 @@ jobs:
       - name: Package verified clones
         uses: actions/upload-artifact@v4
         with:
-          name: PhilthySports-external-sports-repos
+          name: PhilthyParleys-external-sports-repos-3-27
           path: integrations/vendor
           if-no-files-found: error
           retention-days: 14
