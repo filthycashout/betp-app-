@@ -6,11 +6,8 @@ on:
     paths:
       - "backend/app.py"
       - "backend/free_odds_gateway.py"
-      - "backend/evidence/market_snapshot_store.py"
-      - "backend/training/free_odds_evidence.py"
-      - "backend/training/evidence_pipeline.py"
-      - "backend/training/prediction_ledger.py"
-      - "backend/training/historical_backfill.py"
+      - "backend/evidence/**"
+      - "backend/training/**"
       - ".github/workflows/v8-evidence-capture.yml"
   schedule:
     - cron: "17 * * * *"
@@ -22,6 +19,10 @@ permissions:
 concurrency:
   group: philthysports-v8-evidence-capture
   cancel-in-progress: false
+
+env:
+  # Non-secret canonical production fallback. Repository variables override it.
+  PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL: https://philthysports-api-v9.onrender.com
 
 jobs:
   capture:
@@ -38,20 +39,54 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Resolve evidence backend fail-closed
+      - name: Resolve and verify evidence backend
         shell: bash
         run: |
           set -euo pipefail
-          BACKEND_URL="${PHILTHY_EVIDENCE_BACKEND_URL:-${PHILTHY_PRODUCTION_BACKEND_URL:-}}"
+          BACKEND_URL="${PHILTHY_EVIDENCE_BACKEND_URL:-${PHILTHY_PRODUCTION_BACKEND_URL:-${PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL:-}}}"
           if [ -z "$BACKEND_URL" ]; then
-            echo "Set repository variable PHILTHY_EVIDENCE_BACKEND_URL or PHILTHY_PRODUCTION_BACKEND_URL." >&2
+            echo "No evidence backend could be resolved." >&2
             exit 2
           fi
           case "$BACKEND_URL" in
             https://*) ;;
-            *) echo "Evidence backend must be an HTTPS URL." >&2; exit 2 ;;
+            *) echo "Evidence backend must be an HTTPS URL: $BACKEND_URL" >&2; exit 2 ;;
           esac
-          echo "BACKEND_URL=${BACKEND_URL%/}" >> "$GITHUB_ENV"
+          BACKEND_URL="${BACKEND_URL%/}"
+          echo "BACKEND_URL=$BACKEND_URL" >> "$GITHUB_ENV"
+          echo "Resolved evidence backend: $BACKEND_URL"
+
+          python - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
+          base = os.environ.get("PHILTHY_EVIDENCE_BACKEND_URL") or os.environ.get("PHILTHY_PRODUCTION_BACKEND_URL") or os.environ.get("PHILTHY_CANONICAL_PRODUCTION_BACKEND_URL")
+          base = base.rstrip("/")
+          failures = []
+          for path in ("/health", "/v1/system/status"):
+              url = base + path
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      body = response.read().decode("utf-8", "replace")
+                      print(f"{path}: HTTP {response.status}")
+                      if response.status != 200:
+                          failures.append(f"{path}:HTTP_{response.status}")
+                          continue
+                      if path.endswith("system/status"):
+                          try:
+                              payload = json.loads(body)
+                          except Exception as exc:
+                              failures.append(f"{path}:INVALID_JSON:{type(exc).__name__}")
+                              continue
+                          storage = payload.get("evidence_storage") or payload.get("storage") or {}
+                          if isinstance(storage, dict):
+                              print("evidence storage:", json.dumps(storage, sort_keys=True))
+                              if storage.get("durable") is False:
+                                  failures.append(f"{path}:EVIDENCE_STORAGE_NON_DURABLE:{storage.get('database_error_type') or storage.get('mode')}")
+              except Exception as exc:
+                  failures.append(f"{path}:{type(exc).__name__}:{exc}")
+          if failures:
+              print("Production backend verification failed:", *failures, sep="\n- ", file=sys.stderr)
+              sys.exit(3)
+          PY
 
       - name: Preserve evidence tools from main
         run: |
@@ -88,26 +123,12 @@ jobs:
           mkdir -p "$TARGET"
           cp /tmp/pregame_capture/* "$TARGET"/
 
-          PYTHONPATH=/tmp python /tmp/prediction_ledger.py capture \
-            --root evidence \
-            --capture-dir "$TARGET"
-
-          python /tmp/evidence_pipeline.py settle \
-            --root evidence \
-            --lookback-days 21
-
-          PYTHONPATH=/tmp python /tmp/prediction_ledger.py settle \
-            --root evidence \
-            --lookback-days 21
-
-          python /tmp/evidence_pipeline.py build \
-            --root evidence
-
-          python /tmp/historical_backfill.py merge \
-            --root evidence
-
-          PYTHONPATH=/tmp python /tmp/prediction_ledger.py verify \
-            --root evidence
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py capture --root evidence --capture-dir "$TARGET"
+          python /tmp/evidence_pipeline.py settle --root evidence --lookback-days 21
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py settle --root evidence --lookback-days 21
+          python /tmp/evidence_pipeline.py build --root evidence
+          python /tmp/historical_backfill.py merge --root evidence
+          PYTHONPATH=/tmp python /tmp/prediction_ledger.py verify --root evidence
 
           mkdir -p evidence/run_metadata
           cat > evidence/run_metadata/latest.json <<EOF
