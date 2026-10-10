@@ -1,6 +1,26 @@
 name: PhilthyParleys Client & Workflow CI
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'mobile_dashboard/**'
+      - 'backend/Dockerfile'
+      - 'deploy/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'ci/floot_cutover_smoke.py'
+      - 'ci/portable_backend_contract.py'
+      - 'ci/governed_release_gate.py'
+      - 'ci/test_governed_release_gate.py'
+      - '.github/workflows/floot-client-ci.yml'
+      - '.github/workflows/floot-cutover-guard.yml'
+      - '.github/workflows/portable-backend-ci.yml'
+      - '.github/workflows/backend-ghcr.yml'
+      - '.github/workflows/backend-self-host-deploy.yml'
+      - '.github/workflows/philthysports-full-ci.yml'
   pull_request:
     paths:
       - 'lib/**'
