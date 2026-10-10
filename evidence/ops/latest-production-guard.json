@@ -1,38 +1,63 @@
 {
-  "api_version": "1.6.6",
-  "base_url": "https://philthysports-api-v9.onrender.com",
-  "checked_at": "2026-10-06T22:48:10.146307+00:00",
+  "base_url": "https://philthyparleys.floot.app/_api",
+  "checked_at": "2026-10-10T17:14:44.292296+00:00",
   "checks": {
-    "core_keyless": true,
+    "evidence_database_configured": true,
+    "evidence_database_error_clear": true,
+    "evidence_durable": true,
+    "evidence_floot_postgres": true,
+    "floot_runtime": true,
     "health_ok": true,
-    "immutable_capture": true,
-    "keyless_props_fallback": true,
+    "immutable_evidence_signal": true,
     "manual_review_only": true,
-    "service_identity": true,
-    "stable_android_signing": true
+    "market_baseline_only": true,
+    "product_identity": true,
+    "props_contract_fail_closed": true,
+    "provider_inventory_coherent": true,
+    "service_identity": true
   },
-  "credential_gate": {
-    "any_credentialed_provider_configured": true,
-    "core_runtime_requires_secret": false,
-    "live_canary_evidence_verified": false,
-    "odds_api_key_configured": true,
-    "odds_api_net_key_configured": false,
-    "odds_props_live_allowed": true,
-    "provider_revocation_independently_verified": false,
-    "rotation_confirmed": true,
-    "sportradar_api_key_configured": true
+  "evidence_storage": {
+    "durable_storage": true,
+    "sample_signal": {
+      "event_id": "85a2379bc49135f2759709e55af0c4c6",
+      "evidence_type": "pregame_odds_snapshot",
+      "immutable": true,
+      "observed_at": "2026-10-10T17:04:46.618Z",
+      "record_sha256": "a30df0edd0907a3aa7ed1e129974d2187e92b9ee214fdfc6a24a355bb2196896",
+      "signal_id": "a30df0ed-d090-7a3a-a7ed-1e129974d218",
+      "source": "the_odds_api_v4",
+      "sport": "NBA"
+    },
+    "storage_status": {
+      "database_configured": true,
+      "database_error_type": null,
+      "durable": true,
+      "mode": "floot_postgres"
+    }
   },
-  "gates": {
-    "calibration": "BLOCKED_EVIDENCE",
-    "chronology": "BLOCKED_EVIDENCE",
-    "credential_core_keyless": "PASS",
-    "credential_live_odds_props": "CONFIGURED_CANARY_EVIDENCE_REQUIRED",
-    "four_sport_model_promotion": "BLOCKED_EVIDENCE",
-    "immutable_pregame_evidence_capture": "PASS_VERIFIED_CHECKSUMMED_HISTORY",
-    "leakage": "BLOCKED_EVIDENCE",
-    "provenance": "BLOCKED_EVIDENCE",
-    "stable_android_signing": "PASS_CI_PINNED_CERTIFICATE"
+  "execution": {
+    "manual_review_only": true,
+    "market_baseline_only": true
   },
   "passed": true,
-  "props_status": "PRIMARY_CONFIGURED_WITH_KEYLESS_FALLBACK"
+  "props_status": "UNAVAILABLE_WITHOUT_VERIFIED_PROP_FEED",
+  "provider": {
+    "inventory_generated_at": "2026-10-10T17:14:45.537Z",
+    "the_odds_api": {
+      "authenticated": true,
+      "checked_at": "2026-10-10T17:13:05.655Z",
+      "configured": true,
+      "http_status": 200,
+      "id": "the_odds_api",
+      "schema_valid": true,
+      "state": "verified"
+    }
+  },
+  "release_readiness_proven": false,
+  "runtime": {
+    "checked_at": "2026-10-10T17:14:44.654Z",
+    "host": "Floot",
+    "product": "PhilthyParleys",
+    "service": "philthysports-runtime"
+  }
 }

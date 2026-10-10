@@ -1,16 +1,22 @@
 {
-  "api_version": "1.6.6",
-  "backend": "https://philthysports-api-v9.onrender.com",
+  "api_version": null,
+  "backend": "https://philthyparleys.floot.app/_api",
   "checks": {
-    "core_keyless": true,
+    "evidence_database_configured": true,
+    "evidence_database_error_clear": true,
+    "evidence_durable": true,
+    "evidence_floot_postgres": true,
+    "floot_runtime": true,
     "health_ok": true,
-    "immutable_capture": true,
-    "keyless_props_fallback": true,
+    "immutable_evidence_signal": true,
     "manual_review_only": true,
-    "service_identity": true,
-    "stable_android_signing": true
+    "market_baseline_only": true,
+    "product_identity": true,
+    "props_contract_fail_closed": true,
+    "provider_inventory_coherent": true,
+    "service_identity": true
   },
-  "main_commit": "d90e6baa415cfb304320dbfef43f4f8b0c1710b2",
+  "main_commit": "c89c606d458ab4785d5dd6e10f069ec721319359",
   "schema_version": 1,
-  "verified_at": "2026-10-06T22:48:10.514064+00:00"
+  "verified_at": "2026-10-10T17:14:45.939392+00:00"
 }
