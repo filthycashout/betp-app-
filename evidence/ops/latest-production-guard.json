@@ -1,6 +1,6 @@
 {
   "base_url": "https://philthyparleys.floot.app/_api",
-  "checked_at": "2026-10-11T01:21:14.448763+00:00",
+  "checked_at": "2026-10-11T18:04:02.419565+00:00",
   "checks": {
     "evidence_database_configured": true,
     "evidence_database_error_clear": true,
@@ -22,9 +22,9 @@
       "event_id": "85a2379bc49135f2759709e55af0c4c6",
       "evidence_type": "pregame_odds_snapshot",
       "immutable": true,
-      "observed_at": "2026-10-10T22:32:41.903Z",
-      "record_sha256": "90c959e10e4f18aff06ed99252a2d26d6a34686b7116b5de39823514153952ff",
-      "signal_id": "90c959e1-0e4f-18af-f06e-d99252a2d26d",
+      "observed_at": "2026-10-11T18:01:41.433Z",
+      "record_sha256": "dfed45bfda23211b84174e41160fa77f643bf872137936b9e0d0fd5e95d8a488",
+      "signal_id": "dfed45bf-da23-211b-8417-4e41160fa77f",
       "source": "the_odds_api_v4",
       "sport": "NBA"
     },
@@ -40,12 +40,12 @@
     "market_baseline_only": true
   },
   "passed": true,
-  "props_status": "UNAVAILABLE_WITHOUT_VERIFIED_PROP_FEED",
+  "props_status": "LIVE_EVENT_PROP_FEED_CONFIGURED",
   "provider": {
-    "inventory_generated_at": "2026-10-11T01:21:17.784Z",
+    "inventory_generated_at": "2026-10-11T18:04:04.279Z",
     "the_odds_api": {
       "authenticated": true,
-      "checked_at": "2026-10-10T22:23:59.246Z",
+      "checked_at": "2026-10-11T18:01:40.527Z",
       "configured": true,
       "http_status": 200,
       "id": "the_odds_api",
@@ -55,7 +55,7 @@
   },
   "release_readiness_proven": false,
   "runtime": {
-    "checked_at": "2026-10-11T01:21:15.522Z",
+    "checked_at": "2026-10-11T18:04:02.658Z",
     "host": "Floot",
     "product": "PhilthyParleys",
     "service": "philthysports-runtime"
