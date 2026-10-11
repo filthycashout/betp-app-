@@ -19,6 +19,8 @@ class RecommendationInput:
     model_promotion_passed: bool = False
     dependence_required: bool = False
     dependence_available: bool = False
+    require_sharp_anchor: bool = False
+    sharp_anchor_verified: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,8 @@ def evaluate(
         reasons.append("UNPROMOTED_MODEL_CONTRIBUTION")
     if item.dependence_required and not item.dependence_available:
         reasons.append("DEPENDENCE_EVIDENCE_UNAVAILABLE")
+    if item.require_sharp_anchor and not item.sharp_anchor_verified:
+        reasons.append("SHARP_ANCHOR_UNVERIFIED")
 
     eligible = not reasons
     stake = fractional_kelly(item.probability, item.american_odds, fraction=kelly_fraction) if eligible else 0.0

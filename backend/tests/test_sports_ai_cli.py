@@ -10,7 +10,7 @@ from sports_ai.config.settings import Settings
 FIXTURE = {
     "selection": "fixture-selection",
     "soft_american_odds": 100,
-    "sharp_market_prob": 0.55,
+    "market_anchor_prob": 0.55,
     "snapshot_age_seconds": 60,
     "market_quality": 0.90,
     "source_health_passed": True,

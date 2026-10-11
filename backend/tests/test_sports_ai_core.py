@@ -68,7 +68,7 @@ class SportsAICoreTests(unittest.TestCase):
                 sport="MLB",
                 selection="fixture-selection",
                 soft_american_odds=100,
-                sharp_market_prob=0.55,
+                market_anchor_prob=0.55,
                 model_prob=0.70,
                 model_promotion_passed=False,
                 snapshot_age_seconds=60,
@@ -77,9 +77,46 @@ class SportsAICoreTests(unittest.TestCase):
                 context_ready=True,
             )
         )
-        self.assertEqual(result["probability_source"], "SHARP_MARKET_BASELINE")
+        self.assertEqual(result["probability_source"], "MARKET_BASELINE")
+        self.assertFalse(result["sharp_anchor_verified"])
         self.assertTrue(math.isclose(result["final_probability"], 0.55, rel_tol=1e-12))
         self.assertTrue(result["decision"]["eligible"])
+
+    def test_verified_sharp_anchor_is_explicit(self) -> None:
+        result = self.engine.evaluate_candidate(
+            MarketCandidate(
+                sport="MLB",
+                selection="fixture-selection",
+                soft_american_odds=100,
+                market_anchor_prob=0.55,
+                market_anchor_kind="PINNACLE_NO_VIG",
+                sharp_anchor_verified=True,
+                require_sharp_anchor=True,
+                snapshot_age_seconds=60,
+                market_quality=0.95,
+                source_health_passed=True,
+                context_ready=True,
+            )
+        )
+        self.assertEqual(result["probability_source"], "SHARP_MARKET_BASELINE")
+        self.assertTrue(result["decision"]["eligible"])
+
+    def test_sharp_strategy_fails_closed_without_verified_anchor(self) -> None:
+        result = self.engine.evaluate_candidate(
+            MarketCandidate(
+                sport="MLB",
+                selection="fixture-selection",
+                soft_american_odds=100,
+                market_anchor_prob=0.60,
+                require_sharp_anchor=True,
+                snapshot_age_seconds=60,
+                market_quality=0.90,
+                source_health_passed=True,
+                context_ready=True,
+            )
+        )
+        self.assertFalse(result["decision"]["eligible"])
+        self.assertIn("SHARP_ANCHOR_UNVERIFIED", result["decision"]["reasons"])
 
     def test_promoted_model_can_contribute(self) -> None:
         result = self.engine.evaluate_candidate(
@@ -87,7 +124,7 @@ class SportsAICoreTests(unittest.TestCase):
                 sport="NBA",
                 selection="fixture-selection",
                 soft_american_odds=100,
-                sharp_market_prob=0.54,
+                market_anchor_prob=0.54,
                 model_prob=0.64,
                 model_promotion_passed=True,
                 snapshot_age_seconds=60,
@@ -96,7 +133,7 @@ class SportsAICoreTests(unittest.TestCase):
                 context_ready=True,
             )
         )
-        self.assertEqual(result["probability_source"], "SHARP_MARKET_PLUS_PROMOTED_MODEL")
+        self.assertEqual(result["probability_source"], "MARKET_ANCHOR_PLUS_PROMOTED_MODEL")
         self.assertGreater(result["final_probability"], 0.54)
 
     def test_stale_market_and_missing_dependence_fail_closed(self) -> None:
@@ -105,7 +142,7 @@ class SportsAICoreTests(unittest.TestCase):
                 sport="NFL",
                 selection="fixture-selection",
                 soft_american_odds=100,
-                sharp_market_prob=0.60,
+                market_anchor_prob=0.60,
                 snapshot_age_seconds=901,
                 market_quality=0.90,
                 source_health_passed=True,
@@ -120,7 +157,7 @@ class SportsAICoreTests(unittest.TestCase):
                 sport="NHL",
                 selection="fixture-selection",
                 soft_american_odds=100,
-                sharp_market_prob=0.60,
+                market_anchor_prob=0.60,
                 snapshot_age_seconds=60,
                 market_quality=0.90,
                 source_health_passed=True,

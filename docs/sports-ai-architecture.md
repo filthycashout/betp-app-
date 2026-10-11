@@ -9,13 +9,14 @@ The Powerhouse is one analytical engine inside the existing backend, not a secon
 - Point-in-time data requires `observed_at <= prediction_time < event_time`.
 - Existing governed model promotion remains fail-closed; unpromoted model output cannot influence final probability.
 - Market-baseline operation remains available while trained-model promotion is pending.
+- A market consensus is not automatically labeled sharp. Sharp-vs-soft strategies must carry explicit verified sharp-anchor provenance and fail closed otherwise.
 - Correlated parlays fail closed when measured dependence evidence is unavailable.
 - No automatic wagering execution is introduced.
 - Secrets remain deployment environment variables; no `secrets.env` is committed.
 
 ## Decision flow
 
-`point-in-time data -> normalized candidate -> sharp/no-vig market probability -> optional promoted model blend -> edge/EV -> freshness/context/dependence gates -> recommendation -> settlement/CLV tracking`
+`point-in-time data -> normalized market anchor -> optional verified sharp provenance -> optional promoted model blend -> compare to soft-book price -> edge/EV -> freshness/context/dependence gates -> recommendation -> settlement/CLV tracking`
 
 ## Entrypoint
 
