@@ -1,7 +1,8 @@
-"""Compatibility entry point for the standalone PhilthySports MCP v2 service.
+"""Compatibility entry point for the optional standalone PhilthySports MCP adapter.
 
-Render starts `mcp_service:app`; the implementation lives in
-`mcp_v2_service.py` so protocol CI can import and exercise the same server.
+Production execution now uses the canonical PhilthyParleys Floot `/_api` backend.
+This module remains available only for an explicitly hosted/local MCP adapter and
+imports the same implementation exercised by protocol CI.
 """
 from mcp_v2_service import app, mcp
 
