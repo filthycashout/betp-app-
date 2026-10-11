@@ -169,7 +169,7 @@ def philthy_capability_inventory() -> dict[str, Any]:
             "odds-api-research": {"role": "odds/bookmaker research", "docs": "https://gitmcp.io/odds-api/odds-api", "execution": "server-side backend when authenticated"},
             "draftfast-lineup-optimizer": {"role": "DFS optimizer", "docs": "https://gitmcp.io/BenBrostoff/draftfast", "execution": "local MCP service"},
             "fanduel-api-research": {"role": "unofficial schema research", "docs": "https://gitmcp.io/Setfive/fanduel-api", "execution": "research-only"},
-            "bytecode_viewer": {"role": "authorized static Android/Java analysis", "docs": "https://gitmcp.io/Konloch/bytecode-viewer", "execution": "static-analysis workflow only"},
+            "bytecode-viewer-analysis": {"role": "authorized static Android/Java analysis", "docs": "https://gitmcp.io/Konloch/bytecode-viewer", "execution": "static-analysis workflow only"},
         },
         "predictive_contract": "as_of < event_time; preserve provenance; fail closed; no production mock substitution",
     }
