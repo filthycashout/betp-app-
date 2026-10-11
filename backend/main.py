@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Single CLI entrypoint for the unified sports_ai decision engine.
-
-The CLI consumes normalized point-in-time candidates. Live provider collection
-continues through the existing backend during migration; this entrypoint does
-not bypass provider validation or model-promotion gates.
-"""
+"""Single CLI entrypoint for the unified PhilthyParleys sports_ai engine."""
 from __future__ import annotations
 
 import argparse
@@ -48,29 +43,41 @@ def _load_input(path: str) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the unified PhilthyParleys sports_ai decision core")
+    parser = argparse.ArgumentParser(description="Run the unified PhilthyParleys sports_ai engine")
     parser.add_argument("--sport", choices=SUPPORTED_SPORTS)
+    parser.add_argument("--live", action="store_true", help="Use the existing governed live backend providers")
+    parser.add_argument("--date", help="Local game date as YYYY-MM-DD for --live")
+    parser.add_argument("--query", default="", help="Optional team/matchup filter for --live")
     parser.add_argument(
         "--input",
         default="-",
-        help="JSON file containing normalized candidates; '-' reads stdin",
+        help="Offline JSON candidate file; '-' reads stdin. Ignored with --live.",
     )
     args = parser.parse_args(argv)
-    payload = _load_input(args.input)
 
-    if args.sport:
-        if isinstance(payload, dict) and args.sport in payload:
-            payload = payload[args.sport]
-        if not isinstance(payload, list):
-            parser.error("--sport input must be a JSON list (or a mapping containing that sport)")
-        result = run_sport(args.sport, payload)
+    if args.live:
+        from sports_ai.live import run_live_all, run_live_sport
+
+        result = (
+            run_live_sport(args.sport, date=args.date, query=args.query)
+            if args.sport
+            else run_live_all(date=args.date, query=args.query)
+        )
     else:
-        if not isinstance(payload, dict):
-            parser.error("run_all input must be a JSON object keyed by MLB/NHL/NBA/NFL")
-        unknown = sorted(set(payload) - set(SUPPORTED_SPORTS))
-        if unknown:
-            parser.error(f"unsupported sport keys: {', '.join(unknown)}")
-        result = run_all(payload)
+        payload = _load_input(args.input)
+        if args.sport:
+            if isinstance(payload, dict) and args.sport in payload:
+                payload = payload[args.sport]
+            if not isinstance(payload, list):
+                parser.error("--sport input must be a JSON list (or a mapping containing that sport)")
+            result = run_sport(args.sport, payload)
+        else:
+            if not isinstance(payload, dict):
+                parser.error("run_all input must be a JSON object keyed by MLB/NHL/NBA/NFL")
+            unknown = sorted(set(payload) - set(SUPPORTED_SPORTS))
+            if unknown:
+                parser.error(f"unsupported sport keys: {', '.join(unknown)}")
+            result = run_all(payload)
 
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
