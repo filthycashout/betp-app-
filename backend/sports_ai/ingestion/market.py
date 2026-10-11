@@ -36,8 +36,6 @@ def _price(value: Any) -> float:
 
 
 def _market_quality(market: dict[str, Any]) -> float:
-    """Evidence-quality score for the selected offered price."""
-
     if market.get("freshness_verified") is not True:
         return 0.0
     if market.get("provider_timestamp_verified") is True:
@@ -69,8 +67,6 @@ def moneyline_candidate_from_validated_market(
     model_promotion_passed: bool = False,
     model_includes_market: bool = False,
 ) -> MarketCandidate:
-    """Convert a validated market payload into the unified decision contract."""
-
     normalized = sport.upper().strip()
     selection = str(market.get("moneyline_pick") or "").strip()
     if not selection:
@@ -89,10 +85,7 @@ def moneyline_candidate_from_validated_market(
         raise ValueError("validated market quote is stale or future-dated")
     snapshot_age = max(0.0, age)
 
-    anchor_probability = _probability(
-        market.get("moneyline_pick_probability"),
-        field="moneyline_pick_probability",
-    )
+    anchor_probability = _probability(market.get("moneyline_pick_probability"), field="moneyline_pick_probability")
     anchor_kind = "DEVIG_CONSENSUS"
     sharp_verified = False
 
@@ -115,17 +108,12 @@ def moneyline_candidate_from_validated_market(
             raise ValueError("sharp_anchor is stale or future-dated")
         if sharp_observed >= event_time:
             raise ValueError("sharp_anchor must be observed before event_time")
-        anchor_probability = _probability(
-            sharp_anchor.get("probability"),
-            field="sharp_anchor probability",
-        )
+        anchor_probability = _probability(sharp_anchor.get("probability"), field="sharp_anchor probability")
         anchor_kind = f"{source_key}_NO_VIG"
         sharp_verified = True
         snapshot_age = max(snapshot_age, max(0.0, sharp_age))
 
-    normalized_model_prob = None
-    if model_prob is not None:
-        normalized_model_prob = _probability(model_prob, field="model_prob")
+    normalized_model_prob = None if model_prob is None else _probability(model_prob, field="model_prob")
 
     return MarketCandidate(
         sport=normalized,
@@ -164,13 +152,18 @@ def moneyline_candidate_from_event(
     model_promotion_passed: bool = False,
     model_includes_market: bool = False,
 ) -> MarketCandidate:
-    """Build a candidate from side-complete fresh H2H evidence."""
-
     now = (prediction_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    excluded_books: list[str] = []
+    if sharp_anchor:
+        for key in ("book_key", "source", "book_title"):
+            value = str(sharp_anchor.get(key) or "").strip()
+            if value:
+                excluded_books.append(value)
     snapshot = moneyline_snapshot_from_event(
         odds_event,
         now=now,
         max_quote_age_seconds=max_quote_age_seconds,
+        excluded_books=excluded_books,
     )
     if snapshot.get("status") != "OK":
         raise ValueError(f"side-complete moneyline unavailable: {snapshot.get('status')}")

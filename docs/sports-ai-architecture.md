@@ -10,23 +10,44 @@ The Powerhouse is one analytical engine inside the existing backend, not a secon
 - Existing governed model promotion remains fail-closed; unpromoted model output cannot influence final probability.
 - Market-baseline operation remains available while trained-model promotion is pending.
 - A market consensus is not automatically labeled sharp. Sharp-vs-soft strategies must carry explicit verified sharp-anchor provenance and fail closed otherwise.
+- A sharp anchor and the compared soft price must come from different bookmakers.
+- Sharp anchors require provider timestamps; a local fetch-observed timestamp alone cannot promote a quote to sharp evidence.
 - Correlated parlays fail closed when measured dependence evidence is unavailable.
 - No automatic wagering execution is introduced.
 - Secrets remain deployment environment variables; no `secrets.env` is committed.
 
 ## Decision flow
 
-`point-in-time data -> normalized market anchor -> optional verified sharp provenance -> optional promoted model blend -> compare to soft-book price -> edge/EV -> freshness/context/dependence gates -> recommendation -> settlement/CLV tracking`
+`point-in-time data -> normalized market anchor -> optional verified sharp provenance -> optional promoted model -> compare to independent soft-book price -> edge/EV -> freshness/context/dependence gates -> recommendation -> settlement/CLV tracking`
+
+## Sharp anchor contract
+
+The default trusted sharp-book key is `pinnacle`, configurable with `SPORTS_AI_SHARP_BOOK_KEYS`. `SPORTS_AI_SHARP_MAX_AGE_SECONDS` controls the maximum provider-timestamp age and defaults to 180 seconds.
+
+The live path first looks for a qualifying sharp quote in the already-fetched event pool. If none is present and Pinnacle is enabled, it may query The Odds API v4 with `bookmakers=pinnacle` through the backend's existing credential-rotation and request wrappers. The API credential is never emitted in decision output.
+
+A verified anchor must satisfy all of the following:
+
+1. Match the same teams and event start window.
+2. Come from a configured sharp-book key.
+3. Contain exactly two moneyline outcomes for the selected game side and its opponent.
+4. Carry a bookmaker/market provider timestamp within the configured age limit.
+5. Be de-vigged from both sides of that same bookmaker market.
+6. Be excluded from the soft-price pool used for the EV comparison.
+
+If any requirement fails, the decision remains fail-closed with sharp evidence unavailable.
 
 ## Entrypoint
 
-`backend/main.py` is the single analytics CLI entrypoint. It calls `run_sport("MLB")`-style execution or `run_all()` over normalized candidate JSON. During migration, live provider collection remains in the existing backend so this new core cannot bypass freshness validation, source routing, or promotion governance.
+`backend/main.py` is the single analytics CLI entrypoint for both normalized offline candidates and the governed live backend.
 
 Examples:
 
 ```sh
 PYTHONPATH=backend python backend/main.py --sport MLB --input candidates.json
 PYTHONPATH=backend python backend/main.py --input four-sport-candidates.json
+PYTHONPATH=backend python backend/main.py --live --sport NFL
+PYTHONPATH=backend python backend/main.py --live
 ```
 
-The current migration deliberately starts with the pure decision layer so existing live provider routing and FastAPI contracts remain unchanged. Ingestion, role models, simulations, persistence, CLV settlement, and API adapters can migrate behind this interface in later commits without a big-bang rewrite.
+The migration remains incremental: existing FastAPI/mobile contracts stay intact while live analytics, tracking, sport-specific role models, simulations, and settlement logic move behind the unified interfaces only after their tests and evidence gates pass.

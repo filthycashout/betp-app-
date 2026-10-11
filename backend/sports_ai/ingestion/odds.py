@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from statistics import mean
-from typing import Any
+from typing import Any, Iterable
 
 from market_validation import MAX_QUOTE_AGE_SECONDS, implied, number, utc_time
+
+
+def _norm_book(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
 
 
 def moneyline_snapshot_from_event(
@@ -12,15 +16,17 @@ def moneyline_snapshot_from_event(
     *,
     now: datetime | None = None,
     max_quote_age_seconds: int = MAX_QUOTE_AGE_SECONDS,
+    excluded_books: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Return a side-complete, point-in-time H2H snapshot.
 
     Only fresh two-sided prices from the same bookmaker contribute to the
-    no-vig consensus. Best prices are retained independently for home and away,
-    including the timestamp basis of each selected quote.
+    no-vig consensus. Best prices are retained independently for home and away.
+    `excluded_books` removes sharp-anchor books from the soft comparison pool.
     """
 
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    excluded = {_norm_book(value) for value in excluded_books if _norm_book(value)}
     base: dict[str, Any] = {
         "status": "NO_FRESH_TWO_SIDED_MONEYLINE",
         "freshness_verified": False,
@@ -42,6 +48,7 @@ def moneyline_snapshot_from_event(
         "last_update": None,
         "book_count": 0,
         "books_used": [],
+        "books_excluded": sorted(excluded),
     }
     if not event:
         return base
@@ -60,7 +67,11 @@ def moneyline_snapshot_from_event(
     for book in event.get("bookmakers") or []:
         if not isinstance(book, dict):
             continue
-        book_name = str(book.get("key") or book.get("title") or "unknown")
+        book_key = str(book.get("key") or "").strip()
+        book_title = str(book.get("title") or "").strip()
+        if excluded and ({_norm_book(book_key), _norm_book(book_title)} - {""}) & excluded:
+            continue
+        book_name = book_key or book_title or "unknown"
         for market in book.get("markets") or []:
             if not isinstance(market, dict) or market.get("key") != "h2h":
                 continue

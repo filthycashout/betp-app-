@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from datetime import date as date_cls
+from datetime import date as date_cls, datetime, timezone
 from typing import Any
 
 from sports_ai import SUPPORTED_SPORTS
 from sports_ai.ingestion.market import moneyline_candidate_from_event
+from sports_ai.ingestion.sharp import extract_sharp_moneyline_anchor, fetch_pinnacle_moneyline_anchor
 from sports_ai.orchestrator import SportsAIEngine
 
 
 def _runtime_backend():
-    # Lazy import prevents the reusable decision package from importing FastAPI
-    # or live provider clients during ordinary unit tests/offline analysis.
     import app
 
     return app
@@ -24,6 +23,41 @@ def _selected_probability(home_probability: float, selection: str, home: str, aw
     raise ValueError("selection does not match home or away team")
 
 
+def _sharp_evidence(
+    runtime: Any,
+    engine: SportsAIEngine,
+    *,
+    sport: str,
+    game: dict[str, Any],
+    odds_events: list[dict[str, Any]],
+    selection: str,
+    now: datetime,
+) -> dict[str, Any]:
+    settings = engine.settings
+    evidence = extract_sharp_moneyline_anchor(
+        odds_events,
+        game=game,
+        selection=selection,
+        allowed_book_keys=settings.sharp_book_keys,
+        now=now,
+        max_age_seconds=settings.sharp_max_age_seconds,
+    )
+    if evidence.get("verified"):
+        evidence["retrieval"] = "existing_odds_event_pool"
+        return evidence
+    if "pinnacle" not in {key.lower() for key in settings.sharp_book_keys}:
+        return evidence
+    fetched = fetch_pinnacle_moneyline_anchor(
+        runtime,
+        sport=sport,
+        game=game,
+        selection=selection,
+        now=now,
+        max_age_seconds=settings.sharp_max_age_seconds,
+    )
+    return fetched if fetched.get("verified") else fetched
+
+
 def run_live_sport(
     sport: str,
     *,
@@ -32,14 +66,6 @@ def run_live_sport(
     backend: Any | None = None,
     engine: SportsAIEngine | None = None,
 ) -> dict[str, Any]:
-    """Run the unified game-winner decision core against current backend data.
-
-    Strict live mode intentionally requires a verified sharp anchor for an
-    actionable recommendation. The repository currently has no authenticated
-    sharp-anchor contract, so live results remain blocked from recommendation
-    eligibility rather than silently treating ordinary consensus as sharp.
-    """
-
     runtime = backend or _runtime_backend()
     decision_engine = engine or SportsAIEngine()
     normalized = sport.upper()
@@ -65,6 +91,7 @@ def run_live_sport(
         }
 
     decisions: list[dict[str, Any]] = []
+    any_sharp = False
     for game in schedule:
         if query and not runtime._matches_search_query(query, game, normalized, day):
             continue
@@ -120,6 +147,18 @@ def run_live_sport(
             if promoted_contributed
             else None
         )
+        current = datetime.now(timezone.utc)
+        sharp = _sharp_evidence(
+            runtime,
+            decision_engine,
+            sport=normalized,
+            game=game,
+            odds_events=odds_events,
+            selection=selection,
+            now=current,
+        )
+        sharp_anchor = sharp.get("anchor") if sharp.get("verified") else None
+        any_sharp = any_sharp or bool(sharp_anchor)
         source_health_passed = bool(str(odds_event.get("market_source") or "").strip())
 
         try:
@@ -127,10 +166,12 @@ def run_live_sport(
                 sport=normalized,
                 game=game,
                 odds_event=odds_event,
-                selection=selection if promoted_contributed else None,
+                selection=selection,
                 context_ready=True,
                 source_health_passed=source_health_passed,
+                prediction_time=current,
                 actionable=True,
+                sharp_anchor=sharp_anchor,
                 model_prob=selected_model_probability,
                 model_promotion_passed=promoted_contributed,
                 model_includes_market=promoted_contributed,
@@ -149,6 +190,7 @@ def run_live_sport(
             "status": status,
             "market_source": odds_event.get("market_source"),
             "source_health_passed": source_health_passed,
+            "sharp_anchor": sharp,
             "model_runtime_mode": runtime._runtime_mode_for(normalized),
             "promotion_gate_passed": bool(gate.get("passed")),
             "promoted_model_contributed": promoted_contributed,
@@ -164,7 +206,9 @@ def run_live_sport(
         "execution_policy": {
             "automatic_wagering": False,
             "verified_sharp_anchor_required": True,
-            "verified_sharp_anchor_available": False,
+            "verified_sharp_anchor_available": any_sharp,
+            "sharp_book_keys": list(decision_engine.settings.sharp_book_keys),
+            "sharp_max_age_seconds": decision_engine.settings.sharp_max_age_seconds,
         },
     }
 
