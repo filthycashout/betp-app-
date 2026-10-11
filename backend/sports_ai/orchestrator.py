@@ -20,8 +20,12 @@ class MarketCandidate:
     market_quality: float
     source_health_passed: bool
     context_ready: bool
+    event_id: str = ""
+    market: str = "moneyline"
+    line: float | None = None
     model_prob: float | None = None
     model_promotion_passed: bool = False
+    model_includes_market: bool = False
     market_anchor_kind: str = "DEVIG_CONSENSUS"
     sharp_anchor_verified: bool = False
     require_sharp_anchor: bool = False
@@ -32,11 +36,9 @@ class MarketCandidate:
 class SportsAIEngine:
     """Pure decision core fed by normalized point-in-time market candidates.
 
-    `market_anchor_prob` may be a verified sharp/no-vig anchor or a lower-grade
-    de-vig consensus. The engine never calls it sharp unless the caller supplies
-    explicit `sharp_anchor_verified=True` provenance. Strategies that require a
-    sharp-vs-soft comparison must set `require_sharp_anchor=True` and fail closed
-    otherwise.
+    A promoted model that already consumed market probability must set
+    `model_includes_market=True`; its calibrated probability is then used
+    directly rather than blended with the same market a second time.
     """
 
     def __init__(self, settings: Settings | None = None) -> None:
@@ -50,10 +52,14 @@ class SportsAIEngine:
             raise ValueError("market_anchor_kind is required")
 
         model_contributed = candidate.model_prob is not None and candidate.model_promotion_passed
-        if model_contributed:
+        if model_contributed and candidate.model_includes_market:
+            final_probability = float(candidate.model_prob)
+            probability_source = "PROMOTED_MARKET_CONDITIONED_MODEL"
+            probability_method = "promoted_calibrated_model_already_conditions_on_market"
+        elif model_contributed:
             final_probability = blend_log_odds(
                 candidate.market_anchor_prob,
-                candidate.model_prob,
+                float(candidate.model_prob),
                 w_market=self.settings.market_weight,
             )
             probability_source = (
@@ -61,6 +67,7 @@ class SportsAIEngine:
                 if candidate.sharp_anchor_verified
                 else "MARKET_ANCHOR_PLUS_PROMOTED_MODEL"
             )
+            probability_method = "log_odds_market_model_blend"
         else:
             final_probability = candidate.market_anchor_prob
             probability_source = (
@@ -68,6 +75,7 @@ class SportsAIEngine:
                 if candidate.sharp_anchor_verified
                 else "MARKET_BASELINE"
             )
+            probability_method = "market_anchor_only"
 
         soft_probability = implied_prob(candidate.soft_american_odds)
         edge = final_probability - soft_probability
@@ -94,6 +102,9 @@ class SportsAIEngine:
         )
         return {
             "sport": sport,
+            "event_id": candidate.event_id,
+            "market": candidate.market,
+            "line": candidate.line,
             "selection": candidate.selection,
             "soft_american_odds": candidate.soft_american_odds,
             "soft_implied_probability": soft_probability,
@@ -102,7 +113,9 @@ class SportsAIEngine:
             "sharp_anchor_verified": candidate.sharp_anchor_verified,
             "model_probability": candidate.model_prob,
             "model_promotion_passed": candidate.model_promotion_passed,
+            "model_includes_market": candidate.model_includes_market,
             "probability_source": probability_source,
+            "probability_method": probability_method,
             "final_probability": final_probability,
             "edge": edge,
             "decision": asdict(decision),
