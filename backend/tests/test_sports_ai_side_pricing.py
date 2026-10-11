@@ -26,6 +26,20 @@ def _book(name: str, home_price: int, away_price: int, *, age_seconds: int = 20)
     }
 
 
+def _observed_book(name: str, home_price: int, away_price: int, *, age_seconds: int = 20) -> dict:
+    return {
+        "key": name,
+        "observed_at": (NOW - timedelta(seconds=age_seconds)).isoformat(),
+        "markets": [{
+            "key": "h2h",
+            "outcomes": [
+                {"name": "Home", "price": home_price},
+                {"name": "Away", "price": away_price},
+            ],
+        }],
+    }
+
+
 def _event(*books: dict) -> dict:
     return {
         "id": "fixture-event",
@@ -104,6 +118,30 @@ def test_model_can_select_opposite_side_without_reusing_consensus_price() -> Non
     assert result["soft_american_odds"] == 130
     assert result["final_probability"] == pytest.approx(0.60)
     assert result["probability_source"] == "PROMOTED_MARKET_CONDITIONED_MODEL"
+
+
+def test_selected_price_quality_uses_that_books_timestamp_basis() -> None:
+    event = _event(
+        _book("provider-book", -110, -110),
+        _observed_book("observed-soft", -105, 120),
+    )
+    snapshot = moneyline_snapshot_from_event(event, now=NOW)
+    assert snapshot["provider_timestamp_verified"] is True
+    assert snapshot["observed_at_verified"] is True
+    assert snapshot["away_best_book"] == "observed-soft"
+    assert snapshot["away_best_price_freshness_basis"] == "fresh_fetch_observed_at"
+
+    candidate = moneyline_candidate_from_event(
+        sport="NHL",
+        game=_game(),
+        odds_event=event,
+        selection="Away",
+        context_ready=True,
+        source_health_passed=True,
+        prediction_time=NOW,
+        actionable=False,
+    )
+    assert candidate.market_quality == pytest.approx(0.80)
 
 
 def test_stale_book_is_excluded_without_poisoning_fresh_pair() -> None:

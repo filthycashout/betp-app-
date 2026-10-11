@@ -36,7 +36,7 @@ def _price(value: Any) -> float:
 
 
 def _market_quality(market: dict[str, Any]) -> float:
-    """Evidence-quality score, not a win probability."""
+    """Evidence-quality score for the selected offered price."""
 
     if market.get("freshness_verified") is not True:
         return 0.0
@@ -164,12 +164,7 @@ def moneyline_candidate_from_event(
     model_promotion_passed: bool = False,
     model_includes_market: bool = False,
 ) -> MarketCandidate:
-    """Build a candidate from side-complete fresh H2H evidence.
-
-    `selection` may be the opposite side from the market consensus. The chosen
-    side always receives its own consensus probability and its own best offered
-    price, preventing the model from inheriting the other team's quote.
-    """
+    """Build a candidate from side-complete fresh H2H evidence."""
 
     now = (prediction_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
     snapshot = moneyline_snapshot_from_event(
@@ -191,21 +186,23 @@ def moneyline_candidate_from_event(
         best_price = snapshot["home_best_price"]
         best_book = snapshot["home_best_book"]
         best_update = snapshot["home_best_price_last_update"]
+        best_basis = snapshot["home_best_price_freshness_basis"]
         chosen = home
     elif chosen.casefold() == away.casefold():
         probability = snapshot["away_probability"]
         best_price = snapshot["away_best_price"]
         best_book = snapshot["away_best_book"]
         best_update = snapshot["away_best_price_last_update"]
+        best_basis = snapshot["away_best_price_freshness_basis"]
         chosen = away
     else:
         raise ValueError("selection does not match the event home or away team")
 
     adapted_market = {
         "freshness_verified": snapshot["freshness_verified"],
-        "provider_timestamp_verified": snapshot["provider_timestamp_verified"],
-        "observed_at_verified": snapshot["observed_at_verified"],
-        "freshness_basis": snapshot["freshness_basis"],
+        "provider_timestamp_verified": best_basis == "provider_timestamp",
+        "observed_at_verified": best_basis == "fresh_fetch_observed_at",
+        "freshness_basis": [best_basis] if best_basis else [],
         "moneyline_pick": chosen,
         "moneyline_pick_probability": probability,
         "moneyline_best_price": best_price,

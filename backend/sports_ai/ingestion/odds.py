@@ -17,7 +17,7 @@ def moneyline_snapshot_from_event(
 
     Only fresh two-sided prices from the same bookmaker contribute to the
     no-vig consensus. Best prices are retained independently for home and away,
-    so a model is never forced to reuse the consensus-picked side's price.
+    including the timestamp basis of each selected quote.
     """
 
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -34,9 +34,11 @@ def moneyline_snapshot_from_event(
         "home_best_price": None,
         "home_best_book": None,
         "home_best_price_last_update": None,
+        "home_best_price_freshness_basis": None,
         "away_best_price": None,
         "away_best_book": None,
         "away_best_price_last_update": None,
+        "away_best_price_freshness_basis": None,
         "last_update": None,
         "book_count": 0,
         "books_used": [],
@@ -102,6 +104,7 @@ def moneyline_snapshot_from_event(
                 {
                     "book": book_name,
                     "updated": updated,
+                    "freshness_basis": basis,
                     "home_price": home_price,
                     "away_price": away_price,
                     "home_probability": home_implied / total,
@@ -133,9 +136,11 @@ def moneyline_snapshot_from_event(
         "home_best_price": best_home["home_price"] if best_home else None,
         "home_best_book": best_home["book"] if best_home else None,
         "home_best_price_last_update": best_home["updated"].isoformat() if best_home else None,
+        "home_best_price_freshness_basis": best_home["freshness_basis"] if best_home else None,
         "away_best_price": best_away["away_price"] if best_away else None,
         "away_best_book": best_away["book"] if best_away else None,
         "away_best_price_last_update": best_away["updated"].isoformat() if best_away else None,
+        "away_best_price_freshness_basis": best_away["freshness_basis"] if best_away else None,
         "last_update": latest.isoformat(),
         "book_count": len(books),
         "books_used": books,
