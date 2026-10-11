@@ -1,8 +1,8 @@
-"""Register the governed PhilthySports MCP router on FastAPI apps in this backend.
+"""Register the governed PhilthySports MCP router on local FastAPI apps.
 
-Render starts ``uvicorn app:app`` from this directory. Python imports
-``sitecustomize`` during interpreter startup, so this keeps the existing start
-command and production application behavior intact while adding only /mcp.
+The canonical production backend is PhilthyParleys on Floot. Python imports
+``sitecustomize`` during interpreter startup, so local/portable FastAPI runs keep
+existing application behavior while adding only the optional /mcp router.
 """
 from __future__ import annotations
 
