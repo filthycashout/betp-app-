@@ -11,7 +11,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 SERVICE_VERSION = "1.1.2"
 BACKEND_BASE = os.getenv("PHILTHY_BACKEND_BASE_URL", "https://philthyparleys.floot.app/_api").rstrip("/")
-PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "philthysports-mcp-v1.onrender.com").strip()
+PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "").strip()
 RETRYABLE = {429, 502, 503, 504}
 SESSION = requests.Session()
 SESSION.headers.update({"Accept": "application/json", "User-Agent": f"PhilthySports-MCP/{SERVICE_VERSION}"})
@@ -169,7 +169,7 @@ def philthy_capability_inventory() -> dict[str, Any]:
             "odds-api-research": {"role": "odds/bookmaker research", "docs": "https://gitmcp.io/odds-api/odds-api", "execution": "server-side backend when authenticated"},
             "draftfast-lineup-optimizer": {"role": "DFS optimizer", "docs": "https://gitmcp.io/BenBrostoff/draftfast", "execution": "local MCP service"},
             "fanduel-api-research": {"role": "unofficial schema research", "docs": "https://gitmcp.io/Setfive/fanduel-api", "execution": "research-only"},
-            "bytecode-viewer-analysis": {"role": "authorized static Android/Java analysis", "docs": "https://gitmcp.io/Konloch/bytecode-viewer", "execution": "static-analysis workflow only"},
+            "bytecode_viewer": {"role": "authorized static Android/Java analysis", "docs": "https://gitmcp.io/Konloch/bytecode-viewer", "execution": "static-analysis workflow only"},
         },
         "predictive_contract": "as_of < event_time; preserve provenance; fail closed; no production mock substitution",
     }
