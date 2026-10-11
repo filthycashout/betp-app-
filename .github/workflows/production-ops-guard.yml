@@ -67,25 +67,60 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          python - <<'PY'
+          set -euo pipefail
+
+          # A backend/training push can start this guard at the same moment as
+          # the evidence-capture workflow. Refresh the evidence branch briefly
+          # on push events so the guard does not fail against the pre-capture
+          # commit. Structural evidence errors still fail immediately.
+          attempts=1
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            attempts=8
+          fi
+
+          for attempt in $(seq 1 "$attempts"); do
+            git -C evidence_checkout fetch --quiet origin evidence-snapshots
+            git -C evidence_checkout reset --hard origin/evidence-snapshots >/dev/null
+
+            set +e
+            python - <<'PY'
           import json
+          import sys
           from datetime import datetime, timezone
           from pathlib import Path
 
           path=Path("evidence_checkout/evidence/run_metadata/latest.json")
           if not path.exists():
-              raise SystemExit("evidence run metadata is missing")
+              print("evidence run metadata is missing", file=sys.stderr)
+              raise SystemExit(75)
           data=json.loads(path.read_text())
-          captured=datetime.fromisoformat(data["captured_at_utc"].replace("Z","+00:00"))
-          age=(datetime.now(timezone.utc)-captured).total_seconds()
-          if age > 3*3600:
-              raise SystemExit(f"latest immutable evidence capture is stale: {age/3600:.2f} hours")
           if data.get("branch") != "evidence-snapshots":
               raise SystemExit("evidence metadata does not identify evidence-snapshots")
           if data.get("secrets_embedded") is not False:
               raise SystemExit("evidence metadata does not confirm secrets_embedded=false")
+          captured=datetime.fromisoformat(data["captured_at_utc"].replace("Z","+00:00"))
+          age=(datetime.now(timezone.utc)-captured).total_seconds()
+          if age > 3*3600:
+              print(f"latest immutable evidence capture is stale: {age/3600:.2f} hours", file=sys.stderr)
+              raise SystemExit(75)
           print(json.dumps({"captured_at_utc":data["captured_at_utc"],"age_seconds":age},indent=2))
           PY
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$status" -ne 75 ]; then
+              exit "$status"
+            fi
+            if [ "$attempt" -eq "$attempts" ]; then
+              echo "Fresh immutable evidence did not arrive before the retry budget was exhausted." >&2
+              exit 1
+            fi
+            echo "Evidence is not fresh yet; refreshing evidence-snapshots before retry $((attempt + 1))/$attempts."
+            sleep 15
+          done
 
       - name: Verify configured production backend
         id: backend
