@@ -18,11 +18,17 @@ from evidence_pipeline import (
 )
 
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
+MARKET_BASELINE_SOURCES = {"market_baseline", "market_baseline_de_vigged"}
 
 
 def _hash_record(value: dict[str, Any]) -> str:
     payload = {k: v for k, v in value.items() if k != "record_sha256"}
     return hashlib.sha256(_canonical(payload)).hexdigest()
+
+
+def _valid_sha256(value: Any) -> bool:
+    digest = str(value or "").lower()
+    return len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest)
 
 
 def _date_for(row: dict[str, Any]):
@@ -75,6 +81,7 @@ def capture(root: Path, capture_dir: Path) -> None:
             model = game.get("model_metadata") or {}
             gate = model.get("promotion_gate") or {}
             predictions = game.get("predictions") or {}
+            evidence = game.get("evidence") or {}
             row = {
                 "schema_version": 1,
                 "sport": sport,
@@ -94,6 +101,11 @@ def capture(root: Path, capture_dir: Path) -> None:
                 "model_id": model.get("active_model_id") or model.get("model_id") or model.get("version"),
                 "model_artifact_sha256": gate.get("artifact_sha256") or model.get("sha256"),
                 "promotion_gate_passed": gate.get("passed") is True,
+                "prediction_evidence_status": evidence.get("status"),
+                "prediction_evidence_signal_id": evidence.get("signal_id"),
+                "prediction_evidence_sha256": evidence.get("record_sha256"),
+                "runtime_engine_version": evidence.get("engine_version"),
+                "runtime_reason_codes": evidence.get("reason_codes") or [],
                 "market": market,
                 "market_source": game.get("market_source"),
                 "market_gateway": game.get("market_gateway") or {},
@@ -236,8 +248,20 @@ def verify(root: Path) -> None:
                 chronology_failures.append(row.get("record_sha256"))
         except Exception:
             chronology_failures.append(row.get("record_sha256"))
-        if not row.get("model_id") or not row.get("model_artifact_sha256"):
+
+        probability_source = str(row.get("probability_source") or "").lower()
+        if probability_source in MARKET_BASELINE_SOURCES:
+            reasons = row.get("runtime_reason_codes") or []
+            if (
+                row.get("prediction_evidence_status") != "RECORDED"
+                or not _valid_sha256(row.get("prediction_evidence_sha256"))
+                or not row.get("runtime_engine_version")
+                or "MARKET_BASELINE" not in reasons
+            ):
+                missing_model_identity.append(row.get("record_sha256"))
+        elif not row.get("model_id") or not row.get("model_artifact_sha256"):
             missing_model_identity.append(row.get("record_sha256"))
+
         if row.get("market_source") == "PHILTHY_FREE_ODDS_GATEWAY":
             snapshot = row.get("market_snapshot_evidence") or {}
             digest = str(snapshot.get("record_sha256") or "").lower()
@@ -271,6 +295,7 @@ def verify(root: Path) -> None:
     report = {
         "schema_version": 1,
         "verified_at": datetime.now(timezone.utc).isoformat(),
+        "identity_policy": "market-baseline requires recorded runtime evidence identity; model-driven predictions require model_id plus model_artifact_sha256",
         "passed": (
             not chronology_failures
             and not hash_failures
