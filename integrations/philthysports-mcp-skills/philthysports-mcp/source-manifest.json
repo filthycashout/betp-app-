@@ -3,7 +3,7 @@
   "skill_version": "1.1.2",
   "repository": "filthycashout/betp-app-",
   "source_file": "backend/mcp_v2_service.py",
-  "source_blob_sha": "d5815c495e06be9f94882f6ee8e64e10b1fa4ec6",
+  "source_blob_sha": "c541758b0815bca32e24a8e0cfe390163e4e5531",
   "mcp_endpoint": null,
   "mcp_production_enabled": false,
   "backend_default": "https://philthyparleys.floot.app/_api",
