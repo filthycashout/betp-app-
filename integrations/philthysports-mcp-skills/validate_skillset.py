@@ -33,7 +33,6 @@ EXPECTED_TOOLS = [
     "philthy_capability_inventory",
     "philthy_dfs_optimize",
 ]
-ENDPOINT = "https://philthysports-mcp-v1.onrender.com/mcp"
 SERVICE_VERSION = "1.1.2"
 BACKEND_DEFAULT = "https://philthyparleys.floot.app/_api"
 
@@ -56,8 +55,10 @@ for required in ("SKILL.md", "README.md", "mcp.json", "source-manifest.json", "v
 
 manifest_path = CORE / "source-manifest.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-if manifest.get("mcp_endpoint") != ENDPOINT:
-    fail("core manifest endpoint mismatch")
+if manifest.get("mcp_endpoint") is not None:
+    fail("standalone production MCP endpoint must remain disabled")
+if manifest.get("mcp_production_enabled") is not False:
+    fail("standalone production MCP must remain disabled")
 if manifest.get("skill_version") != SERVICE_VERSION:
     fail("core manifest service version mismatch")
 if manifest.get("backend_default") != BACKEND_DEFAULT:
@@ -90,16 +91,18 @@ if f'SERVICE_VERSION = "{SERVICE_VERSION}"' not in service_text:
     fail("service version no longer matches core skill manifest; update skill set")
 if f'"{BACKEND_DEFAULT}"' not in service_text:
     fail("service backend default no longer matches core skill manifest; update skill set")
+if 'PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "").strip()' not in service_text:
+    fail("MCP adapter must not have a hard-coded production host")
 
 config = json.loads(MCP_CONFIG.read_text(encoding="utf-8"))
-if config.get("mcpServers", {}).get("philthysports-live", {}).get("url") != ENDPOINT:
-    fail("MCP connection config endpoint mismatch")
+if "philthysports-live" in config.get("mcpServers", {}):
+    fail("retired standalone PhilthySports MCP must not appear in remote config")
 
 core_config = json.loads(CORE_MCP_CONFIG.read_text(encoding="utf-8"))
-if core_config.get("mcpServers", {}).get("philthysports", {}).get("url") != ENDPOINT:
-    fail("core MCP connection config endpoint mismatch")
+if core_config.get("mcpServers") != {}:
+    fail("core MCP production connection config must remain disabled")
 
 subprocess.run([sys.executable, str(CORE / "validate.py")], cwd=REPO, check=True)
 
 print("PASS PhilthySports MCP skill set")
-print(f"skills={len(EXPECTED_SKILLS)} tools={len(EXPECTED_TOOLS)} endpoint={ENDPOINT}")
+print(f"skills={len(EXPECTED_SKILLS)} tools={len(EXPECTED_TOOLS)} production_mcp=disabled backend={BACKEND_DEFAULT}")
