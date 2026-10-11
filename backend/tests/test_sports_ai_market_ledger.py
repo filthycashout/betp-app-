@@ -121,6 +121,28 @@ def test_sharp_anchor_requires_matching_no_vig_selection() -> None:
         )
 
 
+def test_sharp_and_soft_books_must_differ() -> None:
+    now = datetime(2026, 10, 11, 20, tzinfo=timezone.utc)
+    market = _market(now)
+    market["moneyline_best_book"] = "Pinnacle"
+    with pytest.raises(ValueError, match="differ"):
+        moneyline_candidate_from_validated_market(
+            sport="NFL",
+            game=_game(now),
+            market=market,
+            context_ready=True,
+            source_health_passed=True,
+            prediction_time=now,
+            sharp_anchor={
+                "source": "Pinnacle",
+                "selection": "Fixture Home",
+                "no_vig": True,
+                "probability": 0.60,
+                "observed_at": now.isoformat(),
+            },
+        )
+
+
 def test_stale_validated_market_is_rejected_before_decision() -> None:
     now = datetime(2026, 10, 11, 20, tzinfo=timezone.utc)
     market = _market(now)

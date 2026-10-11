@@ -35,11 +35,7 @@ def _price(value: Any) -> float:
 
 
 def _market_quality(market: dict[str, Any]) -> float:
-    """Evidence-quality score, not a win probability.
-
-    Provider timestamps are strongest. A fresh-fetch observed timestamp remains
-    usable but is deliberately lower confidence. Unverified freshness fails.
-    """
+    """Evidence-quality score, not a win probability."""
 
     if market.get("freshness_verified") is not True:
         return 0.0
@@ -50,11 +46,11 @@ def _market_quality(market: dict[str, Any]) -> float:
     return 0.0
 
 
-def _anchor_kind(source: str) -> str:
+def _source_key(source: str) -> str:
     normalized = re.sub(r"[^A-Z0-9]+", "_", source.upper()).strip("_")
     if not normalized:
-        raise ValueError("sharp_anchor source is invalid")
-    return f"{normalized}_NO_VIG"
+        raise ValueError("market source is invalid")
+    return normalized
 
 
 def moneyline_candidate_from_validated_market(
@@ -76,7 +72,8 @@ def moneyline_candidate_from_validated_market(
 
     De-vig consensus is never silently promoted to a sharp anchor. Actionable
     sharp-vs-soft mode requires a fresh anchor with explicit source, matching
-    selection, no-vig assertion, probability, and observed timestamp.
+    selection, no-vig assertion, probability, and observed timestamp. The
+    sharp source must also differ from the book supplying the soft price.
     """
 
     normalized = sport.upper().strip()
@@ -108,6 +105,10 @@ def moneyline_candidate_from_validated_market(
         source = str(sharp_anchor.get("source") or "").strip()
         if not source:
             raise ValueError("sharp_anchor source is required")
+        source_key = _source_key(source)
+        soft_book = str(market.get("moneyline_best_book") or "").strip()
+        if soft_book and source_key == _source_key(soft_book):
+            raise ValueError("sharp_anchor source must differ from soft price book")
         if sharp_anchor.get("no_vig") is not True:
             raise ValueError("sharp_anchor must explicitly be no-vig")
         anchor_selection = str(sharp_anchor.get("selection") or "").strip()
@@ -123,7 +124,7 @@ def moneyline_candidate_from_validated_market(
             sharp_anchor.get("probability"),
             field="sharp_anchor probability",
         )
-        anchor_kind = _anchor_kind(source)
+        anchor_kind = f"{source_key}_NO_VIG"
         sharp_verified = True
         snapshot_age = max(snapshot_age, max(0.0, sharp_age))
 
