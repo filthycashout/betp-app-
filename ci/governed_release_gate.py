@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed NFL/NBA promoted-model release validation.
+"""Fail-closed four-sport promoted-model release validation.
 
 Accepts either the canonical FastAPI /v1/models/status shape (sports at the
 root) or an adapter shape that nests them under `models`, with optional
@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-SPORTS = ("NFL", "NBA")
+SPORTS = ("NFL", "NBA", "MLB", "NHL")
 CRITICAL_CHECKS = {
     "canonical_dataset",
     "feature_schema",
@@ -107,6 +107,7 @@ def main() -> int:
 
     report = {
         "release_gate_passed": not failures,
+        "required_sports": list(SPORTS),
         "sports": verified,
         "failures": failures,
     }
