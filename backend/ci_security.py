@@ -28,7 +28,7 @@ P256_ORDER = int(
 )
 ANDROID_KEY_CONTEXT = b"philthysports-android-release-v1"
 ANDROID_PUBLIC_SPKI_SHA256_PIN = "0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
-DEFAULT_ANDROID_SIGNING_FALLBACK = "https://philthysports-powerhouse-v8.onrender.com"
+DEFAULT_ANDROID_SIGNING_FALLBACK = ""
 _SIGNING_BEARER_TOKEN: ContextVar[str | None] = ContextVar(
     "philthy_signing_bearer_token", default=None
 )
@@ -68,7 +68,7 @@ def verify_github_oidc(authorization: str | None) -> dict[str, Any]:
 
     # Keep the validated token only in this request context. If the primary
     # runtime does not hold the release seed, the Android-only helper below can
-    # forward the same trusted OIDC assertion to the dedicated signer service.
+    # forward the same trusted OIDC assertion to an explicitly configured signer.
     _SIGNING_BEARER_TOKEN.set(token)
     _SIGNING_FALLBACK_PAYLOAD.set(None)
     return claims
@@ -134,9 +134,13 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
         "PHILTHY_SIGNING_FALLBACK_URL", DEFAULT_ANDROID_SIGNING_FALLBACK
     ).strip().rstrip("/")
     if not fallback_base:
-        raise RuntimeError("Android signing fallback URL is not configured")
+        raise RuntimeError(
+            "Android signing fallback is disabled; configure PHILTHY_SIGNING_FALLBACK_URL explicitly or provide MODEL_SIGNING_PRIVATE_KEY_B64"
+        )
+    if not fallback_base.startswith("https://"):
+        raise RuntimeError("Android signing fallback URL must use HTTPS")
 
-    current_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
+    current_host = os.getenv("PHILTHY_RUNTIME_HOSTNAME", "").strip().lower()
     fallback_host = fallback_base.split("://", 1)[-1].split("/", 1)[0].lower()
     if current_host and current_host == fallback_host:
         raise RuntimeError("Android signing seed unavailable on fallback signer")
