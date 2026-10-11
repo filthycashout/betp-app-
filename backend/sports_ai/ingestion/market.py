@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from sports_ai.ingestion.odds import moneyline_snapshot_from_event
 from sports_ai.orchestrator import MarketCandidate
 
 
@@ -35,7 +36,7 @@ def _price(value: Any) -> float:
 
 
 def _market_quality(market: dict[str, Any]) -> float:
-    """Evidence-quality score, not a win probability."""
+    """Evidence-quality score for the selected offered price."""
 
     if market.get("freshness_verified") is not True:
         return 0.0
@@ -68,13 +69,7 @@ def moneyline_candidate_from_validated_market(
     model_promotion_passed: bool = False,
     model_includes_market: bool = False,
 ) -> MarketCandidate:
-    """Convert a validated market payload into the unified decision contract.
-
-    De-vig consensus is never silently promoted to a sharp anchor. Actionable
-    sharp-vs-soft mode requires a fresh anchor with explicit source, matching
-    selection, no-vig assertion, probability, and observed timestamp. The
-    sharp source must also differ from the book supplying the soft price.
-    """
+    """Convert a validated market payload into the unified decision contract."""
 
     normalized = sport.upper().strip()
     selection = str(market.get("moneyline_pick") or "").strip()
@@ -150,4 +145,82 @@ def moneyline_candidate_from_validated_market(
         market_anchor_kind=anchor_kind,
         sharp_anchor_verified=sharp_verified,
         require_sharp_anchor=bool(actionable),
+    )
+
+
+def moneyline_candidate_from_event(
+    *,
+    sport: str,
+    game: dict[str, Any],
+    odds_event: dict[str, Any],
+    selection: str | None,
+    context_ready: bool,
+    source_health_passed: bool,
+    prediction_time: datetime | None = None,
+    max_quote_age_seconds: int = 300,
+    actionable: bool = True,
+    sharp_anchor: dict[str, Any] | None = None,
+    model_prob: float | None = None,
+    model_promotion_passed: bool = False,
+    model_includes_market: bool = False,
+) -> MarketCandidate:
+    """Build a candidate from side-complete fresh H2H evidence."""
+
+    now = (prediction_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    snapshot = moneyline_snapshot_from_event(
+        odds_event,
+        now=now,
+        max_quote_age_seconds=max_quote_age_seconds,
+    )
+    if snapshot.get("status") != "OK":
+        raise ValueError(f"side-complete moneyline unavailable: {snapshot.get('status')}")
+
+    home = str(snapshot["home_team"])
+    away = str(snapshot["away_team"])
+    chosen = str(selection or "").strip()
+    if not chosen:
+        chosen = home if float(snapshot["home_probability"]) >= 0.5 else away
+
+    if chosen.casefold() == home.casefold():
+        probability = snapshot["home_probability"]
+        best_price = snapshot["home_best_price"]
+        best_book = snapshot["home_best_book"]
+        best_update = snapshot["home_best_price_last_update"]
+        best_basis = snapshot["home_best_price_freshness_basis"]
+        chosen = home
+    elif chosen.casefold() == away.casefold():
+        probability = snapshot["away_probability"]
+        best_price = snapshot["away_best_price"]
+        best_book = snapshot["away_best_book"]
+        best_update = snapshot["away_best_price_last_update"]
+        best_basis = snapshot["away_best_price_freshness_basis"]
+        chosen = away
+    else:
+        raise ValueError("selection does not match the event home or away team")
+
+    adapted_market = {
+        "freshness_verified": snapshot["freshness_verified"],
+        "provider_timestamp_verified": best_basis == "provider_timestamp",
+        "observed_at_verified": best_basis == "fresh_fetch_observed_at",
+        "freshness_basis": [best_basis] if best_basis else [],
+        "moneyline_pick": chosen,
+        "moneyline_pick_probability": probability,
+        "moneyline_best_price": best_price,
+        "moneyline_best_book": best_book,
+        "moneyline_last_update": best_update or snapshot["last_update"],
+        "last_update": snapshot["last_update"],
+    }
+    return moneyline_candidate_from_validated_market(
+        sport=sport,
+        game=game,
+        market=adapted_market,
+        context_ready=context_ready,
+        source_health_passed=source_health_passed,
+        prediction_time=now,
+        max_quote_age_seconds=max_quote_age_seconds,
+        actionable=actionable,
+        sharp_anchor=sharp_anchor,
+        model_prob=model_prob,
+        model_promotion_passed=model_promotion_passed,
+        model_includes_market=model_includes_market,
     )
