@@ -40,9 +40,15 @@ def main() -> None:
     parser.add_argument("--artifact", required=True, type=Path)
     parser.add_argument(
         "--signer-url",
-        default="https://philthysports-powerhouse-v8.onrender.com/v1/ci/sign-model-artifact",
+        default=os.getenv("PHILTHY_SIGNER_URL", "").strip(),
+        help="Explicit HTTPS signer endpoint. No legacy hosted signer fallback is used.",
     )
     args = parser.parse_args()
+
+    if not args.signer_url:
+        raise SystemExit("PHILTHY_SIGNER_URL or --signer-url is required; no legacy backend fallback is allowed")
+    if not args.signer_url.startswith("https://"):
+        raise SystemExit("Signer URL must use HTTPS")
 
     artifact = json.loads(args.artifact.read_text())
     if artifact.get("status") != "PROMOTION_ELIGIBLE_UNSIGNED":
