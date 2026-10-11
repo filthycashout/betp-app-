@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Fail-closed production contract smoke for the PhilthyParleys Floot cutover.
 
-This intentionally requires the mobile/dashboard contracts needed for cutover,
-plus fresh four-sport Powerhouse evidence. A healthy /health route or a 200-only
-shape check is not sufficient release evidence.
+The production contract distinguishes a healthy analytics service from a slate
+that happens to contain enough qualifying bets. A slate with zero qualifying
+legs is healthy when the service explicitly applies the governed sharp-vs-soft
+EV gate and returns an empty result rather than fabricating picks.
 """
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 import urllib.error
@@ -15,11 +17,13 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 
 BASE = "https://philthyparleys.floot.app/_api"
 OUTPUT = Path("floot-cutover-report.json")
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+STRICT_RECOMMENDATION_GATE = "verified_sharp_vs_independent_soft_ev"
 
 
 def unwrap_floot(payload: object) -> object:
@@ -61,6 +65,16 @@ def parse_utc(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def finite_number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
 def valid_evidence(row: object) -> bool:
     if not isinstance(row, dict):
         return False
@@ -93,12 +107,121 @@ def valid_live_selection(row: object, *, require_sport: str | None = None) -> bo
     return valid_evidence(row.get("evidence"))
 
 
+def valid_ranked_pick(row: object) -> bool:
+    """Validate a recommendation without assuming that any must exist."""
+
+    if not valid_live_selection(row):
+        return False
+    assert isinstance(row, dict)
+    probability = finite_number(row.get("probability"))
+    edge = finite_number(row.get("edge"))
+    expected_value = finite_number(row.get("expected_value"))
+    offered_american = finite_number(row.get("offered_american"))
+    return (
+        isinstance(row.get("selection"), str)
+        and bool(row.get("selection"))
+        and probability is not None
+        and 0.0 < probability < 1.0
+        and edge is not None
+        and edge >= 0.03
+        and expected_value is not None
+        and expected_value > 0.0
+        and row.get("sharp_anchor_verified") is True
+        and offered_american is not None
+        and offered_american != 0.0
+        and abs(offered_american) >= 100.0
+        and isinstance(row.get("offered_book"), str)
+        and bool(row.get("offered_book"))
+    )
+
+
+def validate_best12(status: int, payload: object) -> tuple[bool, object]:
+    if not isinstance(payload, dict):
+        return False, type(payload).__name__
+    picks = payload.get("picks")
+    ok = (
+        status == 200
+        and payload.get("requested") == 12
+        and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
+        and isinstance(picks, list)
+        and len(picks) <= 12
+        and all(valid_ranked_pick(row) for row in picks)
+    )
+    return ok, {
+        "requested": payload.get("requested"),
+        "picks": len(picks) if isinstance(picks, list) else None,
+        "all_returned_picks_strictly_eligible": all(valid_ranked_pick(row) for row in picks) if isinstance(picks, list) else False,
+        "empty_slate_allowed": True,
+        "recommendation_gate": payload.get("recommendation_gate"),
+        "probability_source": payload.get("probability_source"),
+    }
+
+
+def validate_best3(status: int, payload: object) -> tuple[bool, object]:
+    if not isinstance(payload, dict):
+        return False, type(payload).__name__
+    legs = payload.get("legs")
+    ok = (
+        status == 200
+        and payload.get("requested") == 3
+        and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
+        and isinstance(legs, list)
+        and len(legs) <= 3
+        and all(valid_ranked_pick(row) for row in legs)
+        and payload.get("joint_probability") is None
+        and payload.get("dependence_model") == "UNAVAILABLE"
+    )
+    return ok, {
+        "requested": payload.get("requested"),
+        "returned": len(legs) if isinstance(legs, list) else None,
+        "all_returned_legs_strictly_eligible": all(valid_ranked_pick(row) for row in legs) if isinstance(legs, list) else False,
+        "joint_probability": payload.get("joint_probability"),
+        "dependence_model": payload.get("dependence_model"),
+        "recommendation_gate": payload.get("recommendation_gate"),
+    }
+
+
+def validate_parlay(status: int, payload: object, legs_requested: int) -> tuple[bool, object]:
+    if not isinstance(payload, dict):
+        return False, type(payload).__name__
+    legs = payload.get("legs")
+    if not isinstance(legs, list):
+        return False, {"requested": legs_requested, "legs_type": type(legs).__name__}
+    returned = len(legs)
+    complete = returned == legs_requested
+    expected_status = "SHARP_VERIFIED_EV_CARD" if complete else "INSUFFICIENT_ELIGIBLE_LIVE_EVENTS"
+    ok = (
+        status == 200
+        and payload.get("requested_legs") == legs_requested
+        and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
+        and payload.get("complete") == complete
+        and returned <= legs_requested
+        and all(valid_ranked_pick(row) for row in legs)
+        and payload.get("manual_review_only") is True
+        and payload.get("joint_probability") is None
+        and payload.get("dependence_model") == "UNAVAILABLE"
+        and payload.get("status") == expected_status
+    )
+    return ok, {
+        "requested": legs_requested,
+        "returned": returned,
+        "complete": payload.get("complete"),
+        "status": payload.get("status"),
+        "expected_status": expected_status,
+        "all_returned_legs_strictly_eligible": all(valid_ranked_pick(row) for row in legs),
+        "empty_or_partial_slate_allowed": not complete,
+        "joint_probability": payload.get("joint_probability"),
+        "dependence_model": payload.get("dependence_model"),
+        "recommendation_gate": payload.get("recommendation_gate"),
+    }
+
+
 def main() -> int:
     checks: dict[str, dict[str, object]] = {}
     failures: list[str] = []
     search_payloads: dict[str, dict[str, object]] = {}
 
-    def check(name: str, path: str, validator) -> object | None:
+    def check(name: str, path: str, validator: Callable[[int, object], tuple[bool, object]]) -> object | None:
         try:
             status, payload = get(path)
             ok, detail = validator(status, payload)
@@ -106,7 +229,7 @@ def main() -> int:
             if not ok:
                 failures.append(name)
             return payload
-        except Exception as exc:  # network/DNS/JSON failures are release blockers
+        except Exception as exc:
             checks[name] = {"ok": False, "http_status": None, "detail": f"{type(exc).__name__}: {exc}"}
             failures.append(name)
             return None
@@ -167,11 +290,9 @@ def main() -> int:
                 and all(valid_live_selection(row, require_sport=sport) for row in payload["games"]),
                 {
                     "games": len(payload.get("games", [])),
-                    "all_future_and_fresh": (
-                        all(valid_live_selection(row, require_sport=sport) for row in payload.get("games", []))
-                        if isinstance(payload, dict) and isinstance(payload.get("games"), list)
-                        else False
-                    ),
+                    "all_future_and_fresh": all(valid_live_selection(row, require_sport=sport) for row in payload.get("games", []))
+                    if isinstance(payload, dict) and isinstance(payload.get("games"), list)
+                    else False,
                 }
                 if isinstance(payload, dict)
                 else type(payload).__name__,
@@ -220,9 +341,9 @@ def main() -> int:
             and payload.get("status") == "LIVE_EVENT_PROP_FEED_CONFIGURED"
             and payload.get("provider") == "the_odds_api_v4_event_odds"
             and isinstance(payload.get("sports"), dict)
-            and all(isinstance(payload["sports"].get(sport), list) and len(payload["sports"][sport]) > 0 for sport in SPORTS)
+            and all(isinstance(payload["sports"].get(sport), list) and payload["sports"][sport] for sport in SPORTS)
             and isinstance(payload.get("default_live_markets"), dict)
-            and all(isinstance(payload["default_live_markets"].get(sport), list) and len(payload["default_live_markets"][sport]) > 0 for sport in SPORTS),
+            and all(isinstance(payload["default_live_markets"].get(sport), list) and payload["default_live_markets"][sport] for sport in SPORTS),
             payload if isinstance(payload, dict) else type(payload).__name__,
         ),
     )
@@ -230,7 +351,6 @@ def main() -> int:
     for name, path in {
         "data_providers": "/v1/data/providers",
         "evidence_signals": "/v1/evidence/signals?limit=1",
-        "best3": "/v1/parlays/best3",
     }.items():
         check(
             name,
@@ -241,63 +361,16 @@ def main() -> int:
             ),
         )
 
-    check(
-        "best12",
-        "/v1/picks/best12",
-        lambda status, payload: (
-            status == 200
-            and isinstance(payload, dict)
-            and payload.get("requested") == 12
-            and isinstance(payload.get("picks"), list)
-            and len(payload["picks"]) == 12
-            and all(valid_live_selection(row) for row in payload["picks"]),
-            {
-                "picks": len(payload.get("picks", [])),
-                "all_future_and_fresh": (
-                    all(valid_live_selection(row) for row in payload.get("picks", []))
-                    if isinstance(payload, dict) and isinstance(payload.get("picks"), list)
-                    else False
-                ),
-                "probability_source": payload.get("probability_source") if isinstance(payload, dict) else None,
-            }
-            if isinstance(payload, dict)
-            else type(payload).__name__,
-        ),
-    )
+    check("best3", "/v1/parlays/best3", validate_best3)
+    check("best12", "/v1/picks/best12", validate_best12)
 
     for legs in (7, 10, 14):
         check(
             f"parlay{legs}",
             f"/v1/parlays/multisport?legs={legs}",
-            lambda status, payload, legs=legs: (
-                status == 200
-                and isinstance(payload, dict)
-                and payload.get("requested_legs") == legs
-                and payload.get("complete") is True
-                and isinstance(payload.get("legs"), list)
-                and len(payload["legs"]) == legs
-                and all(valid_live_selection(row) for row in payload["legs"])
-                and payload.get("manual_review_only") is True
-                and payload.get("joint_probability") is None
-                and payload.get("dependence_model") == "UNAVAILABLE",
-                {
-                    "requested": legs,
-                    "returned": len(payload.get("legs", [])),
-                    "complete": payload.get("complete"),
-                    "all_future_and_fresh": (
-                        all(valid_live_selection(row) for row in payload.get("legs", []))
-                        if isinstance(payload, dict) and isinstance(payload.get("legs"), list)
-                        else False
-                    ),
-                    "joint_probability": payload.get("joint_probability"),
-                    "dependence_model": payload.get("dependence_model"),
-                }
-                if isinstance(payload, dict)
-                else type(payload).__name__,
-            ),
+            lambda status, payload, legs=legs: validate_parlay(status, payload, legs),
         )
 
-    # A real future NFL event proves the fixed Floot detail route, not just collections.
     nfl_games = search_payloads.get("NFL", {}).get("games", [])
     first_nfl = nfl_games[0] if isinstance(nfl_games, list) and nfl_games else None
     event_id = first_nfl.get("event_id") if isinstance(first_nfl, dict) else None
@@ -341,6 +414,11 @@ def main() -> int:
         "base_url": BASE,
         "passed": not failures,
         "failed_checks": sorted(set(failures)),
+        "contract": {
+            "recommendation_gate": STRICT_RECOMMENDATION_GATE,
+            "empty_slate_policy": "valid_when_no_strictly_eligible_picks_exist",
+            "parlay_dependence_policy": "joint_probability_remains_null_while_dependence_model_unavailable",
+        },
         "checks": checks,
     }
     OUTPUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
