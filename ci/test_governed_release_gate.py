@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("governed_release_gate.py")
-CRITICAL_CHECKS = set(runpy.run_path(str(SCRIPT))["CRITICAL_CHECKS"])
+MODULE = runpy.run_path(str(SCRIPT))
+CRITICAL_CHECKS = set(MODULE["CRITICAL_CHECKS"])
+SPORTS = tuple(MODULE["SPORTS"])
 
 
 def promoted_row() -> dict:
@@ -22,6 +24,10 @@ def promoted_row() -> dict:
             "checks": {name: True for name in sorted(CRITICAL_CHECKS)},
         },
     }
+
+
+def promoted_models() -> dict[str, dict]:
+    return {sport: promoted_row() for sport in SPORTS}
 
 
 class GovernedReleaseGateTests(unittest.TestCase):
@@ -48,29 +54,38 @@ class GovernedReleaseGateTests(unittest.TestCase):
             return result, report
 
     def test_canonical_top_level_sports_pass(self) -> None:
-        result, report = self.run_gate({"NFL": promoted_row(), "NBA": promoted_row()})
+        result, report = self.run_gate(promoted_models())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(report["release_gate_passed"])
+        self.assertEqual(report["required_sports"], list(SPORTS))
 
     def test_superjson_nested_models_pass(self) -> None:
-        payload = {"json": {"models": {"NFL": promoted_row(), "NBA": promoted_row()}}}
+        payload = {"json": {"models": promoted_models()}}
         result, report = self.run_gate(payload)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(report["release_gate_passed"])
 
+    def test_missing_any_required_sport_blocks_release(self) -> None:
+        payload = promoted_models()
+        payload.pop("NHL")
+        result, report = self.run_gate(payload)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(report["release_gate_passed"])
+        self.assertTrue(any("NHL" in failure for failure in report["failures"]))
+
     def test_any_failed_runtime_check_blocks_release(self) -> None:
-        nfl = promoted_row()
-        nfl["promotion_gate"]["checks"]["leakage_audit"] = False
-        nfl["promotion_gate"]["passed"] = False
-        result, report = self.run_gate({"NFL": nfl, "NBA": promoted_row()})
+        payload = promoted_models()
+        payload["NFL"]["promotion_gate"]["checks"]["leakage_audit"] = False
+        payload["NFL"]["promotion_gate"]["passed"] = False
+        result, report = self.run_gate(payload)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(report["release_gate_passed"])
         self.assertTrue(any("leakage_audit" in failure for failure in report["failures"]))
 
     def test_missing_critical_check_blocks_release(self) -> None:
-        nba = promoted_row()
-        del nba["promotion_gate"]["checks"]["artifact_security"]
-        result, report = self.run_gate({"NFL": promoted_row(), "NBA": nba})
+        payload = promoted_models()
+        del payload["MLB"]["promotion_gate"]["checks"]["artifact_security"]
+        result, report = self.run_gate(payload)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(report["release_gate_passed"])
         self.assertTrue(any("artifact_security" in failure for failure in report["failures"]))
