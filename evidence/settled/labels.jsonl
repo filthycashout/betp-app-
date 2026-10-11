@@ -38,6 +38,8 @@
 {"event_date": "2026-10-08", "event_id": "401906508", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-09T02:10:46.358662+00:00", "sport": "NBA", "target_home_win": 0}
 {"event_date": "2026-10-09", "event_id": "401898395", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-09T16:13:42.317860+00:00", "sport": "NBA", "target_home_win": 0}
 {"event_date": "2026-10-09", "event_id": "401908940", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-10T17:14:27.235898+00:00", "sport": "NBA", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "401898396", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-11T01:54:09.655772+00:00", "sport": "NBA", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "401902645", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-11T01:54:09.655758+00:00", "sport": "NBA", "target_home_win": 1}
 {"event_date": "2026-10-04", "event_id": "401872965", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-04T17:34:57.339605+00:00", "sport": "NFL", "target_home_win": 0}
 {"event_date": "2026-10-04", "event_id": "401872966", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-04T21:26:37.783238+00:00", "sport": "NFL", "target_home_win": 1}
 {"event_date": "2026-10-04", "event_id": "401872967", "previous_labels": [], "result_source": "ESPN scoreboard", "settled_at": "2026-10-04T21:26:37.783252+00:00", "sport": "NFL", "target_home_win": 0}
@@ -109,3 +111,9 @@
 {"event_date": "2026-10-09", "event_id": "2026020069", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T17:14:27.235951+00:00", "sport": "NHL", "target_home_win": 0}
 {"event_date": "2026-10-10", "event_id": "2026020070", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T22:32:45.889901+00:00", "sport": "NHL", "target_home_win": 1}
 {"event_date": "2026-10-10", "event_id": "2026020071", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-10T22:32:45.889913+00:00", "sport": "NHL", "target_home_win": 1}
+{"event_date": "2026-10-10", "event_id": "2026020072", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655801+00:00", "sport": "NHL", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "2026020073", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655806+00:00", "sport": "NHL", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "2026020074", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655810+00:00", "sport": "NHL", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "2026020078", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655817+00:00", "sport": "NHL", "target_home_win": 0}
+{"event_date": "2026-10-10", "event_id": "2026020079", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655820+00:00", "sport": "NHL", "target_home_win": 1}
+{"event_date": "2026-10-10", "event_id": "2026020080", "previous_labels": [], "result_source": "NHL Web API", "settled_at": "2026-10-11T01:54:09.655823+00:00", "sport": "NHL", "target_home_win": 0}
