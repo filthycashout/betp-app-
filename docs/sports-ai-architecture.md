@@ -17,4 +17,15 @@ The Powerhouse is one analytical engine inside the existing backend, not a secon
 
 `point-in-time data -> normalized candidate -> sharp/no-vig market probability -> optional promoted model blend -> edge/EV -> freshness/context/dependence gates -> recommendation -> settlement/CLV tracking`
 
+## Entrypoint
+
+`backend/main.py` is the single analytics CLI entrypoint. It calls `run_sport("MLB")`-style execution or `run_all()` over normalized candidate JSON. During migration, live provider collection remains in the existing backend so this new core cannot bypass freshness validation, source routing, or promotion governance.
+
+Examples:
+
+```sh
+PYTHONPATH=backend python backend/main.py --sport MLB --input candidates.json
+PYTHONPATH=backend python backend/main.py --input four-sport-candidates.json
+```
+
 The current migration deliberately starts with the pure decision layer so existing live provider routing and FastAPI contracts remain unchanged. Ingestion, role models, simulations, persistence, CLV settlement, and API adapters can migrate behind this interface in later commits without a big-bang rewrite.
