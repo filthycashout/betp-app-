@@ -12,6 +12,7 @@ The Powerhouse is one analytical engine inside the existing backend, not a secon
 - A market consensus is not automatically labeled sharp. Sharp-vs-soft strategies must carry explicit verified sharp-anchor provenance and fail closed otherwise.
 - A sharp anchor and the compared soft price must come from different bookmakers.
 - Sharp anchors require provider timestamps; a local fetch-observed timestamp alone cannot promote a quote to sharp evidence.
+- Sport-specific role context is evidence only until a promoted artifact explicitly declares compatible features in its signed schema.
 - Correlated parlays fail closed when measured dependence evidence is unavailable.
 - No automatic wagering execution is introduced.
 - Secrets remain deployment environment variables; no `secrets.env` is committed.
@@ -36,6 +37,12 @@ A verified anchor must satisfy all of the following:
 6. Be excluded from the soft-price pool used for the EV comparison.
 
 If any requirement fails, the decision remains fail-closed with sharp evidence unavailable.
+
+## NBA role context
+
+`backend/sports_ai/sports/nba/role.py` provides a chronological role/opportunity context layer. It computes rolling player minutes and an estimated possession-usage rate from completed box scores strictly before the target tip. NBA CDN schedule/liveData is primary; ESPN Site API is an explicit fallback for environments where the NBA CDN blocks the server IP.
+
+The role output is **context only**: `model_influence=false`. It must not change probabilities, picks, EV, or Kelly sizing until a signed promoted artifact declares compatible role features and passes the existing chronology/calibration/leakage/promotion gates. Floot production stores the corresponding pregame role snapshot as immutable evidence.
 
 ## Entrypoint
 
