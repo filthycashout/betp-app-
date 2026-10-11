@@ -1,22 +1,23 @@
 ---
 name: philthysports-mcp
-description: Operate the production PhilthySports MCP as the governed execution layer for NFL/NBA/MLB/NHL research, Best 12/Best 3 analysis, provider diagnostics, v8 evidence/gate inspection, and explicit-input DFS optimization. Use whenever a request targets the live PhilthySports/PhilthyParleys system rather than only one supporting repository.
+description: Operate the canonical PhilthyParleys Floot backend as the governed execution layer for NFL/NBA/MLB/NHL research, Best 12/Best 3 analysis, provider diagnostics, v8 evidence/gate inspection, and explicit-input DFS optimization. Use whenever a request targets the live PhilthySports/PhilthyParleys system rather than only one supporting repository.
 ---
 
 # PhilthySports MCP
 
-Use this skill for the production PhilthySports MCP execution surface.
+Use this skill for the governed PhilthySports/PhilthyParleys execution contract. Production execution is now provided by the single Floot backend; the standalone MCP HTTP service is disabled unless an operator explicitly hosts the local adapter.
 
 ## Production service
 
-- Endpoint: `https://philthysports-mcp-v1.onrender.com/mcp`
-- MCP name: `philthysports-mcp`
+- Canonical backend: `https://philthyparleys.floot.app/_api`
+- Standalone production MCP endpoint: disabled
+- Local/explicit-host MCP adapter name: `philthysports-mcp`
 - Service version: `1.1.2`
-- Default backend: `https://philthyparleys.floot.app/_api`
 - Sports: NFL, NBA, MLB, NHL
-- Transport: Streamable HTTP
+- Production transport: HTTPS JSON through Floot `/_api`
+- Optional MCP adapter transport: Streamable HTTP only when `MCP_PUBLIC_HOST` is explicitly configured
 
-## Live MCP tools
+## MCP adapter tools
 
 - `philthy_health`
 - `philthy_system_status`
@@ -77,23 +78,23 @@ Supported optimizer rule sets:
 ## Recommended workflows
 
 ### Current matchup research
-1. Use `philthy_search` with the narrowest useful sport/date/query.
-2. Use `philthy_evidence` when verification/provenance is requested.
-3. Use `philthy_system_status` if the answer depends on whether the output is market-baseline or promoted-model driven.
+1. Use the canonical Floot `/_api/v1/search` route, or the local adapter's `philthy_search` when explicitly hosted.
+2. Use evidence routes when verification/provenance is requested.
+3. Use system status if the answer depends on whether the output is market-baseline or promoted-model driven.
 
 ### Player props
-1. Use `philthy_provider_status`.
-2. Use `philthy_search(..., include_props=true)`.
+1. Use provider status.
+2. Use governed search with `include_props=true`, or `/_api/v1/game/props` for one event.
 3. Require fresh returned evidence.
 4. If provider credentials are merely configured but no successful credentialed response is verified, report props as blocked/unverified instead of substituting another source silently.
 
 ### Best plays / parlays
-1. Use `philthy_best12` or `philthy_best3`.
-2. Verify top selections with `philthy_evidence` when requested.
+1. Use the Best 12/Best 3 governed routes or adapter tools.
+2. Verify top selections with evidence when requested.
 3. Preserve model/baseline state and dependence warnings.
 
 ### Production readiness
-Use `philthy_system_status`. Report backend health, live-provider proof, immutable evidence, per-sport model promotion, APK signing/emulator evidence and physical-device smoke as separate gates.
+Use system status. Report backend health, live-provider proof, immutable evidence, per-sport model promotion, APK signing/emulator evidence and physical-device smoke as separate gates.
 
 ## Strict model-promotion rule
 
@@ -121,4 +122,4 @@ Use these only when their specialized source/implementation context is needed:
 - `fanduel-api-research`
 - `bytecode-viewer-analysis`
 
-The production PhilthySports MCP remains the governed execution surface; GitMCP endpoints are documentation/context surfaces unless separately configured for execution.
+The canonical PhilthyParleys Floot API is the governed production execution surface. GitMCP endpoints and the local MCP adapter are documentation/development surfaces unless explicitly configured outside production.

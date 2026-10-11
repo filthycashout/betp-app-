@@ -67,9 +67,11 @@ Mobile UI source is in `mobile_dashboard/`; `npm install` followed by `npm run b
 
 ## MCP skill set and project evidence
 
-The governed production MCP is available at:
+The canonical production execution surface is the same Floot backend used by the app:
 
-`https://philthysports-mcp-v1.onrender.com/mcp`
+`https://philthyparleys.floot.app/_api`
+
+The former standalone production MCP endpoint is disabled. `backend/mcp_v2_service.py` remains an optional local or explicitly hosted adapter and has no hard-coded production host.
 
 The primary MCP skill and its supporting skills/configuration live under:
 

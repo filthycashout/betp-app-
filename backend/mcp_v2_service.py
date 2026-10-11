@@ -11,7 +11,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 SERVICE_VERSION = "1.1.2"
 BACKEND_BASE = os.getenv("PHILTHY_BACKEND_BASE_URL", "https://philthyparleys.floot.app/_api").rstrip("/")
-PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "philthysports-mcp-v1.onrender.com").strip()
+PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "").strip()
 RETRYABLE = {429, 502, 503, 504}
 SESSION = requests.Session()
 SESSION.headers.update({"Accept": "application/json", "User-Agent": f"PhilthySports-MCP/{SERVICE_VERSION}"})
