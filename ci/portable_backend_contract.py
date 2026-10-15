@@ -5,6 +5,10 @@ The canonical API is FastAPI, but adapters such as Floot may wrap JSON in a
 SuperJSON envelope, omit OpenAPI, or expose dynamic game routes as fixed query
 endpoints. This smoke normalizes only those transport differences; the business
 contract and fail-closed behavior stay identical.
+
+Release probes must never refresh paid live-provider evidence. Floot adapter
+routes therefore use ``refresh=false`` and validate transport/route presence
+against already-durable evidence.
 """
 from __future__ import annotations
 
@@ -80,6 +84,42 @@ def wait_for_health(base: str, seconds: int = 90) -> dict[str, Any]:
     raise RuntimeError(f"backend did not become healthy: {last}")
 
 
+def probe_dynamic_routes(
+    base: str,
+    dynamic: dict[str, str],
+    checks: dict[str, Any],
+    failures: list[str],
+    *,
+    allow_structured_game_not_found: bool = False,
+) -> None:
+    """Prove dynamic route presence without requiring a real current event.
+
+    For the Floot sentinel-only probe, a structured ``Game not found`` response
+    is an application-level rejection and proves the handler exists. Other 404s,
+    405s, malformed responses, or transport failures remain release failures.
+    """
+
+    for name, path in dynamic.items():
+        try:
+            status, payload = get_json(base, path)
+            structured_not_found = (
+                allow_structured_game_not_found
+                and status == 404
+                and isinstance(payload, dict)
+                and payload.get("error") == "Game not found"
+            )
+            checks[name] = {
+                "status": status,
+                "object": isinstance(payload, dict),
+                "structured_application_not_found": structured_not_found,
+            }
+            if not isinstance(payload, dict) or status == 405 or (status == 404 and not structured_not_found):
+                failures.append(name)
+        except Exception as exc:
+            checks[name] = {"error": f"{type(exc).__name__}: {exc}"}
+            failures.append(name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8080")
@@ -109,6 +149,7 @@ def main() -> int:
         failures.append("openapi")
         checks["openapi_missing"] = f"unavailable_http_{openapi_status}"
 
+    refresh_suffix = "&refresh=false" if floot else ""
     static_checks = {
         "system_status": "/v1/system/status",
         "models_status": "/v1/models/status",
@@ -116,13 +157,13 @@ def main() -> int:
         "prop_capabilities": "/v1/system/props",
         "data_providers": "/v1/data/providers",
         "evidence_signals": "/v1/evidence/signals?limit=1",
-        "search_nfl": "/v1/search?sport=NFL&include_props=false",
-        "search_nba": "/v1/search?sport=NBA&include_props=false",
-        "best12": "/v1/picks/best12",
-        "best3": "/v1/parlays/best3",
-        "parlay7": "/v1/parlays/multisport?legs=7",
-        "parlay10": "/v1/parlays/multisport?legs=10",
-        "parlay14": "/v1/parlays/multisport?legs=14",
+        "search_nfl": f"/v1/search?sport=NFL&include_props=false{refresh_suffix}",
+        "search_nba": f"/v1/search?sport=NBA&include_props=false{refresh_suffix}",
+        "best12": "/v1/picks/best12?refresh=false" if floot else "/v1/picks/best12",
+        "best3": "/v1/parlays/best3?refresh=false" if floot else "/v1/parlays/best3",
+        "parlay7": "/v1/parlays/multisport?legs=7&refresh=false" if floot else "/v1/parlays/multisport?legs=7",
+        "parlay10": "/v1/parlays/multisport?legs=10&refresh=false" if floot else "/v1/parlays/multisport?legs=10",
+        "parlay14": "/v1/parlays/multisport?legs=14&refresh=false" if floot else "/v1/parlays/multisport?legs=14",
     }
 
     payloads: dict[str, Any] = {}
@@ -169,7 +210,7 @@ def main() -> int:
     if event_id:
         encoded = urllib.parse.quote(event_id, safe="")
         if floot:
-            q = urllib.parse.urlencode({"sport": "NFL", "event_id": event_id})
+            q = urllib.parse.urlencode({"sport": "NFL", "event_id": event_id, "refresh": "false"})
             dynamic = {
                 "game_detail": f"/v1/game?{q}",
                 "game_props": f"/v1/game/props?{q}",
@@ -181,25 +222,25 @@ def main() -> int:
                 "game_props": f"/v1/games/NFL/{encoded}/props",
                 "game_best9": f"/v1/games/NFL/{encoded}/best9",
             }
-        for name, path in dynamic.items():
-            try:
-                status, payload = get_json(args.base, path)
-                checks[name] = {"status": status, "object": isinstance(payload, dict)}
-                # Evidence/provider gating may legitimately return a non-2xx response,
-                # but a complete deployment must not report route-not-found.
-                if status in {404, 405} or not isinstance(payload, dict):
-                    failures.append(name)
-            except Exception as exc:
-                checks[name] = {"error": f"{type(exc).__name__}: {exc}"}
-                failures.append(name)
-    else:
-        checks["dynamic_game_routes"] = (
-            "No current NFL event; canonical OpenAPI checked."
-            if not floot else
-            "No current NFL event; dynamic adapter route could not be live-probed."
+        probe_dynamic_routes(args.base, dynamic, checks, failures)
+    elif floot:
+        sentinel = "__philthy_contract_probe__"
+        q = urllib.parse.urlencode({"sport": "NFL", "event_id": sentinel, "refresh": "false"})
+        dynamic = {
+            "game_detail": f"/v1/game?{q}",
+            "game_props": f"/v1/game/props?{q}",
+            "game_best9": f"/v1/game/best9?{q}",
+        }
+        checks["dynamic_game_routes"] = "No current NFL event; Floot routes probed with quota-safe sentinel event ID."
+        probe_dynamic_routes(
+            args.base,
+            dynamic,
+            checks,
+            failures,
+            allow_structured_game_not_found=True,
         )
-        if floot:
-            failures.append("dynamic_game_routes.no_current_event")
+    else:
+        checks["dynamic_game_routes"] = "No current NFL event; canonical OpenAPI checked."
 
     report = {
         "base": args.base,
