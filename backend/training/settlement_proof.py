@@ -7,7 +7,10 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from evidence_pipeline import ESPN, _canonical, _json, _sha256
+try:
+    from .evidence_pipeline import ESPN, _canonical, _json, _sha256
+except ImportError:  # standalone copy used by evidence workflow
+    from evidence_pipeline import ESPN, _canonical, _json, _sha256
 
 
 def _hash(value: Any) -> str:
@@ -145,7 +148,7 @@ def reconcile(root: Path, lookback_days: int = 21) -> dict[str, Any]:
         found = cache.get((key[0], game_date), {}).get(key[1])
         if not found or int(found["target_home_win"]) != int(label.get("target_home_win")):
             continue
-        proof = {
+        item = {
             "schema_version": 1,
             "sport": key[0],
             "event_id": key[1],
@@ -155,8 +158,8 @@ def reconcile(root: Path, lookback_days: int = 21) -> dict[str, Any]:
             "label_first_observed_at": label.get("settled_at"),
             **found,
         }
-        proof["proof_sha256"] = _hash(proof)
-        proofs[key] = proof
+        item["proof_sha256"] = _hash(item)
+        proofs[key] = item
 
     proof_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = proof_path.with_suffix(".jsonl.tmp")
