@@ -43,7 +43,6 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
         destination="github-actions-release-runner",
         workflow_refs=frozenset(
             {
-                "filthycashout/betp-app-/.github/workflows/build-apk.yml@refs/heads/main",
                 "filthycashout/betp-app-/.github/workflows/philthysports-full-ci.yml@refs/heads/main",
             }
         ),
