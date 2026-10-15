@@ -4,6 +4,7 @@ scikit-learn>=1.5,<2
 pyarrow>=17,<20
 cryptography>=43,<47
 joblib>=1.4,<2
+pydantic>=2.9,<3
 nflreadpy>=0.1.5,<0.2
 nba_api>=1.11.4,<2
 python-mlb-statsapi>=1.1.2,<2
