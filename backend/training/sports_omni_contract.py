@@ -66,6 +66,14 @@ def _times(frame: pd.DataFrame, column: str) -> pd.Series:
     return values
 
 
+def model_feature_columns(frame: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in frame.columns
+        if column.startswith("feature_") and not column.endswith("_observed_at")
+    ]
+
+
 def normalize_drive_frame(frame: pd.DataFrame) -> pd.DataFrame:
     missing = sorted(DRIVE_REQUIRED - set(frame.columns))
     if missing:
@@ -106,7 +114,7 @@ def normalize_drive_frame(frame: pd.DataFrame) -> pd.DataFrame:
     ):
         raise CanonicalAdmissionError("consensus_de_vig_home_probability must be present and strictly between zero and one")
 
-    features = [column for column in result.columns if column.startswith("feature_")]
+    features = model_feature_columns(result)
     bad = [
         column
         for column in features
@@ -169,7 +177,7 @@ def admit_csv(
         "trainer_dataset_sha256": _sha256(output_csv),
         "sport": str(trainer["sport"].iloc[0]),
         "rows": len(trainer),
-        "features": [c for c in trainer.columns if c.startswith("feature_") and not c.endswith("_observed_at")],
+        "features": model_feature_columns(trainer),
         "admitted_at": datetime.now(timezone.utc).isoformat(),
         "chronology": {
             "snapshot_before_event": True,
