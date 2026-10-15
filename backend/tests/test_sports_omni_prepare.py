@@ -65,4 +65,16 @@ def test_prepare_builds_features_adapts_contract_and_does_not_promote(tmp_path: 
     assert "feature_home_games_prior" in trainer
     assert "target_home_win" in trainer
     assert "snapshot_time" not in trainer
-    assert "governed_train.py" in result["next_governed_training_command"]
+
+    command = result["next_governed_training_command"]
+    assert "governed_train.py" in command
+    assert "--features " in command
+    assert result["features"]
+    assert all(name.startswith("feature_") for name in result["features"])
+    assert all(not name.endswith("_observed_at") for name in result["features"])
+    for name in result["features"]:
+        assert name in trainer.columns
+        assert f"{name}_observed_at" in trainer.columns
+    feature_arg = command.split("--features ", 1)[1].split(" --output-dir", 1)[0]
+    assert feature_arg.split(",") == result["features"]
+    assert "_observed_at" not in feature_arg
