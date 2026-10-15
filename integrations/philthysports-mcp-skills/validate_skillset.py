@@ -12,6 +12,7 @@ CORE = ROOT / "philthysports-mcp"
 SERVICE = REPO / "backend" / "mcp_v2_service.py"
 MCP_CONFIG = ROOT / "mcp" / "gitmcp-remote.json"
 CORE_MCP_CONFIG = CORE / "mcp.json"
+SOURCE_MAP = ROOT / "shared" / "source-map.yaml"
 
 EXPECTED_SKILLS = {
     "philthysports-mcp",
@@ -101,6 +102,24 @@ if "philthysports-live" in config.get("mcpServers", {}):
 core_config = json.loads(CORE_MCP_CONFIG.read_text(encoding="utf-8"))
 if core_config.get("mcpServers") != {}:
     fail("core MCP production connection config must remain disabled")
+
+if not SOURCE_MAP.is_file():
+    fail("shared/source-map.yaml missing")
+source_map_text = SOURCE_MAP.read_text(encoding="utf-8")
+for forbidden in ("onrender.com", "philthysports-mcp-v1"):
+    if forbidden in source_map_text:
+        fail(f"shared source map contains retired production reference: {forbidden}")
+for required in (
+    "production_backend:",
+    f"endpoint: {BACKEND_DEFAULT}",
+    "production_mcp:",
+    "endpoint: null",
+    "enabled: false",
+    f"backend: {BACKEND_DEFAULT}",
+    "wagering_execution: disabled",
+):
+    if required not in source_map_text:
+        fail(f"shared source map missing production contract: {required}")
 
 subprocess.run([sys.executable, str(CORE / "validate.py")], cwd=REPO, check=True)
 

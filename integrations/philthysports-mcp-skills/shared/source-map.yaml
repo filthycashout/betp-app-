@@ -1,7 +1,12 @@
-version: 2
+version: 3
+production_backend:
+  endpoint: https://philthyparleys.floot.app/_api
+  role: governed_application_execution_surface
 production_mcp:
-  endpoint: https://philthysports-mcp-v1.onrender.com/mcp
-  role: governed_research_diagnostics_evidence_dfs
+  endpoint: null
+  enabled: false
+  backend: https://philthyparleys.floot.app/_api
+  role: local_or_explicit_host_only
   mock_substitution: forbidden
   wagering_execution: disabled
 sources:
