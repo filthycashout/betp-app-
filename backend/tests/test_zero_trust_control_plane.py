@@ -179,6 +179,27 @@ def test_untrusted_repository_is_denied_even_with_valid_looking_other_claims():
         plane.authorize(_android_candidate(), claims, token_fingerprint_sha256=TOKEN_FP)
 
 
+def test_repository_name_reuse_cannot_bypass_stable_repository_id_binding():
+    plane = _plane()
+    claims = _claims(repository_id="999999999")
+    with pytest.raises(ControlPlaneDenied, match="UNTRUSTED_REPOSITORY_ID"):
+        plane.authorize(_android_candidate(), claims, token_fingerprint_sha256=TOKEN_FP)
+
+
+def test_repository_owner_name_reuse_cannot_bypass_stable_owner_id_binding():
+    plane = _plane()
+    claims = _claims(repository_owner_id="999999999")
+    with pytest.raises(ControlPlaneDenied, match="UNTRUSTED_REPOSITORY_OWNER_ID"):
+        plane.authorize(_android_candidate(), claims, token_fingerprint_sha256=TOKEN_FP)
+
+
+def test_android_signing_is_bound_to_actual_workflow_dispatch_event():
+    plane = _plane()
+    claims = _claims(event_name="push")
+    with pytest.raises(ControlPlaneDenied, match="UNTRUSTED_EVENT"):
+        plane.authorize(_android_candidate(), claims, token_fingerprint_sha256=TOKEN_FP)
+
+
 def test_untrusted_ref_is_denied():
     plane = _plane()
     claims = _claims(ref="refs/heads/feature")
