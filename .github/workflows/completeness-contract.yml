@@ -1,0 +1,54 @@
+name: PhilthyParleys Completeness Contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/models/**"
+      - "backend/model_runtime.py"
+      - "backend/training/**"
+      - "backend/Dockerfile"
+      - "deploy/**"
+      - "docs/CURRENT_STATE_FILE_MAP.md"
+      - ".github/workflows/v8-evidence-capture.yml"
+      - ".github/workflows/v8-train-promote.yml"
+      - ".github/workflows/completeness-contract.yml"
+  pull_request:
+    paths:
+      - "backend/models/**"
+      - "backend/model_runtime.py"
+      - "backend/training/**"
+      - "backend/Dockerfile"
+      - "deploy/**"
+      - "docs/CURRENT_STATE_FILE_MAP.md"
+      - ".github/workflows/v8-evidence-capture.yml"
+      - ".github/workflows/v8-train-promote.yml"
+      - ".github/workflows/completeness-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime verification dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Enforce repository state semantics
+        run: |
+          python backend/training/completeness_audit.py \
+            --strict \
+            --report /tmp/philthyparleys-completeness.json
+      - name: Retain completeness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: philthyparleys-completeness-contract
+          path: /tmp/philthyparleys-completeness.json
+          retention-days: 90
+          if-no-files-found: error

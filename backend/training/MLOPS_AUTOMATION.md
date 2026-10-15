@@ -114,3 +114,21 @@ Trained candidate != promoted artifact until strict evaluation passes.
 Promoted artifact != active runtime model until signature, checksum, schema, and runtime gates pass.
 
 Automatic wagering remains disabled.
+
+## 7. Completion terminology
+
+For this repository, **Complete** is scoped to the artifact being evaluated.
+
+A notebook is complete when it performs its intended notebook-level job. That does **not** mean every external API, GPU-backed model, local server, data provider, or sport-specific prediction model is currently available.
+
+Likewise:
+
+- code exists != promoted model;
+- legacy model file != promoted model;
+- baseline `production.json` != promoted trained model;
+- candidate registry entry != promoted trained model;
+- configured Docker/scheduler path != observed successful runtime execution;
+- successful CI for code/schema != successful model promotion;
+- successful signing != successful runtime activation unless `load_promoted()` accepts the artifact.
+
+`backend/model_runtime.py::load_promoted()` together with `promotion_gate()` remains the final deterministic model-activation authority. `backend/training/completeness_audit.py` continuously checks that the repository state does not contradict these distinctions.
