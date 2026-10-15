@@ -1,6 +1,6 @@
 {
   "base_url": "https://philthyparleys.floot.app/_api",
-  "checked_at": "2026-10-15T03:25:13.017237+00:00",
+  "checked_at": "2026-10-15T05:08:52.083517+00:00",
   "checks": {
     "evidence_database_configured": true,
     "evidence_database_error_clear": true,
@@ -42,10 +42,10 @@
   "passed": true,
   "props_status": "LIVE_EVENT_PROP_FEED_CONFIGURED",
   "provider": {
-    "inventory_generated_at": "2026-10-15T03:25:13.611Z",
+    "inventory_generated_at": "2026-10-15T05:08:54.599Z",
     "the_odds_api": {
       "authenticated": true,
-      "checked_at": "2026-10-15T03:25:12.101Z",
+      "checked_at": "2026-10-15T05:08:49.451Z",
       "configured": true,
       "http_status": 200,
       "id": "the_odds_api",
@@ -55,7 +55,7 @@
   },
   "release_readiness_proven": false,
   "runtime": {
-    "checked_at": "2026-10-15T03:25:13.184Z",
+    "checked_at": "2026-10-15T05:08:52.402Z",
     "host": "Floot",
     "product": "PhilthyParleys",
     "service": "philthysports-runtime"
