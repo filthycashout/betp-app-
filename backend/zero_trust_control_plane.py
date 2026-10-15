@@ -14,6 +14,8 @@ CONTROL_PLANE_VERSION = "1.0.0"
 GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 GITHUB_AUDIENCE = "philthysports-ci"
 TRUSTED_REPOSITORY = "filthycashout/betp-app-"
+TRUSTED_REPOSITORY_ID = "1180661052"
+TRUSTED_REPOSITORY_OWNER_ID = "208737286"
 TRUSTED_REF = "refs/heads/main"
 
 ANDROID_SIGNING_ACTION = "ANDROID_SIGNING_MATERIAL_EXPORT"
@@ -46,7 +48,7 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
                 "filthycashout/betp-app-/.github/workflows/philthysports-full-ci.yml@refs/heads/main",
             }
         ),
-        event_names=frozenset({"workflow_dispatch", "push"}),
+        event_names=frozenset({"workflow_dispatch"}),
         require_resource_sha256=False,
     ),
     MODEL_SIGNING_ACTION: ActionPolicy(
@@ -240,6 +242,10 @@ class ZeroTrustControlPlane:
 
         if repository != TRUSTED_REPOSITORY:
             self._deny("UNTRUSTED_REPOSITORY", "repository claim does not match", candidate, claims)
+        if repository_id != TRUSTED_REPOSITORY_ID:
+            self._deny("UNTRUSTED_REPOSITORY_ID", "stable repository ID does not match", candidate, claims)
+        if repository_owner_id != TRUSTED_REPOSITORY_OWNER_ID:
+            self._deny("UNTRUSTED_REPOSITORY_OWNER_ID", "stable repository owner ID does not match", candidate, claims)
         if ref != TRUSTED_REF:
             self._deny("UNTRUSTED_REF", "ref claim does not match", candidate, claims)
         if workflow_ref not in policy.workflow_refs:
