@@ -1,0 +1,60 @@
+name: Allspice Recovery Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/training/drive_reconstruction_manifest.json"
+      - "backend/training/drive_reconstruction_addendum_2026-10-02.json"
+      - "backend/training/recovery_manifest.py"
+      - "backend/training/ALLSPICE_RECOVERY.md"
+      - ".github/workflows/allspice-recovery-audit.yml"
+  pull_request:
+    paths:
+      - "backend/training/drive_reconstruction_manifest.json"
+      - "backend/training/drive_reconstruction_addendum_2026-10-02.json"
+      - "backend/training/recovery_manifest.py"
+      - "backend/training/ALLSPICE_RECOVERY.md"
+      - ".github/workflows/allspice-recovery-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build normalized recovery manifest
+        run: |
+          python backend/training/recovery_manifest.py \
+            --source backend/training/drive_reconstruction_manifest.json \
+            --output /tmp/allspice_recovery_manifest.json
+      - name: Enforce recovery invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/allspice_recovery_manifest.json')
+          d=json.loads(p.read_text())
+          allowed=set(d['classifications'])
+          for entry in d['entries']:
+              cls=entry['classification']
+              if cls not in allowed:
+                  raise SystemExit(f'unknown classification: {cls}')
+              role=str(entry.get('legacy_role') or '').lower()
+              if cls == 'ADMISSIBLE_PREGAME' and any(x in role for x in ('model','quarantined','settled','tracking')):
+                  raise SystemExit(f'legacy non-pregame artifact incorrectly admitted: {entry}')
+              if cls == 'SECRET_EXCLUDED' and entry.get('execute') is True:
+                  raise SystemExit(f'secret-bearing artifact cannot be executable: {entry}')
+          print(json.dumps({'status':'PASS','counts':d['counts'],'manifest_sha256':d['manifest_sha256']},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: allspice-recovery-manifest
+          path: /tmp/allspice_recovery_manifest.json
+          retention-days: 90
