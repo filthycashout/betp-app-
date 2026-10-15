@@ -1,7 +1,26 @@
 {
-  "registry_version": 1,
-  "updated": "2026-10-02",
-  "policy": "Only signed portable artifacts that pass the strict runtime promotion gate are production-promoted. Legacy serialized files remain candidates only.",
+  "registry_version": 2,
+  "updated": "2026-10-14",
+  "policy": "Only signed portable artifacts that pass the deterministic runtime promotion gate are production-promoted. Code presence, legacy serialized files, notebooks, experiment output, baseline artifacts, and candidate registry entries never grant promotion authority.",
+  "state_invariants": {
+    "code_exists_is_promoted_model": false,
+    "legacy_model_file_is_promoted_model": false,
+    "notebook_complete_is_promoted_model": false,
+    "baseline_artifact_is_promoted_model": false,
+    "promotion_authority": "backend/model_runtime.py::load_promoted + promotion_gate",
+    "notebook_complete_definition": "The notebook performs its intended notebook-level job; this does not imply that an external API, GPU model, local server, or sport-specific prediction model is currently available or promoted."
+  },
+  "locations": {
+    "baseline_manifest": "backend/models/manifest.json",
+    "candidate_registry": "backend/models/candidate_registry.json",
+    "promoted_alias_directory": "backend/models/promoted",
+    "immutable_registry_directory": "backend/models/registry",
+    "runtime_gate": "backend/model_runtime.py",
+    "training": "backend/training/governed_train.py",
+    "strict_promotion": "backend/training/strict_promote.py",
+    "evidence_admission": "backend/training/evidence_admission.py",
+    "file_map": "docs/CURRENT_STATE_FILE_MAP.md"
+  },
   "promoted_directory": "backend/models/promoted",
   "sports": {
     "NFL": {
@@ -23,7 +42,9 @@
     "MLB": {
       "promotion_state": "NO_PROMOTED_MATCHUP_MODEL",
       "reconstructable_state": "PARTIALLY_RECONSTRUCTABLE_NOT_PROMOTION_READY",
-      "candidate_roles": ["legacy serialized MLB model"],
+      "candidate_roles": [
+        "legacy serialized MLB model"
+      ],
       "reconstructable_evidence": [
         "daily feature snapshot",
         "predicted-vs-actual result files",
