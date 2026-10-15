@@ -80,6 +80,26 @@ def wait_for_health(base: str, seconds: int = 90) -> dict[str, Any]:
     raise RuntimeError(f"backend did not become healthy: {last}")
 
 
+def probe_dynamic_routes(base: str, dynamic: dict[str, str], checks: dict[str, Any], failures: list[str]) -> None:
+    """Prove route presence without requiring a real current event.
+
+    A complete deployment may legitimately reject an unknown event because of
+    evidence/provider gating. Route-not-found (404/405) or non-object transport
+    responses are the failures this deployment-contract probe is intended to
+    detect.
+    """
+
+    for name, path in dynamic.items():
+        try:
+            status, payload = get_json(base, path)
+            checks[name] = {"status": status, "object": isinstance(payload, dict)}
+            if status in {404, 405} or not isinstance(payload, dict):
+                failures.append(name)
+        except Exception as exc:
+            checks[name] = {"error": f"{type(exc).__name__}: {exc}"}
+            failures.append(name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8080")
@@ -181,25 +201,23 @@ def main() -> int:
                 "game_props": f"/v1/games/NFL/{encoded}/props",
                 "game_best9": f"/v1/games/NFL/{encoded}/best9",
             }
-        for name, path in dynamic.items():
-            try:
-                status, payload = get_json(args.base, path)
-                checks[name] = {"status": status, "object": isinstance(payload, dict)}
-                # Evidence/provider gating may legitimately return a non-2xx response,
-                # but a complete deployment must not report route-not-found.
-                if status in {404, 405} or not isinstance(payload, dict):
-                    failures.append(name)
-            except Exception as exc:
-                checks[name] = {"error": f"{type(exc).__name__}: {exc}"}
-                failures.append(name)
+        probe_dynamic_routes(args.base, dynamic, checks, failures)
+    elif floot:
+        # Route presence must not depend on whether NFL happens to have a live
+        # pregame event on the day CI runs. Probe the fixed-query adapter routes
+        # with a sentinel ID and accept structured domain-level rejection while
+        # still failing closed on missing routes or malformed transport.
+        sentinel = "__philthy_contract_probe__"
+        q = urllib.parse.urlencode({"sport": "NFL", "event_id": sentinel})
+        dynamic = {
+            "game_detail": f"/v1/game?{q}",
+            "game_props": f"/v1/game/props?{q}",
+            "game_best9": f"/v1/game/best9?{q}",
+        }
+        checks["dynamic_game_routes"] = "No current NFL event; Floot routes probed with sentinel event ID."
+        probe_dynamic_routes(args.base, dynamic, checks, failures)
     else:
-        checks["dynamic_game_routes"] = (
-            "No current NFL event; canonical OpenAPI checked."
-            if not floot else
-            "No current NFL event; dynamic adapter route could not be live-probed."
-        )
-        if floot:
-            failures.append("dynamic_game_routes.no_current_event")
+        checks["dynamic_game_routes"] = "No current NFL event; canonical OpenAPI checked."
 
     report = {
         "base": args.base,
