@@ -31,6 +31,11 @@ def _optional_number(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _number_or_nan(value: Any) -> float:
+    number = _optional_number(value)
+    return np.nan if number is None else number
+
+
 def _team_history_before(
     frame: pd.DataFrame,
     row_index: int,
@@ -139,8 +144,8 @@ def build_point_in_time_features(frame: pd.DataFrame) -> pd.DataFrame:
         features: dict[str, float] = {
             "feature_market_consensus_home_prob": float(row["consensus_de_vig_home_probability"]),
             "feature_market_home_prob": float(row["market_prob"]),
-            "feature_home_spread": _optional_number(row.get("home_spread")) or np.nan,
-            "feature_consensus_total": _optional_number(row.get("consensus_total")) or np.nan,
+            "feature_home_spread": _number_or_nan(row.get("home_spread")),
+            "feature_consensus_total": _number_or_nan(row.get("consensus_total")),
         }
         for name, value in home.items():
             features[f"feature_home_{name}"] = value
