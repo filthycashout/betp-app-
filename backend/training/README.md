@@ -14,6 +14,97 @@ This directory records only evidence that can be reconstructed without trusting 
 
 See `NFL_ARCHIVE_RESEARCH.md` for the reproducible NFL research path. A successful schema check or successful CI run is not model-promotion approval.
 
+## Sports Omni acquisition path
+
+The `sports-omni-live-data-pipeline` branch adds governed acquisition and preparation without changing promotion thresholds.
+
+### Structured historical features
+
+`historical_feature_backfill.py` acquires checksum-manifested research artifacts:
+
+- NFL: schedules, team/player stats, injuries, weekly rosters, depth charts; optional richer snaps, participation, play-by-play and Next Gen stats.
+- NBA: team and player game logs via `nba_api`.
+- MLB: bounded MLB StatsAPI schedule/probable-pitcher/venue capture; optional bounded pybaseball/Statcast.
+- NHL: bounded NHL Web API schedules and optional game-centre box scores.
+
+These artifacts remain `promotion_eligible=false` until point-in-time canonicalization proves what was known before each snapshot.
+
+### Historical markets
+
+`historical_market_backfill.py` configures The Odds API historical featured/event market endpoints with a cost gate. It defaults to dry-run, estimates paid quota, refuses redirects and does not execute unless `ODDS_HISTORICAL_BACKFILL_ENABLED=true` plus `--execute` are both present.
+
+### Web context
+
+`web_context_capture.py` uses the governed ScrapeGraphAI client for public-web pregame availability/role research. Sidecars are always:
+
+```text
+trusted_for_instructions=false
+used_in_prediction=false
+historical_training_eligible=false
+promotion_eligible=false
+canonical_admission_required=true
+```
+
+A scrape result never becomes a model feature directly.
+
+### Drive-contract adapter
+
+The Google Drive canonical schema uses:
+
+```text
+snapshot_time / settled_time / target / market_prob
+```
+
+while the repository trainer uses:
+
+```text
+as_of / label_available_at / target_home_win / market_home_probability
+```
+
+`sports_omni_contract.py` verifies chronology, checksums, sport/event uniqueness, market probabilities and feature observation times before making this mapping.
+
+### Point-in-time feature construction
+
+`point_in_time_features.py` creates pregame numeric features from market snapshots and already-settled team history only. It currently includes:
+
+- market consensus home probability;
+- market home probability;
+- home spread and total;
+- games previously settled before snapshot;
+- streak;
+- rest days;
+- rolling 5/10-game win rate;
+- optional rolling points-for/against and point differential when scores are present;
+- home-minus-away relative features.
+
+Every generated feature receives a matching `feature_*_observed_at` equal to the canonical snapshot time. `sports_omni_prepare.py` passes only the numeric feature names explicitly to `governed_train.py` so observation timestamps remain audit columns, not model inputs.
+
+### Preparation sequence
+
+```text
+incoming canonical CSV + source manifest
+        ↓ checksum verification
+point_in_time_features.py
+        ↓ derived checksum manifest
+sports_omni_contract.py
+        ↓ trainer contract + candidate-only manifest
+sports_omni_prepare.py
+        ↓ exact --features list
+governed_train.py
+        ↓ walk-forward OOF + calibration + holdout + metrics
+strict promotion gates
+```
+
+No preparation step promotes a model.
+
+## GitHub capture workflows
+
+- `sports-omni-pregame-capture.yml`: prospective current-market capture; schedule remains disabled unless repository variables explicitly enable it and a verified backend base URL exists.
+- `sports-omni-historical-acquisition.yml`: public historical features, historical market dry-run plan, or explicitly acknowledged paid historical snapshot execution.
+- `sports-omni-web-context.yml`: manual ScrapeGraph event sidecar capture requiring `SGAI_API_KEY`.
+
+Actions artifacts are evidence transport, not the durable canonical training authority.
+
 ## Google Drive research references
 
 Drive material may be used to recover architecture ideas, source names, feature concepts, documentation and historical provenance, but not as automatic production truth. Inspected legacy BetP/SportsMachine material contains useful ideas such as agent orchestration, market de-vigging, calibration, time-series evaluation, model persistence, props/parlays and result tracking.

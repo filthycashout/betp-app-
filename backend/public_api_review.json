@@ -1,59 +1,69 @@
 {
-  "reviewed_at": "2026-10-03",
+  "reviewed_at": "2026-10-15",
   "directory_repository": "https://github.com/public-apis/public-apis",
   "directory_commit": "dfb5690f7fdd4073a54290f499a76c71cd9e5ba8",
   "apilayer_review": "https://apilayer.com/",
-  "scope": "Sports, weather and news replacements relevant to PhilthySports. Not every API category in the directory.",
+  "scope": "NFL, NBA, MLB and NHL live, historical, market, settlement, weather, news and governed web-research sources relevant to PhilthySports/PhilthyParleys.",
   "providers": [
     {
       "id": "espn",
       "name": "ESPN Site API",
-      "purpose": "Scores, schedules, injuries and current headlines",
+      "purpose": "Scores, schedules, injuries, current headlines and selected settlement",
       "sports": "NFL, NBA, MLB, NHL",
       "authentication": "none",
       "decision": "retained_and_extended",
-      "note": "Existing sports adapters retained; new dated headline endpoint, excluded from model features.",
+      "note": "Existing adapters retained. Retrieved prose is evidence only and is not automatically a model feature.",
       "source_url": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
     },
     {
       "id": "nba",
-      "name": "NBA CDN LiveData",
-      "purpose": "NBA live scoreboard and box scores",
+      "name": "NBA CDN LiveData / nba_api",
+      "purpose": "NBA live scoreboard/box scores plus historical team and player game logs",
       "sports": "NBA",
       "authentication": "none",
-      "decision": "retained",
-      "note": "Existing live adapter retained. Separate full-season schedule URL returned 403 in this review; no new dependency on it.",
+      "decision": "retained_and_extended",
+      "note": "nba_api historical collectors include team and player game logs. Historical values still require point-in-time canonicalization before training.",
       "source_url": "https://github.com/swar/nba_api"
     },
     {
       "id": "mlb",
       "name": "MLB StatsAPI",
-      "purpose": "Schedules, live scores, player data and venue coordinates",
+      "purpose": "Schedules, live scores, probable pitchers, player/game data, venue coordinates and settlement",
       "sports": "MLB",
       "authentication": "none",
       "decision": "retained_and_extended",
-      "note": "Official venue metadata now supports weather for confirmed open-air venues.",
+      "note": "Official structured MLB path. Optional bounded pybaseball/Statcast acquisition is research evidence until canonicalized.",
       "source_url": "https://statsapi.mlb.com/api/v1/schedule?sportId=1"
     },
     {
       "id": "nhl",
       "name": "NHL Web API",
-      "purpose": "Schedule, live game centre and statistics",
+      "purpose": "Schedule, live game centre, box scores/statistics and settlement",
       "sports": "NHL",
       "authentication": "none",
-      "decision": "retained",
-      "note": "Current Web API retained; older directory links are not treated as current endpoint specifications.",
+      "decision": "retained_and_extended",
+      "note": "Current NHL Web API is used directly; historical feature acquisition can capture schedule and game-centre box scores in bounded windows.",
       "source_url": "https://api-web.nhle.com/v1/schedule/now"
     },
     {
       "id": "nflverse",
       "name": "nflreadpy / nflverse",
-      "purpose": "Historical training inputs",
+      "purpose": "Historical schedules, team/player stats, injuries, weekly rosters, depth charts, snaps, participation, play-by-play and advanced statistics",
       "sports": "NFL",
       "authentication": "none",
-      "decision": "existing_research_adapter",
-      "note": "Already present in the historical collector. Data availability is not evidence of pregame provenance or model promotion.",
+      "decision": "expanded_research_adapter",
+      "note": "Rich historical acquisition is configured. Historical availability alone is not evidence that a value was known at a specific prediction time; canonical observed_at reconstruction is required.",
       "source_url": "https://nflreadpy.nflverse.com/"
+    },
+    {
+      "id": "pybaseball",
+      "name": "pybaseball / Baseball Savant / FanGraphs",
+      "purpose": "Bounded historical Statcast/baseball feature research",
+      "sports": "MLB",
+      "authentication": "none",
+      "decision": "configured_for_bounded_historical_acquisition",
+      "note": "Acquisition windows are bounded. Raw rows are not promotion evidence until point-in-time feature construction and canonical admission succeed.",
+      "source_url": "https://github.com/jldbc/pybaseball"
     },
     {
       "id": "nws",
@@ -78,7 +88,7 @@
     {
       "id": "draftkings-bovada",
       "name": "DraftKings / Bovada public feeds",
-      "purpose": "Game odds and selected player props",
+      "purpose": "Current game odds and selected player props",
       "sports": "NFL, NBA, MLB, NHL",
       "authentication": "none",
       "decision": "retained",
@@ -87,13 +97,23 @@
     },
     {
       "id": "odds-api",
-      "name": "The Odds API",
-      "purpose": "Primary credentialed odds and props",
+      "name": "The Odds API v4",
+      "purpose": "Current credentialed odds/props plus optional paid historical market snapshots",
       "sports": "NFL, NBA, MLB, NHL",
       "authentication": "ODDS_API_KEY",
-      "decision": "optional_existing",
-      "note": "Still useful for coverage gaps. Rotation confirmation and entitlement checks remain required.",
+      "decision": "configured_optional",
+      "note": "Current live coverage remains optional. Historical featured and event-level market capture is configured as dry-run by default and requires explicit ODDS_HISTORICAL_BACKFILL_ENABLED=true plus execution acknowledgement because historical calls consume paid quota.",
       "source_url": "https://the-odds-api.com/liveapi/guides/v4/"
+    },
+    {
+      "id": "scrapegraphai",
+      "name": "ScrapeGraphAI V2",
+      "purpose": "Public-web pregame research for injuries, availability, lineups, depth charts, starting pitchers/goalies and role changes",
+      "sports": "NFL, NBA, MLB, NHL",
+      "authentication": "SGAI_API_KEY",
+      "decision": "configured_context_only",
+      "note": "Search/extract/scrape are configured through the fixed V2 API host. Output is always evidence-only, trusted_for_instructions=false, used_in_prediction=false and historical_training_eligible=false until a separately versioned numeric feature passes canonical admission. Crawl/monitor are intentionally not exposed.",
+      "source_url": "https://v2-api.scrapegraphai.com/"
     },
     {
       "id": "weatherstack",
@@ -112,7 +132,7 @@
       "sports": "NFL, NBA, MLB, NHL",
       "authentication": "provider_key",
       "decision": "not_enabled",
-      "note": "Requires a provider key; current sports headlines are available through the new ESPN adapter. Not a replacement for private X access.",
+      "note": "Requires a provider key; current sports headlines are available through ESPN and governed web research. Not a replacement for authenticated private social feeds.",
       "source_url": "https://apilayer.com/products/mediastack/"
     },
     {
@@ -122,7 +142,7 @@
       "sports": "NFL, NBA, MLB, NHL",
       "authentication": "provider_key",
       "decision": "not_enabled",
-      "note": "Directory says no authentication; current NBA documentation requires an API key and paid access for odds/props.",
+      "note": "Current documentation requires API access and product-specific entitlements; it is not treated as a free replacement source.",
       "source_url": "https://nba.balldontlie.io/"
     },
     {
@@ -152,36 +172,43 @@
       "sports": "multiple_sports",
       "authentication": "none_demo",
       "decision": "rejected_for_predictions",
-      "note": "Live request succeeded, but free rows lack selection labels, line handicaps and scheduled event time needed for safe market mapping.",
+      "note": "Free rows lack enough stable selection/line/time information for safe production market mapping.",
       "source_url": "https://fanlinewire.com/docs"
     },
     {
       "id": "third-party-picks",
-      "name": "Bet Better / NoPunt",
-      "purpose": "Third-party forecasts",
+      "name": "Third-party public forecasts",
+      "purpose": "External predictions",
       "sports": "multiple_sports",
-      "authentication": "none_listed",
+      "authentication": "varies",
       "decision": "rejected_for_model_promotion",
-      "note": "Public model predictions are not trained PhilthySports weights, settled validation or calibrated promotion evidence.",
+      "note": "External predictions are not PhilthySports trained weights, chronological settled validation or calibrated promotion evidence.",
       "source_url": "https://github.com/public-apis/public-apis#sports--fitness"
     }
   ],
+  "canonical_pipeline": {
+    "drive_schema": "sports-omni-home-win-training-v2",
+    "trainer_adapter": "backend/training/sports_omni_contract.py",
+    "structured_history": "backend/training/historical_feature_backfill.py",
+    "historical_markets": "backend/training/historical_market_backfill.py",
+    "web_context_sidecars": "backend/training/web_context_capture.py",
+    "governed_training": "backend/training/governed_train.py",
+    "strict_promotion": "backend/training/strict_promote.py",
+    "settlement": "backend/training/evidence_pipeline.py"
+  },
   "credential_remediation": {
-    "runtime_provider_key": "ODDS_API_KEY is optional for the existing primary odds path; keyless coverage is not guaranteed complete.",
-    "legacy_keys": "Previously exposed Odds API, Sportradar, Visual Crossing, Google service-account, X and Twilio credentials still require revocation even when replaced.",
-    "not_runtime_requirements": [
-      "SPORTRADAR_API_KEY",
-      "VISUAL_CROSSING_API_KEY",
-      "Google service-account credential",
-      "X bearer token",
-      "Twilio authentication"
-    ],
-    "signing": "Preserve the existing Android/model signing identity."
+    "runtime_provider_keys": "ODDS_API_KEY and SGAI_API_KEY are server-side optional integrations. Their presence is not inferred from source code.",
+    "paid_historical_odds": "Historical Odds API entitlement is not assumed. Backfill is dry-run and disabled by default.",
+    "legacy_keys": "Any previously exposed provider/service-account/social/Twilio credentials remain retired until provider-side rotation/revocation is independently verified.",
+    "signing": "Preserve the existing Android/model signing identity and zero-trust control plane."
   },
   "governance": {
     "automatic_wagering": false,
-    "weather_or_news_used_in_predictions": false,
+    "scraped_web_context_used_in_predictions": false,
+    "scraped_web_context_historical_training_eligible": false,
+    "canonical_admission_required": true,
     "model_promotion_changed": false,
-    "stale_or_ambiguous_odds_accepted": false
+    "stale_or_ambiguous_odds_accepted": false,
+    "natural_language_grants_authority": false
   }
 }
