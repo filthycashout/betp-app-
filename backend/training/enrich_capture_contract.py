@@ -36,16 +36,21 @@ def enrich(directory: Path) -> dict[str, Any]:
             game = games.get((str(row.get("sport") or "").upper(), str(row.get("event_id") or ""))) or {}
             market = game.get("market") or {}
             home = str(row.get("home_team") or "")
-            pick = str(market.get("moneyline_pick") or "")
-            price = None
-            book = None
-            if pick and home and pick.casefold() == home.casefold():
-                price = market.get("moneyline_best_price")
-                book = market.get("moneyline_best_book")
+
+            # Prefer the canonical current runtime shape. Keep compatibility with
+            # older moneyline_best_* fields, but never synthesize a quote/book.
+            price = market.get("home_ml")
+            book = market.get("home_best_book")
+            if price is None or not book:
+                pick = str(market.get("moneyline_pick") or "")
+                if pick and home and pick.casefold() == home.casefold():
+                    price = market.get("moneyline_best_price")
+                    book = market.get("moneyline_best_book")
+
             row.update(
                 {
                     "schema_version": "2",
-                    "provider_event_id": game.get("provider_event_id"),
+                    "provider_event_id": game.get("provider_event_id") or game.get("odds_event_id"),
                     "provider_market_id": market.get("provider_market_id") or market.get("market_id"),
                     "market_type": "moneyline" if row.get("market_home_probability") is not None else None,
                     "selection": home if row.get("market_home_probability") is not None else None,
