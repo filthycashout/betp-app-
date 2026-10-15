@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from data_contract import validate_records
+try:
+    from .data_contract import validate_records
+except ImportError:  # standalone copy used by evidence workflow
+    from data_contract import validate_records
 
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
 ALLOWED_RESULT_SOURCES = {"ESPN scoreboard", "MLB Stats API", "NHL Web API"}
@@ -99,7 +102,6 @@ def audit(root: Path) -> dict[str, Any]:
             continue
         event = by_event.get(key)
         if event is None:
-            # Historical backfills have their own checksum/provenance manifests.
             continue
         proof = proofs.get(key)
         requires_v2_proof = str(event.get("_capture_contract_version") or "1") == "2"
