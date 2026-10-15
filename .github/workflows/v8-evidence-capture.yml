@@ -41,6 +41,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install data-contract dependency
+        run: python -m pip install "pydantic>=2.9,<3"
+
       - name: Resolve and verify evidence backend
         shell: bash
         run: |
@@ -130,6 +133,7 @@ jobs:
           cp backend/training/evidence_pipeline.py /tmp/evidence_pipeline.py
           cp backend/training/prediction_ledger.py /tmp/prediction_ledger.py
           cp backend/training/historical_backfill.py /tmp/historical_backfill.py
+          cp backend/training/data_contract.py /tmp/data_contract.py
 
       - name: Capture strict pregame evidence from configured backend
         shell: bash
@@ -163,6 +167,22 @@ jobs:
           pipeline.capture(sys.argv[1], Path(sys.argv[2]), 4)
           PY
 
+      - name: Validate captured pregame schema contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/contract_reports
+          shopt -s nullglob
+          files=(/tmp/pregame_capture/pregame_*.jsonl)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "Expected exactly one pregame JSONL capture, found ${#files[@]}" >&2
+            exit 2
+          fi
+          python /tmp/data_contract.py \
+            --mode pregame \
+            --input "${files[0]}" \
+            --report /tmp/contract_reports/pregame.json
+
       - name: Switch to durable evidence branch
         shell: bash
         run: |
@@ -189,6 +209,23 @@ jobs:
           python /tmp/historical_backfill.py merge --root evidence
           PYTHONPATH=/tmp python /tmp/prediction_ledger.py verify --root evidence
 
+          mkdir -p evidence/run_metadata/contracts
+          cp /tmp/contract_reports/pregame.json evidence/run_metadata/contracts/latest_pregame.json
+          for SPORT in NFL NBA MLB NHL; do
+            lower="$(echo "$SPORT" | tr '[:upper:]' '[:lower:]')"
+            path="evidence/canonical/${lower}.csv"
+            if [ ! -f "$path" ]; then
+              echo "Missing canonical dataset after evidence rebuild: $path" >&2
+              exit 2
+            fi
+            python /tmp/data_contract.py \
+              --mode canonical \
+              --sport "$SPORT" \
+              --input "$path" \
+              --features "consensus_de_vig_home_probability,home_spread,consensus_total" \
+              --report "evidence/run_metadata/contracts/${lower}.json"
+          done
+
           mkdir -p evidence/run_metadata
           cat > evidence/run_metadata/latest.json <<EOF
           {
@@ -197,6 +234,8 @@ jobs:
             "workflow_source_commit": "${GITHUB_SHA}",
             "branch": "evidence-snapshots",
             "historical_backfill_merge": true,
+            "data_contract_version": "1",
+            "data_contract_passed": true,
             "free_odds_gateway_snapshot_provenance": true,
             "secrets_embedded": false
           }
