@@ -65,7 +65,7 @@ def test_attach_zero_trust_is_additive_and_preserves_existing_payload_shape():
     assert "zero_trust" not in original
     assert result["zero_trust"]["authorization_granted"] is False
     assert result["zero_trust"]["persistent_state_mutation"] is False
-    assert result["zero_trust"]["source"]["trusted_for_instructions"] is False
+    assert result["zero_trust"]["source"]["trust_for_instructions"] is False
 
 
 def test_evidence_envelope_places_non_mapping_payload_below_authority_ceiling():
