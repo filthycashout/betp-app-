@@ -55,16 +55,16 @@ CANDIDATE_ONLY
 ====================================================
 DETERMINISTIC ZERO-TRUST AUTHORIZATION BOUNDARY
 ====================================================
-  trusted repository
+  exact repository name
+  exact stable repository ID
+  exact stable repository-owner ID
   trusted main ref
   exact workflow/action mapping
   exact workflow commit SHA
   exact repository commit SHA
-  repository ID
-  repository-owner ID
   actor ID
   run ID + run attempt
-  event-type allowlist
+  exact event-type allowlist
   GitHub-hosted runner constraint when claim exists
   resource/destination/method scope
   token fingerprint
@@ -82,6 +82,17 @@ single-use permit consumption
         v
 privileged cryptographic operation
 ```
+
+The stable identity pins are:
+
+```text
+repository: filthycashout/betp-app-
+repository_id: 1180661052
+repository_owner_id: 208737286
+ref: refs/heads/main
+```
+
+The stable IDs prevent a repository or owner name from being treated as sufficient identity if the underlying GitHub object changes.
 
 No natural-language field participates in authorization.
 
@@ -122,8 +133,9 @@ workflow:
   - .github/workflows/philthysports-full-ci.yml@refs/heads/main
 allowed events:
   - workflow_dispatch
-  - push
 ```
+
+The current release workflow itself is `workflow_dispatch` only, so the authorization policy does not pre-authorize a future `push` trigger that is not present today.
 
 A model-training workflow authenticated for the same repository therefore cannot use its valid OIDC identity to obtain the Android signing material.
 
@@ -205,8 +217,8 @@ A successful authorization issues a short-lived permit bound to:
 - resource ID;
 - resource SHA-256 when required;
 - destination;
-- repository and repository ID;
-- repository-owner ID;
+- repository and stable repository ID;
+- stable repository-owner ID;
 - workflow ref and workflow SHA;
 - commit SHA;
 - run ID and run attempt;
@@ -245,6 +257,8 @@ RESOURCE_SCOPE_MISMATCH
 DESTINATION_SCOPE_MISMATCH
 RESOURCE_DIGEST_REQUIRED
 UNTRUSTED_REPOSITORY
+UNTRUSTED_REPOSITORY_ID
+UNTRUSTED_REPOSITORY_OWNER_ID
 UNTRUSTED_REF
 WORKFLOW_ACTION_MISMATCH
 UNTRUSTED_EVENT
@@ -278,6 +292,9 @@ A denied candidate is final for that exact attempt. It is not silently promoted 
 - method-scope expansion denial;
 - self-declared administrator/priority/system-override claims have no effect;
 - wrong repository denial;
+- same-name repository with wrong stable repository ID denial;
+- same-name owner with wrong stable owner ID denial;
+- Android-signing event expansion denial;
 - wrong ref denial;
 - malformed authoritative identity claim denial;
 - commit/workflow-SHA binding;
@@ -301,8 +318,9 @@ Current classification:
 ```text
 OIDC AUTHENTICATION: implemented
 EXACT ACTION AUTHORIZATION: implemented
+STABLE REPOSITORY IDENTITY BINDING: implemented
 WORKFLOW/ACTION SEPARATION: implemented
-RESOURCE/DESTINATION BINDING: implemented
+RESOURCE/DESTINATION/EVENT BINDING: implemented
 SHORT-LIVED SINGLE-USE PERMIT: implemented
 PROCESS-LOCAL REPLAY DEFENSE: implemented
 MODEL-ARTIFACT DIGEST BINDING: implemented
