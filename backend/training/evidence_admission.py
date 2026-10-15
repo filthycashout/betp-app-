@@ -64,9 +64,12 @@ def audit(root: Path) -> dict[str, Any]:
         except ValueError as exc:
             errors.append(f"pregame contract failed {rows_path}: {exc}")
             continue
+        for row in rows:
+            row["_capture_contract_version"] = str(manifest.get("data_contract_version") or manifest.get("schema_version") or "1")
         pregame_rows.extend(rows)
         captures.append({
             "classification": "ADMISSIBLE_PREGAME",
+            "contract_version": str(manifest.get("data_contract_version") or manifest.get("schema_version") or "1"),
             "rows_file": str(rows_path.relative_to(root)),
             "rows_sha256": _sha256(rows_path),
             "raw_file": str(raw_path.relative_to(root)),
@@ -81,9 +84,13 @@ def audit(root: Path) -> dict[str, Any]:
         if existing is None or str(row.get("as_of") or "") > str(existing.get("as_of") or ""):
             by_event[key] = row
 
-    labels_path = root / "settled" / "labels.jsonl"
-    settlements = _jsonl(labels_path)
+    proofs = {
+        (str(item.get("sport") or ""), str(item.get("event_id") or "")): item
+        for item in _jsonl(root / "settled" / "settlement_proofs.jsonl")
+    }
+    settlements = _jsonl(root / "settled" / "labels.jsonl")
     settlement_rows = 0
+    proof_rows = 0
     for label in settlements:
         key = (str(label.get("sport") or ""), str(label.get("event_id") or ""))
         source = label.get("result_source")
@@ -92,20 +99,35 @@ def audit(root: Path) -> dict[str, Any]:
             continue
         event = by_event.get(key)
         if event is None:
-            # Historical rows may be admitted through separately checksummed backfill manifests.
+            # Historical backfills have their own checksum/provenance manifests.
             continue
+        proof = proofs.get(key)
+        requires_v2_proof = str(event.get("_capture_contract_version") or "1") == "2"
+        if requires_v2_proof and proof is None:
+            errors.append(f"missing official settlement proof for contract-v2 event {key}")
+            continue
+        if proof is not None:
+            if proof.get("settlement_source") not in ALLOWED_RESULT_SOURCES:
+                errors.append(f"unapproved proof source for {key}: {proof.get('settlement_source')}")
+                continue
+            if int(proof.get("target_home_win")) != int(label.get("target_home_win")):
+                errors.append(f"settlement proof disagrees with label for {key}")
+                continue
+            proof_rows += 1
+
         candidate = {
             **event,
             "target_home_win": label.get("target_home_win"),
             "label_available_at": label.get("settled_at"),
-            "settlement_observed_at": label.get("settled_at"),
-            "settlement_source": source,
-            "settlement_source_event_id": label.get("settlement_source_event_id") or label.get("event_id"),
-            "final_home_score": label.get("final_home_score"),
-            "final_away_score": label.get("final_away_score"),
-            "settlement_status": label.get("settlement_status") or "SETTLED_FINAL",
-            "settlement_payload_sha256": label.get("settlement_payload_sha256"),
+            "settlement_observed_at": (proof or {}).get("settlement_observed_at") or label.get("settled_at"),
+            "settlement_source": (proof or {}).get("settlement_source") or source,
+            "settlement_source_event_id": (proof or {}).get("settlement_source_event_id") or label.get("event_id"),
+            "final_home_score": (proof or {}).get("final_home_score"),
+            "final_away_score": (proof or {}).get("final_away_score"),
+            "settlement_status": (proof or {}).get("settlement_status") or "SETTLED_FINAL",
+            "settlement_payload_sha256": (proof or {}).get("settlement_payload_sha256"),
         }
+        candidate.pop("_capture_contract_version", None)
         try:
             validate_records([candidate], mode="canonical", sport=key[0], features=[])
             settlement_rows += 1
@@ -140,17 +162,18 @@ def audit(root: Path) -> dict[str, Any]:
         }
 
     report = {
-        "admission_version": "1",
+        "admission_version": "2",
         "status": "FAIL" if errors else "PASS",
         "automatic_wagering": False,
         "rules": {
-            "pregame": "immutable checksummed capture + as_of/quote before event start",
-            "settlement": "approved sports result source observed after event start; scores are verified when supplied",
+            "pregame": "immutable checksummed capture + quote/as_of before event start",
+            "settlement": "contract-v2 live captures require independent official-result proof; legacy/history stays governed by its own provenance manifest",
             "canonical": "contract-valid canonical CSV whose SHA-256 matches its source manifest",
-            "model_promotion": "separate downstream gate; admission alone never promotes a model",
+            "model_promotion": "separate downstream gate; evidence admission never promotes a model",
         },
         "captures": captures,
         "settlement_rows_verified": settlement_rows,
+        "official_proof_rows_verified": proof_rows,
         "canonical": canonical,
         "errors": errors,
     }
