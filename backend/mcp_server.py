@@ -17,7 +17,7 @@ from zero_trust_provenance import (
 
 router = APIRouter(tags=["mcp"])
 _PROTOCOL = "2025-06-18"
-_SERVER = {"name": "philthysports-mcp", "version": "1.1.0"}
+_SERVER = {"name": "philthysports-mcp", "version": "1.0.0"}
 
 TOOLS = [
     {
