@@ -118,8 +118,7 @@ Bound to:
 method: GET
 resource: android-release-key
 destination: github-actions-release-runner
-workflows:
-  - .github/workflows/build-apk.yml@refs/heads/main
+workflow:
   - .github/workflows/philthysports-full-ci.yml@refs/heads/main
 allowed events:
   - workflow_dispatch
