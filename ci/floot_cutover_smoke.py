@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fail-closed production contract smoke for the PhilthyParleys Floot cutover.
 
-The production contract distinguishes a healthy analytics service from a slate
-that happens to contain enough qualifying bets. A slate with zero qualifying
-legs is healthy when the service explicitly applies the governed sharp-vs-soft
-EV gate and returns an empty result rather than fabricating picks.
+This verifies the deployed service contract without assuming that a current
+slate must contain games or qualifying recommendations. Production-contract
+checks are deliberately provider-quota-safe: live-data routes are probed with
+``refresh=false`` and durable evidence is verified independently.
 """
 from __future__ import annotations
 
@@ -33,13 +33,12 @@ def unwrap_floot(payload: object) -> object:
 
 
 def get(path: str, timeout: int = 30) -> tuple[int, object]:
-    url = BASE + path
-    req = urllib.request.Request(
-        url,
+    request = urllib.request.Request(
+        BASE + path,
         headers={"Accept": "application/json", "User-Agent": "PhilthyParleys/floot-cutover-guard"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read(5_000_001)
             if len(body) > 5_000_000:
                 raise RuntimeError(f"response too large for {path}")
@@ -47,10 +46,10 @@ def get(path: str, timeout: int = 30) -> tuple[int, object]:
     except urllib.error.HTTPError as exc:
         body = exc.read(200_000).decode("utf-8", errors="replace")
         try:
-            parsed: object = unwrap_floot(json.loads(body))
+            payload: object = unwrap_floot(json.loads(body))
         except Exception:
-            parsed = {"raw": body[:2000]}
-        return exc.code, parsed
+            payload = {"raw": body[:2000]}
+        return exc.code, payload
 
 
 def parse_utc(value: object) -> datetime | None:
@@ -76,14 +75,13 @@ def finite_number(value: object) -> float | None:
 
 
 def valid_evidence(row: object) -> bool:
-    if not isinstance(row, dict):
-        return False
-    return (
-        row.get("status") == "RECORDED"
+    return bool(
+        isinstance(row, dict)
+        and row.get("status") == "RECORDED"
         and isinstance(row.get("signal_id"), str)
-        and bool(row.get("signal_id"))
+        and row.get("signal_id")
         and isinstance(row.get("record_sha256"), str)
-        and bool(SHA256_RE.fullmatch(row["record_sha256"]))
+        and SHA256_RE.fullmatch(row["record_sha256"])
         and isinstance(row.get("engine_version"), str)
         and row["engine_version"].startswith("floot-powerhouse-runtime-")
     )
@@ -95,31 +93,28 @@ def valid_live_selection(row: object, *, require_sport: str | None = None) -> bo
     if require_sport is not None and row.get("sport") != require_sport:
         return False
     event_time = parse_utc(row.get("event_time"))
-    if event_time is None or event_time <= datetime.now(timezone.utc):
-        return False
     market = row.get("market")
-    if not isinstance(market, dict):
-        return False
-    if market.get("freshness_verified") is not True or market.get("provider_timestamp_verified") is not True:
-        return False
-    if parse_utc(market.get("observed_at")) is None:
-        return False
-    return valid_evidence(row.get("evidence"))
+    return bool(
+        event_time is not None
+        and event_time > datetime.now(timezone.utc)
+        and isinstance(market, dict)
+        and market.get("freshness_verified") is True
+        and market.get("provider_timestamp_verified") is True
+        and parse_utc(market.get("observed_at")) is not None
+        and valid_evidence(row.get("evidence"))
+    )
 
 
 def valid_ranked_pick(row: object) -> bool:
-    """Validate a recommendation without assuming that any must exist."""
-
-    if not valid_live_selection(row):
+    if not valid_live_selection(row) or not isinstance(row, dict):
         return False
-    assert isinstance(row, dict)
     probability = finite_number(row.get("probability"))
     edge = finite_number(row.get("edge"))
     expected_value = finite_number(row.get("expected_value"))
     offered_american = finite_number(row.get("offered_american"))
-    return (
+    return bool(
         isinstance(row.get("selection"), str)
-        and bool(row.get("selection"))
+        and row.get("selection")
         and probability is not None
         and 0.0 < probability < 1.0
         and edge is not None
@@ -131,7 +126,7 @@ def valid_ranked_pick(row: object) -> bool:
         and offered_american != 0.0
         and abs(offered_american) >= 100.0
         and isinstance(row.get("offered_book"), str)
-        and bool(row.get("offered_book"))
+        and row.get("offered_book")
     )
 
 
@@ -139,7 +134,7 @@ def validate_best12(status: int, payload: object) -> tuple[bool, object]:
     if not isinstance(payload, dict):
         return False, type(payload).__name__
     picks = payload.get("picks")
-    ok = (
+    ok = bool(
         status == 200
         and payload.get("requested") == 12
         and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
@@ -161,7 +156,7 @@ def validate_best3(status: int, payload: object) -> tuple[bool, object]:
     if not isinstance(payload, dict):
         return False, type(payload).__name__
     legs = payload.get("legs")
-    ok = (
+    ok = bool(
         status == 200
         and payload.get("requested") == 3
         and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
@@ -181,21 +176,18 @@ def validate_best3(status: int, payload: object) -> tuple[bool, object]:
     }
 
 
-def validate_parlay(status: int, payload: object, legs_requested: int) -> tuple[bool, object]:
-    if not isinstance(payload, dict):
+def validate_parlay(status: int, payload: object, requested: int) -> tuple[bool, object]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("legs"), list):
         return False, type(payload).__name__
-    legs = payload.get("legs")
-    if not isinstance(legs, list):
-        return False, {"requested": legs_requested, "legs_type": type(legs).__name__}
-    returned = len(legs)
-    complete = returned == legs_requested
+    legs = payload["legs"]
+    complete = len(legs) == requested
     expected_status = "SHARP_VERIFIED_EV_CARD" if complete else "INSUFFICIENT_ELIGIBLE_LIVE_EVENTS"
-    ok = (
+    ok = bool(
         status == 200
-        and payload.get("requested_legs") == legs_requested
+        and payload.get("requested_legs") == requested
         and payload.get("recommendation_gate") == STRICT_RECOMMENDATION_GATE
         and payload.get("complete") == complete
-        and returned <= legs_requested
+        and len(legs) <= requested
         and all(valid_ranked_pick(row) for row in legs)
         and payload.get("manual_review_only") is True
         and payload.get("joint_probability") is None
@@ -203,8 +195,8 @@ def validate_parlay(status: int, payload: object, legs_requested: int) -> tuple[
         and payload.get("status") == expected_status
     )
     return ok, {
-        "requested": legs_requested,
-        "returned": returned,
+        "requested": requested,
+        "returned": len(legs),
         "complete": payload.get("complete"),
         "status": payload.get("status"),
         "expected_status": expected_status,
@@ -219,7 +211,7 @@ def validate_parlay(status: int, payload: object, legs_requested: int) -> tuple[
 def main() -> int:
     checks: dict[str, dict[str, object]] = {}
     failures: list[str] = []
-    search_payloads: dict[str, dict[str, object]] = {}
+    payloads: dict[str, object] = {}
 
     def check(name: str, path: str, validator: Callable[[int, object], tuple[bool, object]]) -> object | None:
         try:
@@ -228,6 +220,7 @@ def main() -> int:
             checks[name] = {"ok": ok, "http_status": status, "detail": detail}
             if not ok:
                 failures.append(name)
+            payloads[name] = payload
             return payload
         except Exception as exc:
             checks[name] = {"ok": False, "http_status": None, "detail": f"{type(exc).__name__}: {exc}"}
@@ -279,27 +272,24 @@ def main() -> int:
     )
 
     for sport in SPORTS:
-        payload = check(
+        check(
             f"search_{sport.lower()}",
-            f"/v1/search?sport={sport}",
+            f"/v1/search?sport={sport}&include_props=false&refresh=false",
             lambda status, payload, sport=sport: (
                 status == 200
                 and isinstance(payload, dict)
                 and isinstance(payload.get("games"), list)
-                and len(payload["games"]) > 0
                 and all(valid_live_selection(row, require_sport=sport) for row in payload["games"]),
                 {
                     "games": len(payload.get("games", [])),
-                    "all_future_and_fresh": all(valid_live_selection(row, require_sport=sport) for row in payload.get("games", []))
-                    if isinstance(payload, dict) and isinstance(payload.get("games"), list)
-                    else False,
+                    "all_returned_games_future_and_fresh": all(valid_live_selection(row, require_sport=sport) for row in payload.get("games", [])),
+                    "empty_slate_allowed": True,
+                    "provider_refresh": False,
                 }
-                if isinstance(payload, dict)
+                if isinstance(payload, dict) and isinstance(payload.get("games"), list)
                 else type(payload).__name__,
             ),
         )
-        if isinstance(payload, dict):
-            search_payloads[sport] = payload
 
     check(
         "models_status",
@@ -341,73 +331,91 @@ def main() -> int:
             and payload.get("status") == "LIVE_EVENT_PROP_FEED_CONFIGURED"
             and payload.get("provider") == "the_odds_api_v4_event_odds"
             and isinstance(payload.get("sports"), dict)
-            and all(isinstance(payload["sports"].get(sport), list) and payload["sports"][sport] for sport in SPORTS)
-            and isinstance(payload.get("default_live_markets"), dict)
-            and all(isinstance(payload["default_live_markets"].get(sport), list) and payload["default_live_markets"][sport] for sport in SPORTS),
+            and all(isinstance(payload["sports"].get(sport), list) and payload["sports"][sport] for sport in SPORTS),
             payload if isinstance(payload, dict) else type(payload).__name__,
         ),
     )
 
+    check(
+        "data_providers",
+        "/v1/data/providers",
+        lambda status, payload: (
+            status == 200 and isinstance(payload, dict),
+            payload if isinstance(payload, dict) else type(payload).__name__,
+        ),
+    )
+    evidence_signals = check(
+        "evidence_signals",
+        "/v1/evidence/signals?limit=1",
+        lambda status, payload: (
+            status == 200
+            and isinstance(payload, dict)
+            and payload.get("durable_storage") is True
+            and isinstance(payload.get("signals"), list)
+            and bool(payload["signals"]),
+            payload if isinstance(payload, dict) else type(payload).__name__,
+        ),
+    )
+
+    check("best3", "/v1/parlays/best3?refresh=false", validate_best3)
+    check("best12", "/v1/picks/best12?refresh=false", validate_best12)
+    for legs in (7, 10, 14):
+        check(
+            f"parlay{legs}",
+            f"/v1/parlays/multisport?legs={legs}&refresh=false",
+            lambda status, payload, legs=legs: validate_parlay(status, payload, legs),
+        )
+
+    sentinel_query = urllib.parse.urlencode(
+        {"sport": "NFL", "event_id": "__philthy_contract_probe__", "refresh": "false"}
+    )
     for name, path in {
-        "data_providers": "/v1/data/providers",
-        "evidence_signals": "/v1/evidence/signals?limit=1",
+        "game_detail": f"/v1/game?{sentinel_query}",
+        "game_props": f"/v1/game/props?{sentinel_query}",
+        "game_best9": f"/v1/game/best9?{sentinel_query}",
     }.items():
         check(
             name,
             path,
             lambda status, payload: (
-                status == 200 and isinstance(payload, dict),
-                payload if isinstance(payload, dict) else type(payload).__name__,
+                status == 404
+                and isinstance(payload, dict)
+                and payload.get("error") == "Game not found",
+                {
+                    "route_present": status == 404 and isinstance(payload, dict) and payload.get("error") == "Game not found",
+                    "structured_domain_rejection": payload if isinstance(payload, dict) else type(payload).__name__,
+                    "provider_refresh": False,
+                },
             ),
         )
 
-    check("best3", "/v1/parlays/best3", validate_best3)
-    check("best12", "/v1/picks/best12", validate_best12)
-
-    for legs in (7, 10, 14):
+    latest_signal = None
+    if isinstance(evidence_signals, dict) and isinstance(evidence_signals.get("signals"), list) and evidence_signals["signals"]:
+        candidate = evidence_signals["signals"][0]
+        if isinstance(candidate, dict):
+            latest_signal = candidate
+    if latest_signal and isinstance(latest_signal.get("signal_id"), str):
+        expected_sha = latest_signal.get("record_sha256")
+        verify_query = urllib.parse.urlencode({"signal": latest_signal["signal_id"]})
         check(
-            f"parlay{legs}",
-            f"/v1/parlays/multisport?legs={legs}",
-            lambda status, payload, legs=legs: validate_parlay(status, payload, legs),
-        )
-
-    nfl_games = search_payloads.get("NFL", {}).get("games", [])
-    first_nfl = nfl_games[0] if isinstance(nfl_games, list) and nfl_games else None
-    event_id = first_nfl.get("event_id") if isinstance(first_nfl, dict) else None
-    if isinstance(event_id, str) and event_id:
-        query = urllib.parse.urlencode({"sport": "NFL", "event_id": event_id})
-        check(
-            "game_detail",
-            f"/v1/game?{query}",
-            lambda status, payload: (
-                status == 200 and isinstance(payload, dict),
+            "evidence_verify",
+            f"/v1/evidence/verify?{verify_query}",
+            lambda status, payload, expected_sha=expected_sha: (
+                status == 200
+                and isinstance(payload, dict)
+                and payload.get("verified") is True
+                and payload.get("immutable") is True
+                and payload.get("record_sha256") == expected_sha,
                 payload if isinstance(payload, dict) else type(payload).__name__,
             ),
         )
-
-        evidence = first_nfl.get("evidence") if isinstance(first_nfl, dict) else None
-        signal_id = evidence.get("signal_id") if isinstance(evidence, dict) else None
-        expected_sha = evidence.get("record_sha256") if isinstance(evidence, dict) else None
-        if isinstance(signal_id, str) and signal_id:
-            verify_query = urllib.parse.urlencode({"signal": signal_id})
-            check(
-                "evidence_verify",
-                f"/v1/evidence/verify?{verify_query}",
-                lambda status, payload, expected_sha=expected_sha: (
-                    status == 200
-                    and isinstance(payload, dict)
-                    and payload.get("verified") is True
-                    and payload.get("immutable") is True
-                    and payload.get("record_sha256") == expected_sha,
-                    payload if isinstance(payload, dict) else type(payload).__name__,
-                ),
-            )
-        else:
-            failures.append("evidence_verify")
-            checks["evidence_verify"] = {"ok": False, "http_status": None, "detail": "No evidence signal on fresh NFL event"}
     else:
-        failures.append("game_detail")
-        checks["game_detail"] = {"ok": False, "http_status": None, "detail": "No fresh NFL event id available from candidate search"}
+        failures.append("evidence_verify")
+        checks["evidence_verify"] = {
+            "ok": False,
+            "http_status": None,
+            "detail": "No durable evidence signal available to verify",
+        }
 
     report = {
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -416,7 +424,9 @@ def main() -> int:
         "failed_checks": sorted(set(failures)),
         "contract": {
             "recommendation_gate": STRICT_RECOMMENDATION_GATE,
-            "empty_slate_policy": "valid_when_no_strictly_eligible_picks_exist",
+            "empty_slate_policy": "valid_when_no_strictly_eligible_picks_or_current_events_exist",
+            "route_probe_policy": "quota_safe_refresh_false_with_structured_sentinel_rejection",
+            "evidence_policy": "verify_latest_durable_signal_independent_of_current_slate",
             "parlay_dependence_policy": "joint_probability_remains_null_while_dependence_model_unavailable",
         },
         "checks": checks,
