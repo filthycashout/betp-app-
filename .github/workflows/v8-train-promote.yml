@@ -34,6 +34,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install data-contract dependency
+        run: python -m pip install "pydantic>=2.9,<3"
+
       - name: Fetch canonical evidence branch
         id: evidence
         shell: bash
@@ -50,6 +53,22 @@ jobs:
             git show "origin/evidence-snapshots:evidence/canonical/${sport}_source_manifest.json" > "/tmp/evidence/${sport}_source_manifest.json"
           done
           echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate canonical data contract before training
+        if: steps.evidence.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/data-contracts
+          for SPORT in NFL NBA MLB NHL; do
+            lower="$(echo "$SPORT" | tr '[:upper:]' '[:lower:]')"
+            python backend/training/data_contract.py \
+              --mode canonical \
+              --sport "$SPORT" \
+              --input "/tmp/evidence/${lower}.csv" \
+              --features "consensus_de_vig_home_probability,home_spread,consensus_total" \
+              --report "/tmp/data-contracts/${lower}.json"
+          done
 
       - name: Check v8 sample sufficiency before installing training stack
         id: readiness
@@ -82,7 +101,7 @@ jobs:
         if: steps.readiness.outputs.ready == 'true'
         run: pip install -r backend/training/requirements.txt
 
-      - name: Strict train, evaluate, parity-test, and sign eligible sports
+      - name: Strict train, evaluate, parity-test, sign, and register eligible sports
         if: steps.readiness.outputs.ready == 'true'
         shell: bash
         run: |
@@ -95,7 +114,7 @@ jobs:
             https://*) ;;
             *) echo "PHILTHY_SIGNER_URL must use HTTPS." >&2; exit 2 ;;
           esac
-          mkdir -p /tmp/promotions backend/models/promoted assets/models/promoted
+          mkdir -p /tmp/promotions backend/models/promoted backend/models/registry assets/models/promoted
           promoted=""
 
           while IFS= read -r SPORT; do
@@ -126,6 +145,11 @@ jobs:
             python backend/training/sign_promoted.py \
               --artifact "$artifact" \
               --signer-url "$PHILTHY_SIGNER_URL"
+
+            python backend/training/register_artifact.py \
+              --artifact "$artifact" \
+              --registry-root backend/models/registry \
+              --sport "$SPORT"
 
             cp "$artifact" "backend/models/promoted/${lower}.json"
             cp "$artifact" "assets/models/promoted/${lower}.json"
@@ -170,7 +194,8 @@ jobs:
           data["reason"]=(
               "Server inference is authoritative. Any promoted portable artifacts "
               "were signed only after strict v8 chronology, OOF calibration, metric, "
-              "leakage, provenance, checksum, sample, and parity gates passed."
+              "leakage, provenance, checksum, sample, parity, data-contract, and "
+              "immutable-registry gates passed."
           )
           for sport in promoted:
               data.setdefault("sports", {})[sport]="PROMOTED_TRAINED_MODEL"
@@ -182,14 +207,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add backend/models/promoted assets/models/promoted assets/models/model_manifest.json
+          git add backend/models/promoted backend/models/registry assets/models/promoted assets/models/model_manifest.json
           if git diff --cached --quiet; then
             echo "No newly promoted artifacts."
             exit 0
           fi
           git config user.name "philthysports-v8-promoter"
           git config user.email "actions@users.noreply.github.com"
-          git commit -m "Promote signed v8 sport models after strict evidence gates"
+          git commit -m "Promote and register signed v8 sport models after strict evidence gates"
           git push origin main
 
       - name: Promotion status summary
@@ -211,6 +236,7 @@ jobs:
           name: four-sport-promotion-evidence
           path: |
             /tmp/sample_counts.json
+            /tmp/data-contracts/*.json
             /tmp/promotions/**/*.json
             /tmp/promotions/**/*oof_predictions.csv
           retention-days: 90
