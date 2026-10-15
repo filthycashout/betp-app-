@@ -1,9 +1,11 @@
 {
-  "captured_at_utc": "2026-10-15T00:59:23Z",
+  "captured_at_utc": "2026-10-15T03:04:56Z",
   "source_backend": "https://philthyparleys.floot.app/_api",
-  "workflow_source_commit": "b2d5c16b068f7e03d5c079bd92876dc9f6cf08cd",
+  "workflow_source_commit": "8c4dcdf288fc5b628025dfb33978ed17d2644baf",
   "branch": "evidence-snapshots",
   "historical_backfill_merge": true,
+  "data_contract_version": "1",
+  "data_contract_passed": true,
   "free_odds_gateway_snapshot_provenance": true,
   "secrets_embedded": false
 }

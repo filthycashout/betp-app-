@@ -1,0 +1,14 @@
+{
+  "contract_version": "1",
+  "input": "evidence/canonical/nba.csv",
+  "input_sha256": "acfe3d0e880e0c5200f17d6dcb77c67bee6bbe1914e1d779e8d4fb90f0f88f06",
+  "mode": "canonical",
+  "required_features": [
+    "consensus_de_vig_home_probability",
+    "home_spread",
+    "consensus_total"
+  ],
+  "rows": 616,
+  "sport": "NBA",
+  "status": "PASS"
+}

@@ -1,0 +1,14 @@
+{
+  "contract_version": "1",
+  "input": "evidence/canonical/nfl.csv",
+  "input_sha256": "662027b0bcdb5786ad4139a585d6848d186a7a574b69c64984709c43679b9e74",
+  "mode": "canonical",
+  "required_features": [
+    "consensus_de_vig_home_probability",
+    "home_spread",
+    "consensus_total"
+  ],
+  "rows": 256,
+  "sport": "NFL",
+  "status": "PASS"
+}

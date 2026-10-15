@@ -1,0 +1,14 @@
+{
+  "contract_version": "1",
+  "input": "evidence/canonical/nhl.csv",
+  "input_sha256": "98fe63c06ded2e21e42036a42f88160b1534cc09a6c882bcfdc8dfbd023cee7c",
+  "mode": "canonical",
+  "required_features": [
+    "consensus_de_vig_home_probability",
+    "home_spread",
+    "consensus_total"
+  ],
+  "rows": 560,
+  "sport": "NHL",
+  "status": "PASS"
+}

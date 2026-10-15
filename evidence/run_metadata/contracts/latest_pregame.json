@@ -1,0 +1,10 @@
+{
+  "contract_version": "1",
+  "input": "/tmp/pregame_capture/pregame_20261015T030447Z.jsonl",
+  "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "mode": "pregame",
+  "required_features": [],
+  "rows": 0,
+  "sport": null,
+  "status": "PASS"
+}
