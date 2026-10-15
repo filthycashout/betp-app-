@@ -56,10 +56,13 @@ def prepare(
     trainer_manifest = output_dir / f"{source_csv.stem}_trainer_manifest.json"
     admission = admit_csv(enriched_csv, enriched_manifest, trainer_csv, trainer_manifest)
     sport = admission["sport"]
+    feature_arg = ",".join(admission["features"])
+    if not feature_arg:
+        raise CanonicalAdmissionError("preparation produced no numeric model features")
     command = (
         f"PYTHONPATH=backend python backend/training/governed_train.py --sport {sport} "
         f"--input {trainer_csv} --source-manifest {trainer_manifest} "
-        f"--output-dir {output_dir / 'candidate'}"
+        f"--features {feature_arg} --output-dir {output_dir / 'candidate'}"
     )
     return {
         "status": "PREPARED_CANDIDATE_ONLY",
@@ -68,6 +71,7 @@ def prepare(
         "enriched_manifest": str(enriched_manifest),
         "trainer_csv": str(trainer_csv),
         "trainer_manifest": str(trainer_manifest),
+        "features": admission["features"],
         "admission": admission,
         "next_governed_training_command": command,
         "promotion_executed": False,
