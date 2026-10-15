@@ -1,6 +1,6 @@
 {
   "base_url": "https://philthyparleys.floot.app/_api",
-  "checked_at": "2026-10-15T03:04:43.719642+00:00",
+  "checked_at": "2026-10-15T03:25:13.017237+00:00",
   "checks": {
     "evidence_database_configured": true,
     "evidence_database_error_clear": true,
@@ -19,14 +19,14 @@
   "evidence_storage": {
     "durable_storage": true,
     "sample_signal": {
-      "event_id": "9604eeafec33b8980e6565c617f04fc6",
+      "event_id": "176d474ed8b2bbf1eb4d7e9c56b4bf22",
       "evidence_type": "pregame_odds_snapshot",
       "immutable": true,
-      "observed_at": "2026-10-15T03:02:40.854Z",
-      "record_sha256": "88d8210b054684730bc3fc906ff0b350ad11d0427e5a58d8c233d30acdf4d5a2",
-      "signal_id": "88d8210b-0546-8473-0bc3-fc906ff0b350",
+      "observed_at": "2026-10-15T03:19:29.968Z",
+      "record_sha256": "eba1256cc5bfb356b7f76df102c9e2b2e394e03b48c8fada050c51c946f23f77",
+      "signal_id": "eba1256c-c5bf-b356-b7f7-6df102c9e2b2",
       "source": "the_odds_api_v4",
-      "sport": "NHL"
+      "sport": "NFL"
     },
     "storage_status": {
       "database_configured": true,
@@ -42,10 +42,10 @@
   "passed": true,
   "props_status": "LIVE_EVENT_PROP_FEED_CONFIGURED",
   "provider": {
-    "inventory_generated_at": "2026-10-15T03:04:46.038Z",
+    "inventory_generated_at": "2026-10-15T03:25:13.611Z",
     "the_odds_api": {
       "authenticated": true,
-      "checked_at": "2026-10-15T03:04:44.119Z",
+      "checked_at": "2026-10-15T03:25:12.101Z",
       "configured": true,
       "http_status": 200,
       "id": "the_odds_api",
@@ -55,7 +55,7 @@
   },
   "release_readiness_proven": false,
   "runtime": {
-    "checked_at": "2026-10-15T03:04:44.716Z",
+    "checked_at": "2026-10-15T03:25:13.184Z",
     "host": "Floot",
     "product": "PhilthyParleys",
     "service": "philthysports-runtime"
