@@ -11,7 +11,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from zero_trust_provenance import attach_zero_trust, tool_security_metadata
 
-SERVICE_VERSION = "1.2.0"
+SERVICE_VERSION = "1.1.2"
 BACKEND_BASE = os.getenv("PHILTHY_BACKEND_BASE_URL", "https://philthyparleys.floot.app/_api").rstrip("/")
 PUBLIC_HOST = os.getenv("MCP_PUBLIC_HOST", "").strip()
 RETRYABLE = {429, 502, 503, 504}
