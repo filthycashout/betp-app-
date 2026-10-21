@@ -1,0 +1,31 @@
+{
+  "name": "blog_articles_example",
+  "start_urls": [
+    "https://example.org/blog/"
+  ],
+  "allowed_hosts": [
+    "example.org"
+  ],
+  "item_selector": "article",
+  "follow_selector": "a[href]",
+  "fields": {
+    "title": "h2, h1",
+    "author": ".author, [rel='author']",
+    "published_at": {
+      "selector": "time[datetime]",
+      "attribute": "datetime"
+    },
+    "article_url": {
+      "selector": "a[href]",
+      "attribute": "href"
+    }
+  },
+  "required_fields": [
+    "title"
+  ],
+  "max_pages": 5000,
+  "max_depth": 8,
+  "concurrency": 6,
+  "request_delay_seconds": 0.5,
+  "source_kind": "general_web"
+}
