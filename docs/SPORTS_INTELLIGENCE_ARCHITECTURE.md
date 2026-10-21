@@ -1,3 +1,56 @@
+# Sports Intelligence Architecture — Machine vs Market
+
+## Primary mission
+
+This repository is a **sports ML research and tracking system**, not a sportsbook pick engine. Its first job is to forecast sports outcomes and player statistics from non-market sports evidence; its second job is to record those forecasts before games, compare them with actual results, and measure performance against market forecasts as a separate benchmark. The user is exploring this for fun and ML experimentation. No automatic wagering.
+
+### Non-negotiable separation
+
+```text
+SPORTS DATA (prior results, player/team performance, schedule, injuries, context)
+  -> point-in-time features (NO odds, spreads, totals, implied prices)
+  -> independent model prediction (freeze timestamp + model version)
+  -> immutable prediction ledger
+                                          MARKET DATA (separate, timestamped)
+                                             |
+                                             v
+                                POST-FREEZE COMPARISON ONLY
+                                             |
+                                ACTUAL SETTLED SPORTS RESULT
+                                             |
+                        Brier / log loss / MAE / calibration / drift
+                                             |
+                             chronological training experiments
+```
+
+**Machine prediction must exist without market data.** Do not feed market probability, odds, spread, totals, bookmaker identity, or market-derived consensus into the independent model's features, calibration, feature selection, labels, or hyperparameter tuning. The market can be an explicitly labeled *separate* benchmark or a separate market-informed model experiment, never silently substituted for independent ML.
+
+## Implementation status
+
+- `backend/sports_ai/machine_vs_market.py`: independent binary-probability prediction contract, market comparison and settled-outcome Brier evaluation; rejects direct market-feature use and invalid timing. This is a **new research primitive**, not yet wired to a durable store or live inference endpoint.
+- `backend/tests/test_machine_vs_market.py`: deterministic contract tests; CI status must be verified.
+- Existing `backend/training/point_in_time_features.py` builds sports-history features but also contains market-related features. It must not be used wholesale as the independent model feature set until the market columns are isolated and tested.
+- Existing production recommendation, EV, and sharp-odds gates remain operationally separate. They are **not** the definition of ML research success.
+- UFC remains contract-only until independent performance data and evaluation exist.
+
+## Research phases and acceptance
+
+1. **Freeze predictions**: identify event, target, model version, feature cutoff, prediction time, and forecast. Fail if any feature is observed after cutoff or sourced from market data.
+2. **Track outcomes**: append verified final results and settlement timestamps without modifying frozen predictions.
+3. **Compare forecasts**: compute machine vs market vs naive sports-only baseline with aligned event/target/timestamp; allow market-unavailable comparisons.
+4. **Backtest**: chronological splits, no leakage, Brier/log loss for binary targets, MAE/RMSE for player projections, reliability diagrams and sample sizes.
+5. **Learn**: experiment ledger records hypothesis, data version, training code, model artifact, holdout metrics, and regression checks. No model is promoted just because it disagrees with the market.
+6. **Expand**: start with NBA pilot, then NFL/NHL/MLB/UFC after per-sport data quality and evaluation pass.
+7. **Report**: chat-first machine forecast, uncertainty, observed market benchmark, final result, historical performance, and missing-data states. Parlays are optional correlated forecast experiments, not the primary KPI.
+
+## Existing production compatibility
+
+Keep the currently deployed APIs and production guards intact during this transition. A failing production contract is a real operational failure and must not be waived to merge research code. The existing market-centric pipeline is retained as a legacy comparison/compatibility path until a tested migration replaces it.
+
+---
+
+## Previous architecture notes (legacy, preserved for migration)
+
 # Sports Intelligence Architecture
 
 ## Purpose
