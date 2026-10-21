@@ -79,8 +79,9 @@ def normalize_market(
     provider: str,
     source_event_id: str,
     fetched_at: str,
+    allowed_selections: set[str],
 ) -> dict[str, Any] | None:
-    """Normalize one two-way UFC market while retaining quote provenance."""
+    """Normalize a market only when its outcome is in the source-derived outcome set."""
     if not isinstance(raw, dict) or not provider.strip() or not source_event_id.strip():
         return None
 
@@ -92,7 +93,14 @@ def normalize_market(
         price = float(raw.get("american_price"))
     except (TypeError, ValueError):
         return None
-    if not market_id or not selection or quote_at is None or fetched is None:
+    allowed = {str(item).strip().casefold() for item in allowed_selections if str(item).strip()}
+    if (
+        not market_id
+        or not selection
+        or selection.casefold() not in allowed
+        or quote_at is None
+        or fetched is None
+    ):
         return None
     if not math.isfinite(price) or price == 0 or abs(price) > 100000:
         return None
