@@ -6,13 +6,19 @@ leaving unavailable props, timestamps, and sharp-anchor evidence unavailable.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date, datetime, timezone
+from threading import Lock
+from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
 UFC_SPORT_KEY = "mma_mixed_martial_arts"
 UFC_ODDS_URL = f"https://api.the-odds-api.com/v4/sports/{UFC_SPORT_KEY}/odds/"
 PACIFIC = ZoneInfo("America/Los_Angeles")
+EVENT_CACHE_TTL_SECONDS = 60
+_EVENT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_EVENT_CACHE_LOCK = Lock()
 
 
 def _utc(value: Any) -> datetime | None:
@@ -90,7 +96,16 @@ def fetch_ufc_events(
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch UFC odds only when the existing credential-rotation gate permits it."""
+    # Check credential rotation on every request, even when the event feed is cached.
     key = runtime._odds_key()
+    cache_key = target_date.isoformat()
+    current_tick = monotonic()
+    with _EVENT_CACHE_LOCK:
+        cached = _EVENT_CACHE.get(cache_key)
+        if cached and current_tick < cached[0]:
+            return deepcopy(cached[1])
+        _EVENT_CACHE.pop(cache_key, None)
+
     payload = runtime._json(
         UFC_ODDS_URL,
         params={
@@ -102,4 +117,9 @@ def fetch_ufc_events(
         },
         timeout=10,
     )
-    return normalize_ufc_events(payload, target_date=target_date, now=now)
+    if not isinstance(payload, list):
+        raise ValueError("UFC provider returned an invalid event payload")
+    rows = normalize_ufc_events(payload, target_date=target_date, now=now)
+    with _EVENT_CACHE_LOCK:
+        _EVENT_CACHE[cache_key] = (monotonic() + EVENT_CACHE_TTL_SECONDS, deepcopy(rows))
+    return rows
