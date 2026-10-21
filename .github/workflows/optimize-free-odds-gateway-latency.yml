@@ -1,0 +1,70 @@
+name: Optimize FreeOddsGateway latency
+
+on:
+  push:
+    branches: [free-odds-final-hardening]
+    paths:
+      - 'scripts/optimize_free_odds_gateway_latency.py'
+      - '.github/workflows/optimize-free-odds-gateway-latency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: optimize-free-odds-gateway-latency
+  cancel-in-progress: false
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-odds-final-hardening
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply latency optimization
+        run: python scripts/optimize_free_odds_gateway_latency.py
+
+      - name: Validate syntax
+        run: |
+          python -m py_compile \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/tests/test_free_odds_gateway.py \
+            scripts/optimize_free_odds_gateway_latency.py
+
+      - name: Install validation dependencies
+        run: python -m pip install -q -r backend/requirements.txt -r backend/requirements-validation.txt
+
+      - name: Run gateway and backend regression tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          pytest -q \
+            backend/tests/test_free_odds_gateway.py \
+            backend/tests/test_validation.py \
+            backend/tests/test_app.py \
+            backend/tests/test_best_picks.py
+
+      - name: Commit verified latency optimization to branch
+        run: |
+          git add \
+            backend/app.py \
+            backend/free_odds_gateway.py \
+            backend/tests/test_free_odds_gateway.py \
+            docs/FREE_ODDS_GATEWAY.md
+          if git diff --cached --quiet; then
+            echo 'Latency optimization already applied.'
+            exit 0
+          fi
+          git config user.name 'philthysports-latency-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Optimize FreeOddsGateway board latency 1.6.12'
+          git push origin HEAD:free-odds-final-hardening
