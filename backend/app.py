@@ -3905,6 +3905,68 @@ def best_three_leg_parlays(date: str | None = None):
         raise HTTPException(400, str(exc)) from None
 
 
+@app.get("/api/v1/chat/picks", include_in_schema=False)
+@app.get("/v1/chat/picks")
+def chat_picks_briefing(date: str | None = None):
+    """Return one ChatGPT-friendly briefing without inventing missing selections."""
+    try:
+        target_date = date_cls.fromisoformat(date) if date else _pacific_today()
+    except ValueError:
+        raise HTTPException(400, "date must be YYYY-MM-DD") from None
+
+    def section(call):
+        try:
+            return {"status": "available", "data": call()}
+        except Exception as exc:
+            # Expose only the exception class, not provider URLs, credentials, or raw errors.
+            return {"status": "unavailable", "error_code": type(exc).__name__}
+
+    if date:
+        today_section = section(
+            lambda: {
+                "date": target_date.isoformat(),
+                "timezone": "America/Los_Angeles",
+                **_search(
+                    date=target_date.isoformat(),
+                    include_props=False,
+                    props_limit=0,
+                ),
+            }
+        )
+    else:
+        today_section = section(
+            lambda: today(include_props=False, props_limit=0, days=4)
+        )
+
+    best12_section = section(lambda: best12(target_date.isoformat()))
+    parlays_section = section(lambda: best_three_leg_parlays(target_date.isoformat()))
+    sections = {
+        "today": today_section,
+        "best12": best12_section,
+        "parlays": parlays_section,
+    }
+    available_count = sum(row["status"] == "available" for row in sections.values())
+    overall = "FETCHED" if available_count == len(sections) else (
+        "PARTIAL" if available_count else "UNAVAILABLE"
+    )
+    return {
+        "service": "PhilthyParleys Chat Picks Briefing",
+        "status": overall,
+        "target_date": target_date.isoformat(),
+        "timezone": "America/Los_Angeles",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "automatic_wagering": False,
+        "selection_policy": {
+            "unverified_or_stale_evidence": "do_not_recommend",
+            "missing_selections": "mark_unavailable",
+            "model_promotion_gate": "preserve",
+            "parlay_dependence_unknown": "do_not_claim_independent",
+            "generated_at_is_not_market_freshness": True,
+        },
+        "sections": sections,
+    }
+
+
 @app.get("/api/v1/games/{sport}/{event_id}/best9", include_in_schema=False)
 @app.get("/v1/games/{sport}/{event_id}/best9")
 def best_nine_game_picks(
