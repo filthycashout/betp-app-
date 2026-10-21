@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: PhilthyParleys Chat Picks
+  version: 1.0.0
+  description: >-
+    Read-only, evidence-preserving sports picks briefing for chat clients.
+    Preserve unavailable selections as unavailable. Never invent picks,
+    claim guaranteed outcomes, or imply automatic wagering.
+servers:
+  - url: https://philthyparleys.floot.app/_api
+paths:
+  /v1/chat/picks:
+    get:
+      operationId: getChatPicksBriefing
+      summary: Get the current PhilthyParleys picks briefing
+      description: >-
+        Returns the existing today feed, Best 12 board, and best three-leg
+        parlay cards as separate sections. A section can be unavailable when
+        a source fails. generated_at_utc is the briefing generation time,
+        not a market quote freshness timestamp. Display source timestamps
+        and unavailable states exactly as returned.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: Target date in America/Los_Angeles calendar, YYYY-MM-DD.
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Briefing assembled; individual sections may be unavailable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - service
+                  - status
+                  - target_date
+                  - timezone
+                  - generated_at_utc
+                  - automatic_wagering
+                  - selection_policy
+                  - sections
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                    enum: [FETCHED, PARTIAL, UNAVAILABLE]
+                  target_date:
+                    type: string
+                    format: date
+                  timezone:
+                    type: string
+                    const: America/Los_Angeles
+                  generated_at_utc:
+                    type: string
+                    format: date-time
+                  automatic_wagering:
+                    type: boolean
+                    const: false
+                  selection_policy:
+                    type: object
+                    additionalProperties: true
+                  sections:
+                    type: object
+                    required: [today, best12, parlays]
+                    properties:
+                      today:
+                        $ref: "#/components/schemas/BriefingSection"
+                      best12:
+                        $ref: "#/components/schemas/BriefingSection"
+                      parlays:
+                        $ref: "#/components/schemas/BriefingSection"
+        "400":
+          description: Invalid date parameter.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+components:
+  schemas:
+    BriefingSection:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [available, unavailable]
+        data:
+          description: Original app payload; retain its evidence and availability fields.
+          type: object
+          additionalProperties: true
+        error_code:
+          description: Exception class only; raw provider errors are not returned.
+          type: string
+      additionalProperties: false
