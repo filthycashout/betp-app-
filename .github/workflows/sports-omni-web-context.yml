@@ -1,0 +1,100 @@
+name: Sports Omni Web Context Capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      sport:
+        description: "Sport"
+        required: true
+        default: "NFL"
+        type: choice
+        options: [NFL, NBA, MLB, NHL]
+      event_id:
+        description: "Canonical event identifier"
+        required: true
+        type: string
+      event_time:
+        description: "Event start ISO-8601 with timezone"
+        required: true
+        type: string
+      home_team:
+        description: "Home team"
+        required: true
+        type: string
+      away_team:
+        description: "Away team"
+        required: true
+        type: string
+      topic:
+        description: "Research topic"
+        required: true
+        default: "availability"
+        type: choice
+        options: [availability, roles]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SGAI_API_KEY: ${{ secrets.SGAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install HTTP dependency
+        run: pip install 'requests>=2.32,<3'
+      - name: Verify ScrapeGraph credential is configured
+        run: |
+          set -euo pipefail
+          if [ -z "$SGAI_API_KEY" ]; then
+            echo "SGAI_API_KEY is not configured; no web capture will be attempted." >&2
+            exit 2
+          fi
+      - name: Capture immutable pregame context sidecar
+        env:
+          SPORT: ${{ inputs.sport }}
+          EVENT_ID: ${{ inputs.event_id }}
+          EVENT_TIME: ${{ inputs.event_time }}
+          HOME_TEAM: ${{ inputs.home_team }}
+          AWAY_TEAM: ${{ inputs.away_team }}
+          TOPIC: ${{ inputs.topic }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/web-context
+          PYTHONPATH=backend python backend/training/web_context_capture.py \
+            --sport "$SPORT" --event-id "$EVENT_ID" --event-time "$EVENT_TIME" \
+            --home-team "$HOME_TEAM" --away-team "$AWAY_TEAM" --topic "$TOPIC" \
+            --output-dir artifacts/web-context
+      - name: Enforce context-only authority ceiling
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifests = list(Path('artifacts/web-context').glob('*_manifest.json'))
+          if len(manifests) != 1:
+              raise SystemExit(f'expected one web context manifest, found {len(manifests)}')
+          doc = json.loads(manifests[0].read_text())
+          checks = {
+              'trusted_for_instructions': doc.get('trusted_for_instructions') is False,
+              'used_in_prediction': doc.get('used_in_prediction') is False,
+              'historical_training_eligible': doc.get('historical_training_eligible') is False,
+              'promotion_eligible': doc.get('promotion_eligible') is False,
+              'canonical_admission_required': doc.get('canonical_admission_required') is True,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              raise SystemExit(f'web context authority invariant failed: {failed}')
+          print('web context authority ceiling verified')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sports-omni-web-context-${{ inputs.sport }}-${{ github.run_id }}
+          path: artifacts/web-context
+          if-no-files-found: error
+          retention-days: 90
