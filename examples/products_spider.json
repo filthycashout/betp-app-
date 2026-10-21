@@ -1,0 +1,28 @@
+{
+  "name": "product_catalog_example",
+  "start_urls": [
+    "https://example.org/shop/"
+  ],
+  "allowed_hosts": [
+    "example.org"
+  ],
+  "item_selector": ".product-card",
+  "follow_selector": "a[href]",
+  "fields": {
+    "name": ".product-name",
+    "price": ".price",
+    "reviews": ".review-count",
+    "product_url": {
+      "selector": "a[href]",
+      "attribute": "href"
+    }
+  },
+  "required_fields": [
+    "name"
+  ],
+  "max_pages": 5000,
+  "max_depth": 8,
+  "concurrency": 6,
+  "request_delay_seconds": 0.5,
+  "source_kind": "general_web"
+}

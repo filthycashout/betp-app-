@@ -1,0 +1,31 @@
+{
+  "name": "sports_news_context_example",
+  "start_urls": [
+    "https://example.org/sports/"
+  ],
+  "allowed_hosts": [
+    "example.org"
+  ],
+  "item_selector": "article",
+  "follow_selector": "a[href]",
+  "fields": {
+    "headline": "h1, h2, h3",
+    "published_at": {
+      "selector": "time[datetime]",
+      "attribute": "datetime"
+    },
+    "source_link": {
+      "selector": "a[href]",
+      "attribute": "href"
+    },
+    "summary": "p"
+  },
+  "required_fields": [
+    "headline"
+  ],
+  "max_pages": 1500,
+  "max_depth": 6,
+  "concurrency": 4,
+  "request_delay_seconds": 1,
+  "source_kind": "sports_context"
+}
