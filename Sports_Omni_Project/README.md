@@ -4,7 +4,7 @@ Evidence-first shared workspace for NFL, NBA, NHL, MLB, and UFC inside the exist
 
 ## Status
 
-Configured here: core probability helpers, American-odds normalization, freshness/data-quality gates, JSON evidence CLI, schema, tests, canonical notebook entry points, and a read-only adapter to the existing five-sport backend. Not yet complete: verified provider credentials and coverage, promoted/calibrated models for every market, live prop coverage, dependence-aware parlays, fully scheduled automation or deployment. Empty/stale evidence fails closed; no synthetic schedule or pick is generated.
+Configured here: core probability helpers, American-odds normalization, freshness/data-quality gates, JSON evidence CLI, schema, tests, canonical notebook entry points, and a read-only adapter to the existing five-sport backend. Not yet complete: verified provider credentials and coverage, verified model readiness for each market, live prop coverage, dependence-aware parlays, fully scheduled automation or deployment. Empty/stale evidence fails closed; no synthetic schedule or pick is generated.
 
 ## Quick start (Python 3.11+)
 
