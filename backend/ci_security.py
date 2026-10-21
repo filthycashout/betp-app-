@@ -275,7 +275,11 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
     if not fallback_base.startswith("https://"):
         raise RuntimeError("Android signing fallback URL must use HTTPS")
 
-    current_host = os.getenv("PHILTHY_RUNTIME_HOSTNAME", "").strip().lower()
+    current_host = (
+        os.getenv("PHILTHY_PUBLIC_HOST", "").strip()
+        or os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        or os.getenv("PHILTHY_RUNTIME_HOSTNAME", "").strip()
+    ).lower()
     fallback_host = fallback_base.split("://", 1)[-1].split("/", 1)[0].lower()
     if current_host and current_host == fallback_host:
         raise RuntimeError("Android signing seed unavailable on fallback signer")
