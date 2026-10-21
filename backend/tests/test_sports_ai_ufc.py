@@ -4,10 +4,18 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
+import sports_ai.ingestion.ufc as ufc_module
+
 from sports_ai.ingestion.ufc import UFC_ODDS_URL, normalize_ufc_events, fetch_ufc_events
 from sports_ai.config.settings import Settings
 from sports_ai.live import run_live_sport
 from sports_ai.orchestrator import SportsAIEngine
+
+@pytest.fixture(autouse=True)
+def clear_ufc_cache():
+    ufc_module._EVENT_CACHE.clear()
+
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 NOW = datetime.now(timezone.utc).replace(microsecond=0)
@@ -130,3 +138,21 @@ def test_live_ufc_is_non_actionable_without_verified_independent_sharp_anchor():
     decision = result["decisions"][0]["decision"]["decision"]
     assert decision["eligible"] is False
     assert "SHARP_ANCHOR_UNVERIFIED" in decision["reasons"]
+
+
+
+def test_fetch_caches_provider_result_but_rechecks_rotation_gate():
+    target = (NOW + timedelta(hours=4)).astimezone(PACIFIC).date()
+    calls = []
+    gate_calls = []
+    runtime = SimpleNamespace(
+        _odds_key=lambda: gate_calls.append(True) or "rotated-test-key",
+        _json=lambda url, *, params, timeout: calls.append(url) or [event()],
+    )
+
+    first = fetch_ufc_events(runtime, target, now=NOW)
+    second = fetch_ufc_events(runtime, target, now=NOW)
+
+    assert len(first) == len(second) == 1
+    assert len(calls) == 1
+    assert len(gate_calls) == 2
