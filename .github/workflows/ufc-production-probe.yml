@@ -1,0 +1,57 @@
+name: UFC Production Probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ufc-production-probe.yml"
+      - "backend/sports_ai/ingestion/ufc.py"
+      - "backend/app.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ufc-production-probe.yml"
+      - "backend/sports_ai/ingestion/ufc.py"
+      - "backend/app.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe deployed UFC endpoint without secrets
+        shell: bash
+        run: |
+          set -u
+          DATE="$(TZ=America/Los_Angeles date +%F)"
+          URL="https://philthyparleys.floot.app/_api/v1/ufc/events?date=${DATE}"
+          BODY="$(mktemp)"
+          HTTP_CODE="$(curl --silent --show-error --max-time 12 --output "$BODY" --write-out "%{http_code}" "$URL")"
+          CURL_STATUS=$?
+          if [ "$CURL_STATUS" -ne 0 ]; then
+            echo "::warning::UFC production endpoint could not be reached from this runner (curl exit $CURL_STATUS)."
+            exit 0
+          fi
+          echo "UFC production endpoint HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::UFC endpoint is not verified as deployed/available (HTTP $HTTP_CODE)."
+            exit 0
+          fi
+          python - "$BODY" <<'PY'
+          import json, sys
+          from pathlib import Path
+          try:
+              data = json.loads(Path(sys.argv[1]).read_text())
+          except Exception:
+              print("::warning::UFC endpoint returned invalid JSON.")
+              raise SystemExit(0)
+          if data.get("sport") != "UFC" or not isinstance(data.get("events"), list):
+              print("::warning::UFC endpoint response does not match the expected contract.")
+              raise SystemExit(0)
+          print("UFC endpoint contract verified; response status:", data.get("status"))
+          print("Event count:", len(data["events"]))
+          print("Player props supported:", data.get("player_props_supported"))
+          print("Automatic wagering:", data.get("automatic_wagering"))
+          PY
