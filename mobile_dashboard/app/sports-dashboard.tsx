@@ -11,8 +11,8 @@ import { BACKEND, SPORTS, pacificDate, type Sport, type Feed, type Game, type Te
 import { readFastCache, writeFastCache } from '@/lib/fast-cache';
 
 type Row = Record<string, any>;
-const leagueNames:Record<Sport,string>={NFL:'National Football League',NBA:'National Basketball Association',MLB:'Major League Baseball',NHL:'National Hockey League'};
-const sportsGlyph:Record<Sport,string>={NFL:'◈',NBA:'◉',MLB:'◌',NHL:'✦'};
+const leagueNames:Record<Sport,string>={NFL:'National Football League',NBA:'National Basketball Association',MLB:'Major League Baseball',NHL:'National Hockey League',UFC:'Ultimate Fighting Championship'};
+const sportsGlyph:Record<Sport,string>={NFL:'◈',NBA:'◉',MLB:'◌',NHL:'✦',UFC:'🥊'};
 function shiftDate(date:string,days:number){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function clock(raw:string,tz:string){return new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'2-digit'}).format(new Date(raw));}
 function prettyDate(date:string){return new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(date+'T12:00:00Z'));}
