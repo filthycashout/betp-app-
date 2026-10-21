@@ -64,6 +64,7 @@ def test_market_requires_quote_timestamp_and_valid_price():
         provider="authorized-test-fixture",
         source_event_id="mma-123",
         fetched_at=FETCHED,
+        allowed_selections={"Fighter A", "Fighter B"},
     )
     assert result is not None
     assert result["american_price"] == -120
@@ -73,12 +74,21 @@ def test_market_requires_quote_timestamp_and_valid_price():
         provider="fixture",
         source_event_id="mma-123",
         fetched_at=FETCHED,
+        allowed_selections={"Fighter A", "Fighter B"},
+    ) is None
+    assert normalize_market(
+        {**valid, "selection": "Unknown Fighter"},
+        provider="fixture",
+        source_event_id="mma-123",
+        fetched_at=FETCHED,
+        allowed_selections={"Fighter A", "Fighter B"},
     ) is None
     assert normalize_market(
         {k: v for k, v in valid.items() if k != "quoted_at"},
         provider="fixture",
         source_event_id="mma-123",
         fetched_at=FETCHED,
+        allowed_selections={"Fighter A", "Fighter B"},
     ) is None
 
 
