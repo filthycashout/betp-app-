@@ -1,0 +1,1 @@
+Use separate NFL/NBA/NHL/MLB model boundaries. A file is not proof of a trained model. Registry entries require data cutoff, feature schema hash, chronological evaluation, calibration, artifact hash, provenance and promotion decision. Nothing is promoted by default.

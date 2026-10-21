@@ -1,0 +1,1 @@
+Archive only with original path, checksum, source provenance and reason. Preserve originals during first consolidation. Never promote legacy model artifacts without chronology, provenance and evaluation evidence.

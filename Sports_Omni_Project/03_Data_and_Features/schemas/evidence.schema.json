@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sports Omni evidence payload",
+  "type": "object",
+  "required": [
+    "events",
+    "quotes"
+  ],
+  "properties": {
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "sport",
+          "start_time",
+          "home_team",
+          "away_team",
+          "source",
+          "observed_at"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sport": {
+            "enum": [
+              "NFL",
+              "NBA",
+              "NHL",
+              "MLB"
+            ]
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "home_team": {
+            "type": "string"
+          },
+          "away_team": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "quotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "sport",
+          "market",
+          "selection",
+          "odds_american",
+          "book",
+          "source",
+          "observed_at"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "sport": {
+            "enum": [
+              "NFL",
+              "NBA",
+              "NHL",
+              "MLB"
+            ]
+          },
+          "market": {
+            "type": "string"
+          },
+          "selection": {
+            "type": "string"
+          },
+          "line": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "odds_american": {
+            "type": "integer",
+            "not": {
+              "const": 0
+            }
+          },
+          "book": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provider_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

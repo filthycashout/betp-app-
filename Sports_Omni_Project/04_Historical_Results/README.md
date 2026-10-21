@@ -1,0 +1,1 @@
+Keep immutable pregame predictions, settled outcomes and closing odds with event identity, source, observation time and hashes. Distinguish unavailable labels from losses. Training and evaluation must be chronological and point-in-time correct.
