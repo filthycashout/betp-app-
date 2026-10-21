@@ -180,7 +180,7 @@ def test_live_provider_failure_is_reported_without_fabricating_decisions() -> No
     assert result["error_type"] == "RuntimeError"
 
 
-def test_live_all_keeps_four_sport_shape() -> None:
+def test_live_all_keeps_five_sport_shape() -> None:
     backend = _backend(promoted=False, pinnacle=False)
     backend.PROMOTED_MODELS = {}
     result = run_live_all(
@@ -188,4 +188,4 @@ def test_live_all_keeps_four_sport_shape() -> None:
         backend=backend,
         engine=_engine(),
     )
-    assert set(result) == {"MLB", "NHL", "NBA", "NFL"}
+    assert set(result) == {"MLB", "NHL", "NBA", "NFL", "UFC"}
