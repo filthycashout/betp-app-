@@ -14,10 +14,42 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
+PRODUCTION_BASE_URL = "https://philthyparleys.floot.app/_api"
+PRODUCTION_HOST = "philthyparleys.floot.app"
+RETIRED_PRODUCTION_HOSTS = {
+    "philthysports-powerhouse.onrender.com",
+    "philthysports-powerhouse-v8.onrender.com",
+    "philthysports-api-v9.onrender.com",
+    "philthysports-mcp-v1.onrender.com",
+}
 ESPN = {
     "NFL": ("football", "nfl"),
     "NBA": ("basketball", "nba"),
 }
+
+
+def normalize_base_url(base_url: str) -> str:
+    """Normalize evidence sources and fail closed on retired production hosts."""
+
+    value = str(base_url or "").strip()
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Evidence base URL must be an absolute HTTP(S) URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Evidence base URL must not contain credentials, query, or fragment")
+
+    host = (parsed.hostname or "").lower()
+    if host in RETIRED_PRODUCTION_HOSTS:
+        raise ValueError(f"Retired PhilthySports production host is forbidden: {host}")
+
+    path = parsed.path.rstrip("/")
+    if host == PRODUCTION_HOST:
+        if path in {"", "/"}:
+            path = "/_api"
+        elif path != "/_api":
+            raise ValueError("PhilthyParleys production evidence must use the /_api namespace")
+
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def _json(url: str, timeout: int = 45) -> Any:
@@ -65,11 +97,12 @@ def _parse_time(value: str) -> datetime:
 
 
 def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
+    base_url = normalize_base_url(base_url)
     query = urllib.parse.urlencode(
         # Matchup training uses game markets, not the expensive per-event prop fan-out.
         {"include_props": "false", "props_limit": "0", "days": str(days)}
     )
-    source_url = f"{base_url.rstrip('/')}/v1/today?{query}"
+    source_url = f"{base_url}/v1/today?{query}"
     payload = _json(source_url)
     # Availability is when the response arrives, not when its request started.
     fetched_at = datetime.now(timezone.utc)
