@@ -1,9 +1,9 @@
-export const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL'] as const;
+export const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'UFC'] as const;
 export type Sport = typeof SPORTS[number];
 export type Team = { name: string; short: string; record: string; score: number | null; logo?: string };
 export type Game = { id: string; sport: Sport; start: string; state: string; status: string; home: Team; away: Team; venue: string; broadcast: string; source: string; note?: string; lines: { label: string; total: number | null; provider: string } | null };
 export type Feed = { games: Game[]; sport: Sport; date: string; retrievedAt: string; source: string; fallback: string | null; error?: string };
-export const PATHS: Record<Sport,string> = { NFL: 'football/nfl', NBA: 'basketball/nba', MLB: 'baseball/mlb', NHL: 'hockey/nhl' };
+export const PATHS: Record<Sport,string> = { NFL: 'football/nfl', NBA: 'basketball/nba', MLB: 'baseball/mlb', NHL: 'hockey/nhl', UFC: 'mma/ufc' };
 export const BACKEND = 'https://philthyparleys.floot.app/_api';
 export function pacificDate(now = new Date()) { return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(now); }
 export function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value; }
@@ -59,7 +59,26 @@ export function nhlGames(data: Row): Game[] {
   return [{id:`nhl:${g.id}`,sport:'NHL' as Sport,start:g.startTimeUTC,state,status:state==='post'?'Final':state==='in'?`P${g.periodDescriptor?.number||''} · ${g.clock?.timeRemaining||''}`:'Scheduled',home:team(g.homeTeam),away:team(g.awayTeam),venue:g.venue?.default||'',broadcast:(g.tvBroadcasts||[]).map((b:Row)=>b.network).join(' · '),source:'NHL Web API',lines:null}];
  });
 }
+
+export function ufcGames(data: Row): Game[] {
+ if (!Array.isArray(data.events)) throw new Error('Missing UFC events');
+ return data.events.flatMap((e:Row) => {
+  const start=String(e.event_time||e.commence_time||'');
+  const a=String(e.home||e.home_team||'').trim();
+  const b=String(e.away||e.away_team||'').trim();
+  if(!e.event_id||!a||!b||!Number.isFinite(Date.parse(start)))return [];
+  const team=(name:string):Team=>({name,short:name,record:'',score:null});
+  return [{id:`ufc:${e.event_id}`,sport:'UFC' as Sport,start,state:'pre',status:'Scheduled',home:team(a),away:team(b),venue:'',broadcast:'',source:'The Odds API v4',note:'Fight-winner market only; player props unavailable.',lines:null}];
+ });
+}
+
 export async function loadScores(sport: Sport,date: string): Promise<Feed> {
+
+ if (sport === 'UFC') {
+  const data=await fetchJson(`${BACKEND}/v1/ufc/events?date=${encodeURIComponent(date)}`);
+  const games=ufcGames(data).filter(g=>pacificDate(new Date(g.start))===date).sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
+  return {games,sport,date,retrievedAt:new Date().toISOString(),source:'The Odds API v4',fallback:data.status==='NO_MATCHING_EVENTS'?'No eligible UFC fight-winner events were returned for this date.':null};
+ }
  const espnUrl=`https://site.api.espn.com/apis/site/v2/sports/${PATHS[sport]}/scoreboard?dates=${date.replaceAll('-','')}&limit=100`;
  const espn=fetchJson(espnUrl).then(d=>espnGames(d,sport));
  const official=sport==='MLB'?fetchJson(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&hydrate=team,linescore`).then(mlbGames):sport==='NHL'?fetchJson(`https://api-web.nhle.com/v1/score/${date}`,5000).then(nhlGames):null;
