@@ -43,7 +43,7 @@ def _summarize_decision(sport: str, row: dict[str, Any]) -> dict[str, Any]:
         and row.get("promotion_gate_passed") is True
         and market.get("model_promotion_passed") is True
     )
-    eligible = policy.get("eligible") is True and sharp_verified
+    eligible = (row.get("status") == "EVALUATED" and policy.get("eligible") is True and sharp_verified)
     # An eligible market baseline is not evidence of a trained-model prediction.
     category = (
         "MODEL_BACKED_ANALYSIS"
@@ -98,7 +98,7 @@ def summarize_live_results(
             provider_failures.append(sport)
         for row in result.get("decisions") or []:
             if isinstance(row, dict):
-                games.append(_summarize_decision(sport, row))
+                games.append(_summarize_decision(sport, row if status == "OK" else {**row, "status": "BACKEND_STATUS_NOT_OK"}))
 
     model_backed = [row for row in games if row["category"] == "MODEL_BACKED_ANALYSIS"]
     market_only = [row for row in games if row["category"] == "MARKET_ONLY_ANALYSIS"]
