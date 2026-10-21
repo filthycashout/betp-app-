@@ -57,7 +57,7 @@ PYTHONPATH=backend python backend/main.py --live --sport NFL
 PYTHONPATH=backend python backend/main.py --live
 ```
 
-The migration remains incremental: existing FastAPI/mobile contracts stay intact while live analytics, tracking, sport-specific role models, simulations, and settlement logic move behind the unified interfaces only after their tests and evidence gates pass.
+The migration remains incremental: existing team-sport FastAPI contracts stay intact while live analytics, tracking, sport-specific role models, simulations, and settlement logic move behind the unified interfaces only after their tests and evidence gates pass. The staged UFC endpoint is `GET /v1/ufc/events?date=YYYY-MM-DD`; the mobile scoreboard calls it only for the UFC tab. This source change is not a production deployment claim.
 
 
 ## UFC / MMA adapter
