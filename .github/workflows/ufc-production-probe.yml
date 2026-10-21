@@ -1,4 +1,4 @@
-name: UFC Production Probe
+name: New API Production Probe
 
 on:
   pull_request:
@@ -19,39 +19,53 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Probe deployed UFC endpoint without secrets
+      - name: Probe deployed UFC and Chat Picks endpoints without secrets
         shell: bash
         run: |
           set -u
           DATE="$(TZ=America/Los_Angeles date +%F)"
-          URL="https://philthyparleys.floot.app/_api/v1/ufc/events?date=${DATE}"
-          BODY="$(mktemp)"
-          HTTP_CODE="$(curl --silent --show-error --max-time 12 --output "$BODY" --write-out "%{http_code}" "$URL")"
-          CURL_STATUS=$?
-          if [ "$CURL_STATUS" -ne 0 ]; then
-            echo "::warning::UFC production endpoint could not be reached from this runner (curl exit $CURL_STATUS)."
-            exit 0
-          fi
-          echo "UFC production endpoint HTTP status: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::warning::UFC endpoint is not verified as deployed/available (HTTP $HTTP_CODE)."
-            exit 0
-          fi
-          python - "$BODY" <<'PY'
+          for ITEM in "UFC|https://philthyparleys.floot.app/_api/v1/ufc/events?date=${DATE}" "CHAT_PICKS|https://philthyparleys.floot.app/_api/v1/chat/picks"; do
+            NAME="${ITEM%%|*}"
+            URL="${ITEM#*|}"
+            BODY="$(mktemp)"
+            if HTTP_CODE="$(curl --silent --show-error --max-time 15 --output "$BODY" --write-out "%{http_code}" "$URL")"; then
+              CURL_STATUS=0
+            else
+              CURL_STATUS=$?
+            fi
+            if [ "$CURL_STATUS" -ne 0 ]; then
+              echo "::warning::$NAME endpoint could not be reached from this runner (curl exit $CURL_STATUS)."
+              continue
+            fi
+            echo "$NAME endpoint HTTP status: $HTTP_CODE"
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::warning::$NAME endpoint is not verified as deployed/available (HTTP $HTTP_CODE)."
+              continue
+            fi
+            python - "$NAME" "$BODY" <<'PY'
           import json, sys
           from pathlib import Path
+          name, path = sys.argv[1], sys.argv[2]
           try:
-              data = json.loads(Path(sys.argv[1]).read_text())
+              data = json.loads(Path(path).read_text())
           except Exception:
-              print("::warning::UFC endpoint returned invalid JSON.")
+              print(f"::warning::{name} endpoint returned invalid JSON.")
               raise SystemExit(0)
-          if data.get("sport") != "UFC" or not isinstance(data.get("events"), list):
-              print("::warning::UFC endpoint response does not match the expected contract.")
+          if name == "UFC":
+              valid = data.get("sport") == "UFC" and isinstance(data.get("events"), list)
+          else:
+              valid = data.get("service") == "PhilthyParleys Chat Picks Briefing" and isinstance(data.get("sections"), dict)
+          if not valid:
+              print(f"::warning::{name} endpoint response does not match the expected contract.")
               raise SystemExit(0)
-          print("UFC endpoint contract verified; response status:", data.get("status"))
-          print("Event count:", len(data["events"]))
-          print("Player props supported:", data.get("player_props_supported"))
-          print("Automatic wagering:", data.get("automatic_wagering"))
+          print(f"{name} endpoint contract verified; status:", data.get("status"))
+          if name == "UFC":
+              print("Event count:", len(data["events"]))
+              print("Player props supported:", data.get("player_props_supported"))
+              print("Automatic wagering:", data.get("automatic_wagering"))
+          else:
+              print("Available sections:", sum(1 for x in data["sections"].values() if x.get("status") == "available"))
           PY
+          done
