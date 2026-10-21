@@ -1,0 +1,1 @@
+Core utilities are deterministic and provider-agnostic. Keep data validation and market math separate from model inference. Production prediction routes must continue to enforce the existing repository's evidence and promotion gates.

@@ -1,0 +1,1 @@
+Store backtests, calibration, data-quality findings, closing-line-value analyses and promotion decisions. Each report records data cutoff, code revision, artifact hash, sample size and evaluation window.

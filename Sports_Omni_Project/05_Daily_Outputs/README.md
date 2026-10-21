@@ -1,0 +1,1 @@
+Write date-stamped reports under games/, player_props/ and parlays/. Include evidence timestamps and unavailable reasons. Do not fill requested pick counts with fabricated picks; fewer than six qualified props is acceptable.

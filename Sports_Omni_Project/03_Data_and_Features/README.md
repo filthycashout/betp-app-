@@ -1,0 +1,1 @@
+Adapters preserve provider identity, provider timestamp, local observed-at timestamp, event identity and retrieval outcome. Never turn missing or blocked responses into synthetic odds. Respect provider terms and retention rules.

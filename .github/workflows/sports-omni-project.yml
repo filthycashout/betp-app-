@@ -1,0 +1,60 @@
+name: Sports Omni Project CI
+
+on:
+  pull_request:
+    paths:
+      - "Sports_Omni_Project/**"
+      - ".github/workflows/sports-omni-project.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Sports_Omni_Project/**"
+      - ".github/workflows/sports-omni-project.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Sports_Omni_Project
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: Sports_Omni_Project/pyproject.toml
+      - name: Install project test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run unit tests
+        run: pytest -q
+      - name: Validate JSON schema and sample payload syntax
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path(".")
+          for path in [
+              root / "03_Data_and_Features/schemas/evidence.schema.json",
+              root / "03_Data_and_Features/schemas/sample_evidence.json",
+          ]:
+              json.loads(path.read_text(encoding="utf-8"))
+              print(f"valid JSON: {path}")
+          PY
+      - name: Validate notebook JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          notebooks = sorted(Path("06_Notebooks").glob("*.ipynb"))
+          assert len([p for p in notebooks if p.name[:2].isdigit()]) == 4, notebooks
+          for path in notebooks:
+              notebook = json.loads(path.read_text(encoding="utf-8"))
+              assert notebook.get("nbformat") == 4, path
+              assert isinstance(notebook.get("cells"), list), path
+              print(f"valid notebook: {path}")
+          PY
