@@ -1,0 +1,179 @@
+name: Sports Omni Historical Acquisition
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Acquisition mode"
+        required: true
+        default: "public_features"
+        type: choice
+        options:
+          - public_features
+          - historical_market_plan
+          - historical_market_execute
+      sport:
+        description: "Sport"
+        required: true
+        default: "NFL"
+        type: choice
+        options: [NFL, NBA, MLB, NHL]
+      season:
+        description: "NFL year or NBA season (example: 2025 or 2025-26)"
+        required: false
+        type: string
+      start_date:
+        description: "MLB/NHL start date YYYY-MM-DD"
+        required: false
+        type: string
+      end_date:
+        description: "MLB/NHL end date YYYY-MM-DD (max 31 days per artifact)"
+        required: false
+        type: string
+      rich:
+        description: "Include richer historical detail where supported"
+        required: true
+        default: false
+        type: boolean
+      snapshot_time:
+        description: "Historical odds snapshot ISO-8601"
+        required: false
+        type: string
+      regions:
+        description: "Odds API regions"
+        required: true
+        default: "us"
+        type: string
+      markets:
+        description: "Historical markets"
+        required: true
+        default: "h2h,spreads,totals"
+        type: string
+      paid_ack:
+        description: "For historical_market_execute only: type I_ACKNOWLEDGE_PAID_API_CREDITS"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-features:
+    if: ${{ inputs.mode == 'public_features' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-training.txt
+      - name: Install historical acquisition dependencies
+        run: pip install -r backend/requirements-training.txt
+      - name: Acquire public structured history
+        shell: bash
+        env:
+          SPORT: ${{ inputs.sport }}
+          SEASON: ${{ inputs.season }}
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+          RICH: ${{ inputs.rich }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/historical
+          RICH_ARG=""
+          if [ "$RICH" = "true" ]; then RICH_ARG="--rich"; fi
+          if [ "$SPORT" = "NFL" ] || [ "$SPORT" = "NBA" ]; then
+            if [ -z "$SEASON" ]; then echo "season is required for $SPORT" >&2; exit 2; fi
+            PYTHONPATH=backend python backend/training/historical_feature_backfill.py \
+              --sport "$SPORT" --season "$SEASON" --output-dir artifacts/historical $RICH_ARG
+          else
+            if [ -z "$START_DATE" ] || [ -z "$END_DATE" ]; then
+              echo "start_date and end_date are required for $SPORT" >&2; exit 2
+            fi
+            PYTHONPATH=backend python backend/training/historical_feature_backfill.py \
+              --sport "$SPORT" --start-date "$START_DATE" --end-date "$END_DATE" \
+              --output-dir artifacts/historical $RICH_ARG
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sports-omni-public-history-${{ inputs.sport }}-${{ github.run_id }}
+          path: artifacts/historical
+          if-no-files-found: error
+          retention-days: 90
+
+  market-plan:
+    if: ${{ inputs.mode == 'historical_market_plan' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install HTTP dependency
+        run: pip install 'requests>=2.32,<3'
+      - name: Produce paid historical quota plan without network call
+        env:
+          SPORT: ${{ inputs.sport }}
+          SNAPSHOT_TIME: ${{ inputs.snapshot_time }}
+          REGIONS: ${{ inputs.regions }}
+          MARKETS: ${{ inputs.markets }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SNAPSHOT_TIME" ]; then echo "snapshot_time is required" >&2; exit 2; fi
+          PYTHONPATH=backend python backend/training/historical_market_backfill.py \
+            --sport "$SPORT" --snapshot-time "$SNAPSHOT_TIME" \
+            --regions "$REGIONS" --markets "$MARKETS"
+
+  market-execute:
+    if: ${{ inputs.mode == 'historical_market_execute' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install HTTP dependency
+        run: pip install 'requests>=2.32,<3'
+      - name: Verify explicit paid-credit acknowledgement
+        env:
+          PAID_ACK: ${{ inputs.paid_ack }}
+          SNAPSHOT_TIME: ${{ inputs.snapshot_time }}
+        run: |
+          set -euo pipefail
+          if [ "$PAID_ACK" != "I_ACKNOWLEDGE_PAID_API_CREDITS" ]; then
+            echo "Paid historical execution denied: acknowledgement mismatch." >&2
+            exit 2
+          fi
+          if [ -z "$ODDS_API_KEY" ]; then
+            echo "Paid historical execution denied: ODDS_API_KEY secret unavailable." >&2
+            exit 2
+          fi
+          if [ -z "$SNAPSHOT_TIME" ]; then
+            echo "Paid historical execution denied: snapshot_time required." >&2
+            exit 2
+          fi
+      - name: Capture one paid historical market snapshot
+        env:
+          SPORT: ${{ inputs.sport }}
+          SNAPSHOT_TIME: ${{ inputs.snapshot_time }}
+          REGIONS: ${{ inputs.regions }}
+          MARKETS: ${{ inputs.markets }}
+          ODDS_HISTORICAL_BACKFILL_ENABLED: "true"
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/historical-market
+          PYTHONPATH=backend python backend/training/historical_market_backfill.py \
+            --sport "$SPORT" --snapshot-time "$SNAPSHOT_TIME" \
+            --regions "$REGIONS" --markets "$MARKETS" \
+            --output-dir artifacts/historical-market --execute
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sports-omni-historical-market-${{ inputs.sport }}-${{ github.run_id }}
+          path: artifacts/historical-market
+          if-no-files-found: error
+          retention-days: 90
