@@ -38,12 +38,12 @@ class SportsAICliTests(unittest.TestCase):
             self.assertEqual(args[1][0].sport, "MLB")
             self.assertEqual(settings.min_edge, 0.03)
 
-    def test_run_all_builds_all_four_sports(self) -> None:
+    def test_run_all_builds_all_five_sports(self) -> None:
         with patch("main.SportsAIEngine") as engine_cls:
             engine = engine_cls.return_value
-            engine.run_all.return_value = {sport: [] for sport in ("MLB", "NHL", "NBA", "NFL")}
+            engine.run_all.return_value = {sport: [] for sport in ("MLB", "NHL", "NBA", "NFL", "UFC")}
             result = sports_main.run_all({"NFL": [FIXTURE]})
-            self.assertEqual(set(result), {"MLB", "NHL", "NBA", "NFL"})
+            self.assertEqual(set(result), {"MLB", "NHL", "NBA", "NFL", "UFC"})
             payload = engine.run_all.call_args.args[0]
             self.assertEqual(len(payload["NFL"]), 1)
             self.assertEqual(payload["NFL"][0].sport, "NFL")

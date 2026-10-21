@@ -5,7 +5,7 @@ The Powerhouse is one analytical engine inside the existing backend, not a secon
 ## Locked invariants
 
 - Production remains Floot-only. This package contains no Render routing.
-- NFL, NBA, MLB, and NHL share one decision core while sport-specific ingestion/features remain separate.
+- NFL, NBA, MLB, NHL, and UFC share one decision core while sport-specific ingestion/features remain separate. UFC uses a fight/event adapter; it is not forced through team-league schedule or player-prop assumptions.
 - Point-in-time data requires `observed_at <= prediction_time < event_time`.
 - Existing governed model promotion remains fail-closed; unpromoted model output cannot influence final probability.
 - Market-baseline operation remains available while trained-model promotion is pending.
@@ -57,4 +57,11 @@ PYTHONPATH=backend python backend/main.py --live --sport NFL
 PYTHONPATH=backend python backend/main.py --live
 ```
 
-The migration remains incremental: existing FastAPI/mobile contracts stay intact while live analytics, tracking, sport-specific role models, simulations, and settlement logic move behind the unified interfaces only after their tests and evidence gates pass.
+The migration remains incremental: existing team-sport FastAPI contracts stay intact while live analytics, tracking, sport-specific role models, simulations, and settlement logic move behind the unified interfaces only after their tests and evidence gates pass. The staged UFC endpoint is `GET /v1/ufc/events?date=YYYY-MM-DD`; the mobile scoreboard calls it only for the UFC tab. This source change is not a production deployment claim.
+
+
+## UFC / MMA adapter
+
+`backend/sports_ai/ingestion/ufc.py` normalizes The Odds API v4's `mma_mixed_martial_arts` event feed into the shared candidate contract. UFC is event-driven and the adapter uses fighter identities and fight-winner (`h2h`) markets only; it does not invent fighter props or team-league statistics.
+
+The adapter uses the existing `_odds_key()` credential-rotation gate and the backend's sanitized `_json()` wrapper. If the credential is absent or rotation is not confirmed, the live CLI reports `PROVIDER_UNAVAILABLE`. Quotes must have valid provider timestamps and pass the shared market validation. UFC remains non-actionable unless a separate, verified sharp anchor from a different bookmaker is available; a generic consensus market is not silently relabeled as sharp. Automatic wagering remains disabled.
