@@ -13,27 +13,44 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 
-GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
-GITHUB_AUDIENCE = "philthysports-ci"
+from zero_trust_control_plane import (
+    ANDROID_SIGNING_ACTION,
+    GITHUB_AUDIENCE,
+    GITHUB_ISSUER,
+    MODEL_SIGNING_ACTION,
+    TRUSTED_REF,
+    TRUSTED_REPOSITORY,
+    ActionCandidate,
+    ControlPlaneDenied,
+    control_plane,
+    trusted_workflows,
+)
+
 GITHUB_JWKS = f"{GITHUB_ISSUER}/.well-known/jwks"
-TRUSTED_REPOSITORY = "filthycashout/betp-app-"
-TRUSTED_REF = "refs/heads/main"
-TRUSTED_WORKFLOWS = {
-    "filthycashout/betp-app-/.github/workflows/build-apk.yml@refs/heads/main",
-    "filthycashout/betp-app-/.github/workflows/philthysports-full-ci.yml@refs/heads/main",
-    "filthycashout/betp-app-/.github/workflows/v8-train-promote.yml@refs/heads/main",
-}
+TRUSTED_WORKFLOWS = trusted_workflows()
 P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16
 )
 ANDROID_KEY_CONTEXT = b"philthysports-android-release-v1"
 ANDROID_PUBLIC_SPKI_SHA256_PIN = "0b1a418efeef35fdbbb77dfc129aabae2fc43141e3893dc21fd03cac8fa9f469"
 DEFAULT_ANDROID_SIGNING_FALLBACK = ""
+MAX_MODEL_ARTIFACT_BYTES = 2 * 1024 * 1024
+SUPPORTED_MODEL_SPORTS = frozenset({"NFL", "NBA", "MLB", "NHL"})
+
 _SIGNING_BEARER_TOKEN: ContextVar[str | None] = ContextVar(
     "philthy_signing_bearer_token", default=None
 )
+_VERIFIED_OIDC_CLAIMS: ContextVar[dict[str, Any] | None] = ContextVar(
+    "philthy_verified_oidc_claims", default=None
+)
+_TOKEN_FINGERPRINT_SHA256: ContextVar[str | None] = ContextVar(
+    "philthy_token_fingerprint_sha256", default=None
+)
 _SIGNING_FALLBACK_PAYLOAD: ContextVar[dict[str, Any] | None] = ContextVar(
     "philthy_signing_fallback_payload", default=None
+)
+_CONTROL_PLANE_AUDIT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "philthy_control_plane_audit", default=None
 )
 
 
@@ -43,6 +60,14 @@ def _jwk_client() -> jwt.PyJWKClient:
 
 
 def verify_github_oidc(authorization: str | None) -> dict[str, Any]:
+    """Cryptographically authenticate the GitHub Actions caller.
+
+    Authentication is deliberately separate from action authorization. Passing
+    this function proves only an authenticated identity from an allowed repo/ref
+    and known workflow. Exact action/resource authorization happens later in the
+    deterministic zero-trust control plane immediately before privileged use.
+    """
+
     if not authorization or not authorization.startswith("Bearer "):
         raise PermissionError("missing bearer token")
     token = authorization[7:].strip()
@@ -66,12 +91,60 @@ def verify_github_oidc(authorization: str | None) -> dict[str, Any]:
     if workflow_ref not in TRUSTED_WORKFLOWS:
         raise PermissionError("untrusted workflow")
 
-    # Keep the validated token only in this request context. If the primary
-    # runtime does not hold the release seed, the Android-only helper below can
-    # forward the same trusted OIDC assertion to an explicitly configured signer.
+    # Keep verified identity context request-local. No prose, prompt text,
+    # document content, connector output, or model output can write these values.
     _SIGNING_BEARER_TOKEN.set(token)
+    _VERIFIED_OIDC_CLAIMS.set(dict(claims))
+    _TOKEN_FINGERPRINT_SHA256.set(hashlib.sha256(token.encode("utf-8")).hexdigest())
     _SIGNING_FALLBACK_PAYLOAD.set(None)
+    _CONTROL_PLANE_AUDIT.set(None)
     return claims
+
+
+def _authorize_privileged_action(
+    *,
+    action: str,
+    method: str,
+    resource_id: str,
+    destination: str,
+    resource_sha256: str | None = None,
+) -> dict[str, Any]:
+    claims = _VERIFIED_OIDC_CLAIMS.get()
+    token_fingerprint = _TOKEN_FINGERPRINT_SHA256.get()
+    if claims is None or not token_fingerprint:
+        raise PermissionError("verified GitHub OIDC context is required before authorization")
+
+    candidate = ActionCandidate(
+        source="authenticated_fastapi_ci_route",
+        action=action,
+        method=method,
+        resource_id=resource_id,
+        destination=destination,
+        resource_sha256=resource_sha256,
+    )
+    plane = control_plane()
+    permit = plane.authorize(
+        candidate,
+        claims,
+        token_fingerprint_sha256=token_fingerprint,
+    )
+    # Consume immediately at the privileged function boundary. A permit cannot
+    # be reused for another action/resource or replayed later in the process.
+    plane.consume(
+        permit,
+        action=action,
+        resource_id=resource_id,
+        destination=destination,
+        resource_sha256=resource_sha256,
+    )
+    audit = plane.authorized_audit(permit)
+    _CONTROL_PLANE_AUDIT.set(audit)
+    return audit
+
+
+def control_plane_audit_snapshot() -> dict[str, Any] | None:
+    audit = _CONTROL_PLANE_AUDIT.get()
+    return dict(audit) if audit is not None else None
 
 
 def _root_seed() -> bytes:
@@ -99,14 +172,69 @@ def model_key_id() -> str:
     return hashlib.sha256(public).hexdigest()[:16]
 
 
-def sign_model_artifact(artifact: dict[str, Any]) -> dict[str, str]:
+def _canonical_artifact(artifact: dict[str, Any]) -> bytes:
     canonical = json.dumps(
         artifact, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
+    if len(canonical) > MAX_MODEL_ARTIFACT_BYTES:
+        raise ValueError("artifact exceeds maximum signing size")
+    return canonical
+
+
+def _validate_promoted_artifact_for_signing(artifact: dict[str, Any]) -> None:
+    if artifact.get("status") != "PROMOTED_TRAINED_MODEL":
+        raise ValueError("only PROMOTED_TRAINED_MODEL artifacts may be signed")
+    sport = str(artifact.get("sport") or "").upper()
+    if sport not in SUPPORTED_MODEL_SPORTS:
+        raise ValueError("artifact sport is missing or unsupported")
+    if not str(artifact.get("model_id") or "").strip():
+        raise ValueError("artifact model_id is required")
+    if artifact.get("trained_weights") is not True:
+        raise ValueError("artifact does not declare trained weights")
+
+    claimed_artifact_sha = str(artifact.get("artifact_sha256") or "")
+    if len(claimed_artifact_sha) != 64:
+        raise ValueError("artifact_sha256 is required")
+    unsigned_core = {k: v for k, v in artifact.items() if k != "artifact_sha256"}
+    expected_artifact_sha = hashlib.sha256(
+        json.dumps(
+            unsigned_core,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if claimed_artifact_sha != expected_artifact_sha:
+        raise ValueError("artifact_sha256 does not match canonical unsigned core")
+
+    strict_checks = (
+        artifact.get("promotion_evidence", {})
+        .get("strict_policy", {})
+        .get("checks", {})
+    )
+    if not isinstance(strict_checks, dict) or not strict_checks:
+        raise ValueError("strict promotion checks are required")
+    if not all(value is True for value in strict_checks.values()):
+        raise ValueError("strict promotion checks are not all PASS")
+
+
+def sign_model_artifact(artifact: dict[str, Any]) -> dict[str, str]:
+    if not isinstance(artifact, dict):
+        raise ValueError("artifact must be a JSON object")
+    _validate_promoted_artifact_for_signing(artifact)
+    canonical = _canonical_artifact(artifact)
+    digest = hashlib.sha256(canonical).hexdigest()
+    _authorize_privileged_action(
+        action=MODEL_SIGNING_ACTION,
+        method="POST",
+        resource_id=f"model-artifact:{digest}",
+        destination="immutable-model-registry",
+        resource_sha256=digest,
+    )
     private = ed25519.Ed25519PrivateKey.from_private_bytes(_root_seed())
     signature = private.sign(canonical)
     return {
-        "sha256": hashlib.sha256(canonical).hexdigest(),
+        "sha256": digest,
         "signature_b64": base64.b64encode(signature).decode("ascii"),
         "public_key_b64": model_public_key_b64(),
         "key_id": model_key_id(),
@@ -125,6 +253,13 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
     cached = _SIGNING_FALLBACK_PAYLOAD.get()
     if cached is not None:
         return cached
+
+    audit = _CONTROL_PLANE_AUDIT.get()
+    if not audit or audit.get("classification") != "AUTHORIZED_FOR_EXACT_ACTION":
+        raise RuntimeError("control-plane authorization is required before signing fallback")
+    permit = audit.get("permit") or {}
+    if permit.get("action") != ANDROID_SIGNING_ACTION:
+        raise RuntimeError("control-plane permit is not bound to Android signing material")
 
     token = _SIGNING_BEARER_TOKEN.get()
     if not token:
@@ -150,7 +285,7 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {token}",
-            "User-Agent": "PhilthySports-signing-failover/1.0",
+            "User-Agent": "PhilthySports-signing-failover/2.0",
         },
     )
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -178,6 +313,12 @@ def _android_signing_fallback_payload() -> dict[str, Any]:
 
 
 def android_private_pkcs8_b64() -> str:
+    _authorize_privileged_action(
+        action=ANDROID_SIGNING_ACTION,
+        method="GET",
+        resource_id="android-release-key",
+        destination="github-actions-release-runner",
+    )
     if not _local_root_seed_configured():
         return str(_android_signing_fallback_payload()["private_key_pkcs8_b64"])
     key = _android_private_key()
@@ -191,7 +332,11 @@ def android_private_pkcs8_b64() -> str:
 
 def android_public_spki_sha256() -> str:
     if not _local_root_seed_configured():
-        return str(_android_signing_fallback_payload()["public_spki_sha256"])
+        # Never trigger a private-key fetch merely to answer a public-key query.
+        cached = _SIGNING_FALLBACK_PAYLOAD.get()
+        if cached is None:
+            raise RuntimeError("authorized Android signing material must be loaded first")
+        return str(cached["public_spki_sha256"])
     key = _android_private_key()
     spki = key.public_key().public_bytes(
         serialization.Encoding.DER,
