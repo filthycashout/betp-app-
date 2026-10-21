@@ -98,3 +98,16 @@ The endpoint uses the existing `ODDS_API_KEY` credential-rotation gate. A valid 
 
 **Release status:** the source code is merged to `main`, but the production probe returned HTTP 404 for `/_api/v1/ufc/events` on 2026-10-21, so the UFC endpoint is **not verified as deployed**. Before release, require Backend CI, mobile dashboard type-check/build, the UFC normalization/API contract tests, a live provider canary with a legitimate rotated key, and a deployed smoke test. Existing NFL/NBA/MLB/NHL contracts remain unchanged in this first migration step.
 
+
+
+### Phone-first Floot release checklist
+
+GitHub merges do not by themselves prove that the Floot-hosted app has been published. The latest production probe returned HTTP 404 for both the UFC events endpoint and the Chat Picks briefing endpoint.
+
+1. Open the existing PhilthyParleys project on [Floot](https://floot.com) in your phone browser.
+2. Ensure the project being published contains the current main source changes. If the Floot project is not connected/synced with this GitHub repository, apply the changes to the Floot project before publishing.
+3. Open **Publish** in the top-right and choose **Publish update**. Wait for Floot's build/publish check to finish.
+4. Re-run the **New API Production Probe** workflow in GitHub Actions. Release verification requires HTTP 200 and the expected JSON contract for both endpoints.
+5. If either route still returns 404, the deployed Floot project still lacks that route; do not call the feature live. If it returns 503, inspect provider access and the credential-rotation confirmation in Floot's secure environment setup.
+
+Never paste ODDS_API_KEY into chat or commit it to GitHub. Configure secrets through the host's secure secret/environment flow.
