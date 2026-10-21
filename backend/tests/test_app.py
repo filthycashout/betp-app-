@@ -347,3 +347,50 @@ def test_next_scheduled_games_returns_first_nonempty_date(monkeypatch):
     rows = runtime._next_scheduled_games('NFL', start, max_days=7, limit=3)
     assert rows[0]['event_id'] == 'next'
     assert calls == ['2026-10-03', '2026-10-04']
+
+
+
+def test_ufc_events_endpoint_returns_only_normalized_fight_winner_data(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    start = now + timedelta(hours=6)
+    target = start.astimezone(ZoneInfo("America/Los_Angeles")).date()
+    monkeypatch.setattr(runtime, "_odds_key", lambda: "test-rotated-key")
+    monkeypatch.setattr(
+        runtime,
+        "_json",
+        lambda url, *, params, timeout: [{
+            "id": "ufc-fixture",
+            "sport_key": "mma_mixed_martial_arts",
+            "commence_time": start.isoformat().replace("+00:00", "Z"),
+            "home_team": "Fighter A",
+            "away_team": "Fighter B",
+            "bookmakers": [],
+        }],
+    )
+
+    response = client.get(f"/v1/ufc/events?date={target.isoformat()}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sport"] == "UFC"
+    assert payload["status"] == "OK"
+    assert payload["events"][0]["event_id"] == "ufc-fixture"
+    assert payload["market_scope"] == "fight_winner_moneyline"
+    assert payload["player_props_supported"] is False
+    assert payload["automatic_wagering"] is False
+
+
+def test_ufc_events_endpoint_fails_closed_when_credentials_are_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        runtime,
+        "_odds_key",
+        lambda: (_ for _ in ()).throw(RuntimeError("credential unavailable")),
+    )
+
+    response = client.get("/v1/ufc/events")
+
+    assert response.status_code == 503
+    assert "credential rotation" in response.json()["detail"]
