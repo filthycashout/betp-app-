@@ -28,6 +28,17 @@ PhilthyParleys proxies league live data through its own backend so the Android A
 
 These routes replace credentials for league live data only. Sportsbook moneylines, spreads, totals and player-prop quotes remain a separate provider contract and are not presented as keyless unless a verifiable keyless source exists.
 
+## Independent sports research spiders
+
+The optional Python spider framework can crawl explicitly approved public HTML sites, extract CSS-selected articles or product records, and stream JSON/JSONL/CSV. It is an **evidence-only** data collector; independent machine predictions must not use sportsbook odds or raw spider records as features. Examples and safeguards: [Configurable Spider Framework](docs/CONFIGURABLE_SPIDER_FRAMEWORK.md).
+
+```sh
+pip install -r backend/requirements-crawling.txt
+PYTHONPATH=backend python -m sports_ai.crawling.cli --config examples/blog_spider.json --output output/blog.jsonl
+```
+
+Example URLs are placeholders: select sites you are authorized to crawl and adapt their CSS selectors before running.
+
 ## Validation
 
 ```sh
