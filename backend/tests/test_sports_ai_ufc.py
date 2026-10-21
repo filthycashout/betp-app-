@@ -5,6 +5,9 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from sports_ai.ingestion.ufc import UFC_ODDS_URL, normalize_ufc_events, fetch_ufc_events
+from sports_ai.config.settings import Settings
+from sports_ai.live import run_live_sport
+from sports_ai.orchestrator import SportsAIEngine
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 NOW = datetime.now(timezone.utc).replace(microsecond=0)
@@ -91,3 +94,39 @@ def test_fetch_propagates_missing_or_unrotated_credential_block():
         assert str(exc) == "credential unavailable"
     else:
         raise AssertionError("UFC fetch must fail closed without a rotated credential")
+
+
+
+def test_live_ufc_is_non_actionable_without_verified_independent_sharp_anchor():
+    from datetime import date
+
+    start = NOW + timedelta(hours=6)
+    target = start.astimezone(PACIFIC).date()
+    runtime = SimpleNamespace(
+        _odds_key=lambda: "rotated-test-key",
+        _json=lambda url, *, params, timeout: [event(start=start)],
+    )
+    engine = SportsAIEngine(Settings(
+        min_edge=0.03,
+        min_market_quality=0.75,
+        max_snapshot_age_seconds=900,
+        market_weight=0.70,
+        kelly_fraction=0.25,
+        sharp_book_keys=("pinnacle",),
+        sharp_max_age_seconds=180,
+    ))
+
+    result = run_live_sport(
+        "UFC",
+        date=target.isoformat(),
+        backend=runtime,
+        engine=engine,
+    )
+
+    assert result["status"] == "OK"
+    assert result["execution_policy"]["automatic_wagering"] is False
+    assert result["execution_policy"]["verified_sharp_anchor_required"] is True
+    assert result["execution_policy"]["player_props_supported"] is False
+    decision = result["decisions"][0]["decision"]["decision"]
+    assert decision["eligible"] is False
+    assert "SHARP_ANCHOR_UNVERIFIED" in decision["reasons"]
