@@ -12,3 +12,18 @@ def test_valid_event_and_quote():
     r=analyze_payload({"events":[e],"quotes":[q]},now=NOW)
     assert r["eligible_events"]==r["eligible_quotes"]==1
     assert r["quotes"][0]["normalized"]["raw_implied_probability"]>.5
+
+def test_invalid_parent_event_rejects_quote():
+    e={"event_id":"nba-1","sport":"NBA","start_time":"2026-10-20T21:00:00Z","home_team":"A","away_team":"A","source":"fixture","observed_at":"2026-10-20T19:59:00Z"}
+    q={"event_id":"nba-1","sport":"NBA","market":"moneyline","selection":"A","odds_american":-110,"book":"b","source":"fixture","observed_at":"2026-10-20T19:59:00Z"}
+    r=analyze_payload({"events":[e],"quotes":[q]},now=NOW)
+    assert r["eligible_events"]==r["eligible_quotes"]==0
+    assert "invalid_parent_event" in r["quotes"][0]["errors"]
+
+def test_cross_sport_quote_rejected():
+    e={"event_id":"nba-1","sport":"NBA","start_time":"2026-10-20T21:00:00Z","home_team":"A","away_team":"B","source":"fixture","observed_at":"2026-10-20T19:59:00Z"}
+    q={"event_id":"nba-1","sport":"NHL","market":"moneyline","selection":"A","odds_american":-110,"book":"b","source":"fixture","observed_at":"2026-10-20T19:59:00Z"}
+    r=analyze_payload({"events":[e],"quotes":[q]},now=NOW)
+    assert r["eligible_events"]==1
+    assert r["eligible_quotes"]==0
+    assert "event_quote_sport_mismatch" in r["quotes"][0]["errors"]
