@@ -394,3 +394,52 @@ def test_ufc_events_endpoint_fails_closed_when_credentials_are_unavailable(monke
 
     assert response.status_code == 503
     assert "credential rotation" in response.json()["detail"]
+
+
+def test_chat_picks_briefing_returns_combined_sections_and_safety_policy(monkeypatch):
+    monkeypatch.setattr(runtime, "today", lambda **kwargs: {"games": [], "fresh_fetch": True})
+    monkeypatch.setattr(runtime, "best12", lambda date=None: {"picks": []})
+    monkeypatch.setattr(runtime, "best_three_leg_parlays", lambda date=None: {"cards": []})
+
+    response = client.get("/v1/chat/picks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "FETCHED"
+    assert set(data["sections"]) == {"today", "best12", "parlays"}
+    assert all(row["status"] == "available" for row in data["sections"].values())
+    assert data["automatic_wagering"] is False
+    assert data["selection_policy"]["missing_selections"] == "mark_unavailable"
+    assert data["selection_policy"]["generated_at_is_not_market_freshness"] is True
+
+
+def test_chat_picks_briefing_marks_failed_sections_unavailable(monkeypatch):
+    def fail_today(**kwargs):
+        raise RuntimeError("private provider detail must not escape")
+
+    def fail_parlays(date=None):
+        raise TimeoutError("upstream detail must not escape")
+
+    monkeypatch.setattr(runtime, "today", fail_today)
+    monkeypatch.setattr(runtime, "best12", lambda date=None: {"picks": [{"available": False}]})
+    monkeypatch.setattr(runtime, "best_three_leg_parlays", fail_parlays)
+
+    response = client.get("/v1/chat/picks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "PARTIAL"
+    assert data["sections"]["today"] == {
+        "status": "unavailable",
+        "error_code": "RuntimeError",
+    }
+    assert data["sections"]["best12"]["status"] == "available"
+    assert data["sections"]["parlays"] == {
+        "status": "unavailable",
+        "error_code": "TimeoutError",
+    }
+    assert "private provider detail" not in response.text
+    assert "upstream detail" not in response.text
+
+
+def test_chat_picks_briefing_rejects_invalid_date():
+    response = client.get("/v1/chat/picks?date=not-a-date")
+    assert response.status_code == 400
