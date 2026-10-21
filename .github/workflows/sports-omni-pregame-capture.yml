@@ -1,0 +1,95 @@
+name: Sports Omni Pregame Evidence Capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Backend base URL ending at the API namespace"
+        required: false
+        type: string
+      days:
+        description: "Forward schedule window in days"
+        required: true
+        default: "4"
+        type: string
+  schedule:
+    - cron: "17,47 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sports-omni-pregame-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (vars.SPORTS_OMNI_CAPTURE_ENABLED == 'true' && vars.PHILTHY_EVIDENCE_BASE_URL != '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEFAULT_BASE_URL: ${{ vars.PHILTHY_EVIDENCE_BASE_URL }}
+      MANUAL_BASE_URL: ${{ inputs.base_url }}
+      CAPTURE_DAYS: ${{ inputs.days || '4' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Resolve capture endpoint
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${MANUAL_BASE_URL:-${DEFAULT_BASE_URL:-}}"
+          if [ -z "$BASE_URL" ]; then
+            echo "No backend URL configured. Set PHILTHY_EVIDENCE_BASE_URL or provide base_url." >&2
+            exit 2
+          fi
+          case "$CAPTURE_DAYS" in
+            ''|*[!0-9]*) echo "days must be an integer" >&2; exit 2 ;;
+          esac
+          if [ "$CAPTURE_DAYS" -lt 1 ] || [ "$CAPTURE_DAYS" -gt 7 ]; then
+            echo "days must be between 1 and 7" >&2
+            exit 2
+          fi
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Capture strict pregame market evidence
+        env:
+          BASE_URL: ${{ steps.config.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=backend python backend/training/evidence_pipeline.py capture \
+            --base-url "$BASE_URL" \
+            --output-dir artifacts/evidence/pregame \
+            --days "$CAPTURE_DAYS"
+
+      - name: Verify no secrets are embedded in capture manifests
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifests = list(Path('artifacts/evidence/pregame').glob('manifest_*.json'))
+          if not manifests:
+              raise SystemExit('no capture manifest produced')
+          for path in manifests:
+              doc = json.loads(path.read_text())
+              if doc.get('secrets_embedded') is not False:
+                  raise SystemExit(f'secret-state invariant failed: {path}')
+              if doc.get('chronology_rule') != 'as_of < event_time':
+                  raise SystemExit(f'chronology invariant failed: {path}')
+          print(f'verified {len(manifests)} capture manifest(s)')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sports-omni-pregame-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/evidence/pregame
+          if-no-files-found: error
+          retention-days: 90
