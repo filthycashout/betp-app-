@@ -1,6 +1,6 @@
 from typing import Any
 from freshness import freshness_status
-SUPPORTED_SPORTS={"NFL","NBA","NHL","MLB"}
+SUPPORTED_SPORTS={"NFL","NBA","NHL","MLB","UFC"}
 
 def validate_event(event:dict[str,Any])->list[str]:
     errors=[]

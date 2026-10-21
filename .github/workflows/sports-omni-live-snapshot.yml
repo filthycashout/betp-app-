@@ -1,0 +1,54 @@
+name: Sports Omni Live Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Pacific event date YYYY-MM-DD; blank uses today"
+        required: false
+        type: string
+      sport:
+        description: "Sport to check; ALL includes NFL, NBA, MLB, NHL, UFC"
+        required: true
+        type: choice
+        default: ALL
+        options: [ALL, NFL, NBA, MLB, NHL, UFC]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sports-omni-live-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install existing governed backend
+        run: python -m pip install -r backend/requirements.txt -r backend/requirements-validation.txt
+      - name: Produce read-only live report
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          REPORT_DATE: ${{ inputs.date }}
+          REPORT_SPORT: ${{ inputs.sport }}
+        run: |
+          args=()
+          if [ -n "$REPORT_DATE" ]; then args+=(--date "$REPORT_DATE"); fi
+          if [ "$REPORT_SPORT" != "ALL" ]; then args+=(--sport "$REPORT_SPORT"); fi
+          python Sports_Omni_Project/01_Core_Engine/live_report.py "${args[@]}"
+      - name: Preserve report for manual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sports-omni-live-snapshot
+          path: Sports_Omni_Project/05_Daily_Outputs/games/*.json
+          if-no-files-found: warn
+          retention-days: 7

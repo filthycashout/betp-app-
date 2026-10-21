@@ -30,7 +30,8 @@
               "NFL",
               "NBA",
               "NHL",
-              "MLB"
+              "MLB",
+              "UFC"
             ]
           },
           "start_time": {
@@ -76,7 +77,8 @@
               "NFL",
               "NBA",
               "NHL",
-              "MLB"
+              "MLB",
+              "UFC"
             ]
           },
           "market": {
