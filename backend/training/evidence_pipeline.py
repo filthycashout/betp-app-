@@ -14,42 +14,10 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 SPORTS = ("NFL", "NBA", "MLB", "NHL")
-PRODUCTION_BASE_URL = "https://philthyparleys.floot.app/_api"
-PRODUCTION_HOST = "philthyparleys.floot.app"
-RETIRED_PRODUCTION_HOSTS = {
-    "philthysports-powerhouse.onrender.com",
-    "philthysports-powerhouse-v8.onrender.com",
-    "philthysports-api-v9.onrender.com",
-    "philthysports-mcp-v1.onrender.com",
-}
 ESPN = {
     "NFL": ("football", "nfl"),
     "NBA": ("basketball", "nba"),
 }
-
-
-def normalize_base_url(base_url: str) -> str:
-    """Normalize evidence sources and fail closed on retired production hosts."""
-
-    value = str(base_url or "").strip()
-    parsed = urllib.parse.urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("Evidence base URL must be an absolute HTTP(S) URL")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ValueError("Evidence base URL must not contain credentials, query, or fragment")
-
-    host = (parsed.hostname or "").lower()
-    if host in RETIRED_PRODUCTION_HOSTS:
-        raise ValueError(f"Retired PhilthySports production host is forbidden: {host}")
-
-    path = parsed.path.rstrip("/")
-    if host == PRODUCTION_HOST:
-        if path in {"", "/"}:
-            path = "/_api"
-        elif path != "/_api":
-            raise ValueError("PhilthyParleys production evidence must use the /_api namespace")
-
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def _json(url: str, timeout: int = 45) -> Any:
@@ -97,12 +65,11 @@ def _parse_time(value: str) -> datetime:
 
 
 def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
-    base_url = normalize_base_url(base_url)
     query = urllib.parse.urlencode(
         # Matchup training uses game markets, not the expensive per-event prop fan-out.
         {"include_props": "false", "props_limit": "0", "days": str(days)}
     )
-    source_url = f"{base_url}/v1/today?{query}"
+    source_url = f"{base_url.rstrip('/')}/v1/today?{query}"
     payload = _json(source_url)
     # Availability is when the response arrives, not when its request started.
     fetched_at = datetime.now(timezone.utc)
@@ -145,6 +112,10 @@ def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
             "probability_source": game.get("probability_source"),
             "model_status": game.get("model_status"),
             "schedule_source": game.get("schedule_source"),
+            "market_source": game.get("market_source"),
+            "market_snapshot_sha256": (game.get("market_snapshot_evidence") or {}).get("record_sha256"),
+            "market_snapshot_chronology_valid": (game.get("market_snapshot_evidence") or {}).get("chronology_valid"),
+            "market_snapshot_durable": (game.get("market_snapshot_evidence") or {}).get("durable"),
             "injury_home_count": (
                 ((game.get("injury_report") or {}).get("home") or {}).get("count")
             ),
@@ -179,6 +150,7 @@ def capture(base_url: str, output_dir: Path, days: int = 4) -> None:
             "rows": len(rows),
         },
         "chronology_rule": "as_of < event_time",
+        "gateway_snapshot_rule": "FreeOddsGateway rows require durable chronology-valid snapshot SHA-256 before canonical training inclusion",
         "secrets_embedded": False,
     }
     manifest_path = output_dir / f"manifest_{stamp}.json"
@@ -374,6 +346,15 @@ def build(root: Path) -> None:
             continue
         if not 0.0 < market_probability < 1.0:
             continue
+        if row.get("market_source") == "PHILTHY_FREE_ODDS_GATEWAY":
+            digest = str(row.get("market_snapshot_sha256") or "").lower()
+            digest_valid = len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest)
+            if (
+                not digest_valid
+                or row.get("market_snapshot_chronology_valid") is not True
+                or row.get("market_snapshot_durable") is not True
+            ):
+                continue
         key = (row["sport"], row["event_id"])
         existing = latest.get(key)
         if existing is None or row["as_of"] > existing["as_of"]:
@@ -394,6 +375,10 @@ def build(root: Path) -> None:
         "consensus_de_vig_home_probability",
         "home_spread",
         "consensus_total",
+        "market_source",
+        "market_snapshot_sha256",
+        "market_snapshot_chronology_valid",
+        "market_snapshot_durable",
     ]
     source_files = [
         {
@@ -432,6 +417,10 @@ def build(root: Path) -> None:
                 "consensus_de_vig_home_probability": row.get("consensus_de_vig_home_probability"),
                 "home_spread": row.get("home_spread"),
                 "consensus_total": row.get("consensus_total"),
+                "market_source": row.get("market_source"),
+                "market_snapshot_sha256": row.get("market_snapshot_sha256"),
+                "market_snapshot_chronology_valid": row.get("market_snapshot_chronology_valid"),
+                "market_snapshot_durable": row.get("market_snapshot_durable"),
             })
         merged.sort(key=lambda x: (x["event_time"], x["event_id"]))
 
@@ -442,8 +431,14 @@ def build(root: Path) -> None:
             writer.writerows(merged)
 
         schema = {
-            "schema_version": 1,
+            "schema_version": 2,
             "columns": columns,
+            "provenance_fields": [
+                "market_source",
+                "market_snapshot_sha256",
+                "market_snapshot_chronology_valid",
+                "market_snapshot_durable",
+            ],
             "runtime_features": [
                 "consensus_de_vig_home_probability",
                 "home_spread",
@@ -482,7 +477,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     capture_p = sub.add_parser("capture")
-    capture_p.add_argument("--base-url", default=PRODUCTION_BASE_URL)
+    capture_p.add_argument("--base-url", required=True)
     capture_p.add_argument("--output-dir", required=True, type=Path)
     capture_p.add_argument("--days", type=int, default=4)
 
