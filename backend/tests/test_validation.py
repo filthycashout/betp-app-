@@ -285,3 +285,31 @@ def test_game_market_rejects_stale_observed_at():
     market = parse_game_market(raw, NOW)
     assert market['home_probability'] is None
     assert market['freshness_verified'] is False
+
+
+
+def test_capture_retains_gateway_snapshot_provenance(tmp_path, monkeypatch):
+    event_time = datetime.now(timezone.utc) + timedelta(hours=6)
+    payload = {
+        "games": [{
+            "sport": "NFL",
+            "event_id": "snapshot-1",
+            "event_time": event_time.isoformat(),
+            "home": "Home",
+            "away": "Away",
+            "market": {"home_probability": 0.55, "home_spread": -2.5, "total": 44.5},
+            "market_source": "PHILTHY_FREE_ODDS_GATEWAY",
+            "market_snapshot_evidence": {
+                "record_sha256": "d" * 64,
+                "chronology_valid": True,
+                "durable": True,
+            },
+        }]
+    }
+    monkeypatch.setattr(ep, "_json", lambda _: payload)
+    ep.capture("https://example.invalid", tmp_path, days=1)
+    path = next(tmp_path.glob("pregame_*.jsonl"))
+    row = json.loads(path.read_text().splitlines()[0])
+    assert row["market_snapshot_sha256"] == "d" * 64
+    assert row["market_snapshot_chronology_valid"] is True
+    assert row["market_snapshot_durable"] is True
