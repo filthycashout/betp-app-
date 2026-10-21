@@ -96,5 +96,5 @@ The repository now includes a separate UFC/MMA event adapter and a mobile scoreb
 
 The endpoint uses the existing `ODDS_API_KEY` credential-rotation gate. Provider access and an eligible subscription tier must be configured in the deployment environment. If the provider is unavailable or credential rotation is unconfirmed, the API fails closed. UFC decisions remain ineligible until verified independent sharp-anchor evidence is available.
 
-**Release status:** this is source code in the UFC integration PR, not evidence of a deployed production endpoint. Before release, require Backend CI, mobile dashboard type-check/build, the UFC normalization/API contract tests, a live provider canary with a legitimate rotated key, and a deployed smoke test. Existing NFL/NBA/MLB/NHL contracts remain unchanged in this first migration step.
+**Release status:** the source code is merged to `main`, but the production probe returned HTTP 404 for `/_api/v1/ufc/events` on 2026-10-21, so the UFC endpoint is **not verified as deployed**. Before release, require Backend CI, mobile dashboard type-check/build, the UFC normalization/API contract tests, a live provider canary with a legitimate rotated key, and a deployed smoke test. Existing NFL/NBA/MLB/NHL contracts remain unchanged in this first migration step.
 
