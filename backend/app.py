@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -2763,6 +2764,38 @@ def today(
         "next_games_by_sport": next_games_by_sport,
         "source_telemetry": _SOURCE,
     }
+
+@app.get("/api/v1/ufc/events", include_in_schema=False)
+@app.get("/v1/ufc/events")
+def ufc_events(date: str | None = None):
+    """Return scheduled UFC fight-winner events from the governed odds provider."""
+    try:
+        target = date_cls.fromisoformat(date) if date else _pacific_today()
+    except ValueError:
+        raise HTTPException(400, "date must be YYYY-MM-DD") from None
+
+    from sports_ai.ingestion.ufc import fetch_ufc_events
+
+    try:
+        events = fetch_ufc_events(sys.modules[__name__], target)
+    except Exception:
+        # Keep provider/credential details out of public responses and logs.
+        raise HTTPException(
+            503,
+            "UFC odds provider unavailable; verify provider access and credential rotation.",
+        ) from None
+
+    return {
+        "sport": "UFC",
+        "date": target.isoformat(),
+        "status": "OK" if events else "NO_MATCHING_EVENTS",
+        "events": events,
+        "provider": "The Odds API v4",
+        "market_scope": "fight_winner_moneyline",
+        "player_props_supported": False,
+        "automatic_wagering": False,
+    }
+
 
 @app.get("/api/search", include_in_schema=False)
 @app.get("/api/v1/search", include_in_schema=False)
