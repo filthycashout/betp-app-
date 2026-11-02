@@ -1,5 +1,5 @@
 {
-  "contract_version": "1",
+  "contract_version": "2",
   "input": "evidence/canonical/nhl.csv",
   "input_sha256": "98fe63c06ded2e21e42036a42f88160b1534cc09a6c882bcfdc8dfbd023cee7c",
   "mode": "canonical",

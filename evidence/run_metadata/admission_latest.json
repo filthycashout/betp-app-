@@ -1,0 +1,522 @@
+{
+  "admission_version": "2",
+  "automatic_wagering": false,
+  "canonical": {
+    "MLB": {
+      "canonical_sha256": "e04c4bdbb2c375a5c8b64e5ab0f9603b6afecb1726cf24532d3b5eaad8f06ead",
+      "classification": "CANONICAL_EVIDENCE",
+      "contract": {
+        "contract_version": "2",
+        "mode": "canonical",
+        "required_features": [
+          "consensus_de_vig_home_probability",
+          "home_spread",
+          "consensus_total"
+        ],
+        "rows": 1019,
+        "sport": "MLB",
+        "status": "PASS"
+      },
+      "rows": 1019,
+      "source_manifest_sha256": "7cb1df52477b1bd77145ef82ad0aa32d743979438e69d1ed940da910c2ef9c7f"
+    },
+    "NBA": {
+      "canonical_sha256": "acfe3d0e880e0c5200f17d6dcb77c67bee6bbe1914e1d779e8d4fb90f0f88f06",
+      "classification": "CANONICAL_EVIDENCE",
+      "contract": {
+        "contract_version": "2",
+        "mode": "canonical",
+        "required_features": [
+          "consensus_de_vig_home_probability",
+          "home_spread",
+          "consensus_total"
+        ],
+        "rows": 616,
+        "sport": "NBA",
+        "status": "PASS"
+      },
+      "rows": 616,
+      "source_manifest_sha256": "137937bd31c491b6d2bb4505b0dc228e4307763202b9f60fdfe649d4d25806f8"
+    },
+    "NFL": {
+      "canonical_sha256": "662027b0bcdb5786ad4139a585d6848d186a7a574b69c64984709c43679b9e74",
+      "classification": "CANONICAL_EVIDENCE",
+      "contract": {
+        "contract_version": "2",
+        "mode": "canonical",
+        "required_features": [
+          "consensus_de_vig_home_probability",
+          "home_spread",
+          "consensus_total"
+        ],
+        "rows": 256,
+        "sport": "NFL",
+        "status": "PASS"
+      },
+      "rows": 256,
+      "source_manifest_sha256": "f339ee951f0b68a7481786d59c1097a3094e05b1b143bc7a12ea0dd8bb55535a"
+    },
+    "NHL": {
+      "canonical_sha256": "98fe63c06ded2e21e42036a42f88160b1534cc09a6c882bcfdc8dfbd023cee7c",
+      "classification": "CANONICAL_EVIDENCE",
+      "contract": {
+        "contract_version": "2",
+        "mode": "canonical",
+        "required_features": [
+          "consensus_de_vig_home_probability",
+          "home_spread",
+          "consensus_total"
+        ],
+        "rows": 560,
+        "sport": "NHL",
+        "status": "PASS"
+      },
+      "rows": 560,
+      "source_manifest_sha256": "9dd3dde0abfff47f2c49ef9be26aa619f855963b221cd1b6ceb61314b30f0b4f"
+    }
+  },
+  "captures": [
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/02/powerhouse_raw_20261002T164057Z.json",
+      "raw_sha256": "523dcd0fa1538f6df68e3184e6517f5c4de0fc66ad41e395e87304b375ea0109",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/02/pregame_20261002T164057Z.jsonl",
+      "rows_sha256": "3463735235587d27717bf7c06260d0194b00851f35bd3607498c9644a6d32aa0"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/02/powerhouse_raw_20261002T164247Z.json",
+      "raw_sha256": "ca924dd5a130dca92a3e612bf1310bf425e46806a4a7a83149e263d4728a8b62",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/02/pregame_20261002T164247Z.jsonl",
+      "rows_sha256": "87ff058026f0bb635e8a40f1d0818f6123d04a2520007ed15c51679b29bbcfb2"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/02/powerhouse_raw_20261002T211949Z.json",
+      "raw_sha256": "c0f05911603e1c6ef04c29b7cb517e3b227223f7d792906ad128379590ca6576",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/02/pregame_20261002T211949Z.jsonl",
+      "rows_sha256": "42d945a5a72317d87b70d18f9b01e26d8333accbfe4cc9b51d0756139e4dc0a6"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/02/powerhouse_raw_20261002T214541Z.json",
+      "raw_sha256": "9bd2fdc9618fe583b3976f0419c69c25ee64e83209bef558d4a0c3881c6a7a37",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/02/pregame_20261002T214541Z.jsonl",
+      "rows_sha256": "e0ffb3182ca330c4176f4ee593a3d902b8696bf073102d2437d338246d399c01"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T032246Z.json",
+      "raw_sha256": "756516df061577ef800310a679476535a374e4b2abfff31e7f070078c5b26e9e",
+      "rows": 53,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T032246Z.jsonl",
+      "rows_sha256": "223203f7d39ea9f09ddcde0d54fc4ce399753a46fcda9cecc2ad3c87804175f3"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T063431Z.json",
+      "raw_sha256": "aa82f11e1589e9a325172deec890cae775f6303344fd72a388b5402a857ba9c1",
+      "rows": 53,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T063431Z.jsonl",
+      "rows_sha256": "f12532e096d183360454db9e893da14958b8b27e5be5327cc7fb19d1aa06b6a8"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T123456Z.json",
+      "raw_sha256": "37fc503712b6172475f1299937f593b878248ede5a7996617e803e5069c42c30",
+      "rows": 68,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T123456Z.jsonl",
+      "rows_sha256": "124c5d39c299dc7d79509e68f5b81de86c4efbea622487b136d8a6a48ed798d0"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T171800Z.json",
+      "raw_sha256": "2aed1bcfef1e03d096925d511df63cbf9325c6a3640e75e20d19754a99b8c3ee",
+      "rows": 67,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T171800Z.jsonl",
+      "rows_sha256": "fdc9be28d282b28dc7d24b1cb2753a6f66594aae3dd88bab381acb18592334a4"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T211524Z.json",
+      "raw_sha256": "43dc10ec4957d90a8421828566907d1e48ca1e54153adba3f64ee856dc2c2689",
+      "rows": 66,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T211524Z.jsonl",
+      "rows_sha256": "6706f403288cb043c1de1e4abe0337cc443f3466a39c4eebf51b37b0a5bf74a3"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/03/powerhouse_raw_20261003T234822Z.json",
+      "raw_sha256": "b7a13ec9ca2d1cb512a561b631220ab6ff724cf2b6a3b29056797b82d2958b65",
+      "rows": 56,
+      "rows_file": "pregame/2026/10/03/pregame_20261003T234822Z.jsonl",
+      "rows_sha256": "908fa28e032bf32d7f403ea9e3f787bc4748f98d4efe9986a55136236cadcaaf"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/04/powerhouse_raw_20261004T055354Z.json",
+      "raw_sha256": "55774d2c59896046d6cfc3d6fabc85457be0b61f4c123367ce413a7e7bcff858",
+      "rows": 50,
+      "rows_file": "pregame/2026/10/04/pregame_20261004T055354Z.jsonl",
+      "rows_sha256": "60087c1fd18f47fe015c131afd2a715ce1d3aaf11d8e4f236f29f7ec7a40e097"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/04/powerhouse_raw_20261004T122322Z.json",
+      "raw_sha256": "4ea7f86f1423b6c5c59730199778058c4cdc8677e85971c4b013ae9904cae765",
+      "rows": 62,
+      "rows_file": "pregame/2026/10/04/pregame_20261004T122322Z.jsonl",
+      "rows_sha256": "d246c6e4273991870791e85b36c632a761383fbd869604ec65cd4a6b3b1572ff"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/04/powerhouse_raw_20261004T173455Z.json",
+      "raw_sha256": "7427c45c780315110a462084ab8835a24b124a8f36f0f98512233e9c620a59bf",
+      "rows": 52,
+      "rows_file": "pregame/2026/10/04/pregame_20261004T173455Z.jsonl",
+      "rows_sha256": "2614b9c761781b2c0e2a272591abf14b104c1cdd0071ed9612d8c617bcfe855a"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/04/powerhouse_raw_20261004T180347Z.json",
+      "raw_sha256": "0daafa00151165fa1d1a7db5f363fdeaf71b929b67878810191d85e34a0ce27a",
+      "rows": 52,
+      "rows_file": "pregame/2026/10/04/pregame_20261004T180347Z.jsonl",
+      "rows_sha256": "306eeb7cdb143b2de531b55294b92c96f5d4333357b89585ec6bb43d1d105d8e"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/04/powerhouse_raw_20261004T212635Z.json",
+      "raw_sha256": "8e4576a46d205b2888dad52b7afad1bdd62e59018b9e8b6b72c5571959220fdf",
+      "rows": 47,
+      "rows_file": "pregame/2026/10/04/pregame_20261004T212635Z.jsonl",
+      "rows_sha256": "fd5d31084c83a453d4fc5f750b6617aa787d188214720de2de75c5310774aebc"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/05/powerhouse_raw_20261005T003743Z.json",
+      "raw_sha256": "e21df32f1ed5f13dacfdfcc9a37fd5a3320b46ac4aaeb468c5ff2b2678a82bf7",
+      "rows": 40,
+      "rows_file": "pregame/2026/10/05/pregame_20261005T003743Z.jsonl",
+      "rows_sha256": "f9abc9a72facf936846d07b62ad01e4481cb931945354db8c1b6a8eeaa240aaa"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/05/powerhouse_raw_20261005T005602Z.json",
+      "raw_sha256": "4b58a663d8cc25fd5ff69cf6ca981f06fedd66bc26adcab61e8e3254b9ac3e9a",
+      "rows": 40,
+      "rows_file": "pregame/2026/10/05/pregame_20261005T005602Z.jsonl",
+      "rows_sha256": "e0819b98fa8bac44de78d76cb8130167198963cae38e1b42289dd3bc8e588c03"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/05/powerhouse_raw_20261005T070359Z.json",
+      "raw_sha256": "44b80913d667809a31d54ef0373cdd1e646ea4b484d01fc23f6b1d4604b2d493",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/05/pregame_20261005T070359Z.jsonl",
+      "rows_sha256": "d320607d4f45f012cfd1582262ddb37605917ea204da6499668b5104661e737c"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/05/powerhouse_raw_20261005T160146Z.json",
+      "raw_sha256": "2ed226e557e14101756ec23f1f161f39508245b726ccee7dfa5f9b24bdd7f30d",
+      "rows": 58,
+      "rows_file": "pregame/2026/10/05/pregame_20261005T160146Z.jsonl",
+      "rows_sha256": "570221554b1fd3486373ba21904c0d689af047f3492b8ce1f66e6b050c4f06fa"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/05/powerhouse_raw_20261005T223822Z.json",
+      "raw_sha256": "a678921948a49c46156b246f460da0cef7cf8fa56d1ff0ec6ae931517aa701ae",
+      "rows": 57,
+      "rows_file": "pregame/2026/10/05/pregame_20261005T223822Z.jsonl",
+      "rows_sha256": "ad5e5a8d3c859320254c826fe7bc869f333b9f6324a9a3ef269fbd8741a378ff"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/06/powerhouse_raw_20261006T025914Z.json",
+      "raw_sha256": "ed7c22b904c54d8277bcc2fb2f484c0b291cfa4d54b989985cdb8cea9c77f9bc",
+      "rows": 46,
+      "rows_file": "pregame/2026/10/06/pregame_20261006T025914Z.jsonl",
+      "rows_sha256": "76bc0afbaf02155e28d1ff30b9c37438a0e8feb3b660c9604f5078dd40c7d03d"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/06/powerhouse_raw_20261006T064914Z.json",
+      "raw_sha256": "597318862b77e74dab085165788612f3f8a737fd931bc155dea4419218228dde",
+      "rows": 46,
+      "rows_file": "pregame/2026/10/06/pregame_20261006T064914Z.jsonl",
+      "rows_sha256": "dcb1d50db5f637d8cec7fa285b442fc673039aba8c8ab29dbf614b3e726b1bc1"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/06/powerhouse_raw_20261006T101912Z.json",
+      "raw_sha256": "e062e22252b982a89017a8259a504fa42367c206389b26075d117e123f1176c7",
+      "rows": 54,
+      "rows_file": "pregame/2026/10/06/pregame_20261006T101912Z.jsonl",
+      "rows_sha256": "5fae6b4b41ee506286035b78294bb0c09b4b8bbe9d6c781907e2813ab65c196d"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/06/powerhouse_raw_20261006T171137Z.json",
+      "raw_sha256": "673420b634d6028e41a3cfc7f5de60cf57d9b392bc5d819f6770fcc3a177a11b",
+      "rows": 54,
+      "rows_file": "pregame/2026/10/06/pregame_20261006T171137Z.jsonl",
+      "rows_sha256": "e33352fd72491fceef89bc9f2b2c4888f8659d9e871dc89e20cc4753301f161c"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/06/powerhouse_raw_20261006T213806Z.json",
+      "raw_sha256": "77b3496157d6df2455b30e041995d552bada53522ccaf2e4420e961a3fc697fa",
+      "rows": 54,
+      "rows_file": "pregame/2026/10/06/pregame_20261006T213806Z.jsonl",
+      "rows_sha256": "e902602c315c6deee118041cb01799ac4464e5a23bbfd9f0ef22279a1c2c435d"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/07/powerhouse_raw_20261007T013246Z.json",
+      "raw_sha256": "36b36ef529afbae295718e972f6a8e86521cd7b6a8900c5d2d1f8cc3722a49d0",
+      "rows": 42,
+      "rows_file": "pregame/2026/10/07/pregame_20261007T013246Z.jsonl",
+      "rows_sha256": "222b61c0e04e2707c8315c303072f291438933b4d81f4653a22bf9bfc9eb94f8"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/07/powerhouse_raw_20261007T083947Z.json",
+      "raw_sha256": "465ad128748e435fc3c6689ba728f69a7cfdfa28cea3a3ff61023da27075213e",
+      "rows": 62,
+      "rows_file": "pregame/2026/10/07/pregame_20261007T083947Z.jsonl",
+      "rows_sha256": "492ee254d39dbc2c2f666f395673ed44ea1b661a536ebe28012e2e9c4b91e9bd"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/07/powerhouse_raw_20261007T162934Z.json",
+      "raw_sha256": "2f93c72aa1578c63eaa930843192cebaf9fac7552ad793a8e1dce88efbc3cc3d",
+      "rows": 62,
+      "rows_file": "pregame/2026/10/07/pregame_20261007T162934Z.jsonl",
+      "rows_sha256": "3f48bcda101286858becc10dd1e4d0867162d49348e16e1b5c4ab88858e40c12"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/07/powerhouse_raw_20261007T220011Z.json",
+      "raw_sha256": "5677c168a3d19180a8f0cab6336c6784e57bde4628c367e0b7d36c762c3a81c5",
+      "rows": 60,
+      "rows_file": "pregame/2026/10/07/pregame_20261007T220011Z.jsonl",
+      "rows_sha256": "b483c9386d2c82bf057dba7cc61dde55d01345d886de037e5dd022e9115e2b87"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/08/powerhouse_raw_20261008T015614Z.json",
+      "raw_sha256": "365461a937e167ae7845fd458e9b0f66b63763b43dfa154aaa10df6998970cfa",
+      "rows": 52,
+      "rows_file": "pregame/2026/10/08/pregame_20261008T015614Z.jsonl",
+      "rows_sha256": "46508035f26ed814dcf57e045b2d99b7b5e08cb2a57d8cb5e783cf87804a800e"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/08/powerhouse_raw_20261008T085846Z.json",
+      "raw_sha256": "81010d6087a539f23aa5ef36e9bf02e7915b0dd3d6dcf8e7825e3897c0adc8bb",
+      "rows": 67,
+      "rows_file": "pregame/2026/10/08/pregame_20261008T085846Z.jsonl",
+      "rows_sha256": "766021f5c4e7a284f46cedd578f7390ce112095bea8c55751d01f2bb5475401b"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/08/powerhouse_raw_20261008T162914Z.json",
+      "raw_sha256": "17df4e023313be338256dc029509193f2b88ccbfbe4c9c6f40a734012bb6bfd1",
+      "rows": 67,
+      "rows_file": "pregame/2026/10/08/pregame_20261008T162914Z.jsonl",
+      "rows_sha256": "e4baf6e99c0a633f6d64ca9727693ba0406a61d8398f79c149a1e86276b61a41"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/08/powerhouse_raw_20261008T220448Z.json",
+      "raw_sha256": "ed889dd1c39a3a55d4cf412eb5369680ac6b9c4f216e0287e59c4b53195047d5",
+      "rows": 67,
+      "rows_file": "pregame/2026/10/08/pregame_20261008T220448Z.jsonl",
+      "rows_sha256": "cf49578074b2e4c824ee45182f295aaa56339585e3d128efb26419d36798d0f9"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/09/powerhouse_raw_20261009T021043Z.json",
+      "raw_sha256": "b654ac0d617e1738e1f7cffa3610a4d5fc486d0142fe546cd63a41a679d51ea7",
+      "rows": 50,
+      "rows_file": "pregame/2026/10/09/pregame_20261009T021043Z.jsonl",
+      "rows_sha256": "60bebf5452a29f0236771d1bbe41a6a2615eea2d0e6ff2232d4a8c2a5f36f11b"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/09/powerhouse_raw_20261009T090526Z.json",
+      "raw_sha256": "e29d2ac4b64334e673e14f2c100916ff687894e8cb8e7bc9a3834f39636d6ec6",
+      "rows": 60,
+      "rows_file": "pregame/2026/10/09/pregame_20261009T090526Z.jsonl",
+      "rows_sha256": "8e231b528377df0cb223c2e4517e52c8db3b982f6bec6cffe6541b44c7129ef3"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/09/powerhouse_raw_20261009T161338Z.json",
+      "raw_sha256": "9f70b357de271de43d58c76aa126e131000010bed9ed5acbda8aed484e6db5d4",
+      "rows": 59,
+      "rows_file": "pregame/2026/10/09/pregame_20261009T161338Z.jsonl",
+      "rows_sha256": "90789bce33640c92f7f1523cba4a268f21d06aaed9055d89d5d8e1ba14a5f8fd"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/10/powerhouse_raw_20261010T171424Z.json",
+      "raw_sha256": "b8fdb5c91bd853139b3a0c6434e0e66074b9020954947219e5e12c31f9bafd6d",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/10/pregame_20261010T171424Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/10/powerhouse_raw_20261010T183626Z.json",
+      "raw_sha256": "d41bc888757d02b0509fc1c80e7bfef920a95bfbc60a79628c34cd060e0f8546",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/10/pregame_20261010T183626Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/10/powerhouse_raw_20261010T223242Z.json",
+      "raw_sha256": "0cbec27bc49190b8ef64ba068202592ac76a378b62fcfc8767356403497a8a63",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/10/pregame_20261010T223242Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/11/powerhouse_raw_20261011T015405Z.json",
+      "raw_sha256": "506b2038941ae948acd67bc62eb41c59d1da4d24b243307db4a2c36daaca0a7e",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/11/pregame_20261011T015405Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/11/powerhouse_raw_20261011T180141Z.json",
+      "raw_sha256": "2bdbfc38a6a0b5598a6519c8fdbfb5ad0f57154b03eb1ec010797826b62d96c7",
+      "rows": 8,
+      "rows_file": "pregame/2026/10/11/pregame_20261011T180141Z.jsonl",
+      "rows_sha256": "c47caee34ebe574dafd374692c7253304b864272a5d822fff8b1a2c793ec1d27"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/11/powerhouse_raw_20261011T201723Z.json",
+      "raw_sha256": "30d499bb878f696a022433d69a719470278c6fe4501e198a14aedb90df6bd055",
+      "rows": 7,
+      "rows_file": "pregame/2026/10/11/pregame_20261011T201723Z.jsonl",
+      "rows_sha256": "194c4f9efa5ad27fe829ad5898adb2386f1189be6d6c8006a9b77181cfd3d75d"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/12/powerhouse_raw_20261012T003242Z.json",
+      "raw_sha256": "b1140140e351691dbf5a271cb2c56907c9bc665b100b6c6701bf4b40bf47a619",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/12/pregame_20261012T003242Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/13/powerhouse_raw_20261013T004026Z.json",
+      "raw_sha256": "ead4e1851dc7a2d34a89b3807a494439d1f8c0519c530b747c5eb3c07dde3ff7",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/13/pregame_20261013T004026Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/14/powerhouse_raw_20261014T060917Z.json",
+      "raw_sha256": "224bbe352a2c8c9d8956a2daa746889c6cbc8376f59ecc71daf66fa4ea4deb52",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/14/pregame_20261014T060917Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/15/powerhouse_raw_20261015T005910Z.json",
+      "raw_sha256": "f97e3565ce301dfe915569b1e4a723772a0ee10a400a74c9f31e668c829b969f",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/15/pregame_20261015T005910Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "1",
+      "raw_file": "pregame/2026/10/15/powerhouse_raw_20261015T030447Z.json",
+      "raw_sha256": "15826895328aaf0a2575cab817569835eea5a58a14b0e7e59a54811ae0502a48",
+      "rows": 0,
+      "rows_file": "pregame/2026/10/15/pregame_20261015T030447Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "2",
+      "raw_file": "pregame/2026/11/02/powerhouse_raw_20261102T060410Z.json",
+      "raw_sha256": "fe67b2f68ebd1ccc475c462b28fe190e2ca3e644308dc7a4ac10d9a8b41af0d4",
+      "rows": 0,
+      "rows_file": "pregame/2026/11/02/pregame_20261102T060410Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "errors": [],
+  "official_proof_rows_verified": 11,
+  "rules": {
+    "canonical": "contract-valid canonical CSV whose SHA-256 matches its source manifest",
+    "model_promotion": "separate downstream gate; evidence admission never promotes a model",
+    "pregame": "immutable checksummed capture + quote/as_of before event start",
+    "settlement": "contract-v2 live captures require independent official-result proof; legacy/history stays governed by its own provenance manifest"
+  },
+  "settlement_rows_verified": 162,
+  "status": "PASS"
+}

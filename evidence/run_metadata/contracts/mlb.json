@@ -1,5 +1,5 @@
 {
-  "contract_version": "1",
+  "contract_version": "2",
   "input": "evidence/canonical/mlb.csv",
   "input_sha256": "e04c4bdbb2c375a5c8b64e5ab0f9603b6afecb1726cf24532d3b5eaad8f06ead",
   "mode": "canonical",
