@@ -1,6 +1,6 @@
 {
   "contract_version": "2",
-  "input": "/tmp/pregame_capture/pregame_20261108T072110Z.jsonl",
+  "input": "/tmp/pregame_capture/pregame_20261109T062959Z.jsonl",
   "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "mode": "pregame",
   "required_features": [],
