@@ -18,7 +18,7 @@
         "status": "PASS"
       },
       "rows": 1019,
-      "source_manifest_sha256": "df066751b844ad1ddca640088c111bbcccee25ffaf805bc55dbd5ae08913757a"
+      "source_manifest_sha256": "06bf1cade7d5d42a032fa0f566b5e559822f5211bfa5890b43a0971311c63e85"
     },
     "NBA": {
       "canonical_sha256": "acfe3d0e880e0c5200f17d6dcb77c67bee6bbe1914e1d779e8d4fb90f0f88f06",
@@ -36,7 +36,7 @@
         "status": "PASS"
       },
       "rows": 616,
-      "source_manifest_sha256": "07b26d2bc95180e53c0ee0f4c5565f34275edb46851fb944d0f82fb84c8546f0"
+      "source_manifest_sha256": "2c91a6d7b9f9cc48927bdab3b8b2c76eab867a9f5127a2d99a9914681a1dbb05"
     },
     "NFL": {
       "canonical_sha256": "662027b0bcdb5786ad4139a585d6848d186a7a574b69c64984709c43679b9e74",
@@ -54,7 +54,7 @@
         "status": "PASS"
       },
       "rows": 256,
-      "source_manifest_sha256": "47a453b066d0229f8f9cb15b7c7aa69a16190c0c52e18d0510837b58d57bce04"
+      "source_manifest_sha256": "b5c46c06fed94e1af17bda42788229d7cc23ff89b9db6308824a3639382e22fb"
     },
     "NHL": {
       "canonical_sha256": "98fe63c06ded2e21e42036a42f88160b1534cc09a6c882bcfdc8dfbd023cee7c",
@@ -72,7 +72,7 @@
         "status": "PASS"
       },
       "rows": 560,
-      "source_manifest_sha256": "a43ea856359e17334ec5b505c3b0c5d6e583ff21c7fd06524b4036315d8e4302"
+      "source_manifest_sha256": "e4749e98fb8483fca2beb557dae7e95f0d9349a3beb82f050890828d8bbbebf1"
     }
   },
   "captures": [
@@ -542,6 +542,15 @@
       "raw_sha256": "32e37700895fef7ad2ba5b7de06544e4c4123291f5f3a8b650b5e40a31ef8e7e",
       "rows": 0,
       "rows_file": "pregame/2026/11/11/pregame_20261111T062125Z.jsonl",
+      "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "classification": "ADMISSIBLE_PREGAME",
+      "contract_version": "2",
+      "raw_file": "pregame/2026/11/13/powerhouse_raw_20261113T075836Z.json",
+      "raw_sha256": "2aaad21ef585b5ccf963f629806024c068910edc642e5b0a08b572ef320b9fad",
+      "rows": 0,
+      "rows_file": "pregame/2026/11/13/pregame_20261113T075836Z.jsonl",
       "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
